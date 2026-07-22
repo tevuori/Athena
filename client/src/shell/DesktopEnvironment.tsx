@@ -5,11 +5,14 @@ import WindowLayer from "../wm/WindowLayer";
 import SnapPreview from "../wm/SnapPreview";
 import AltTabSwitcher from "../wm/AltTabSwitcher";
 import CommandPalette from "./CommandPalette";
+import AthenaQuickPanel from "./AthenaQuickPanel";
 import { useWindows } from "../store/windows";
+import { useAthenaQuick } from "../store/athenaQuick";
 import { useEffect } from "react";
 
 export default function DesktopEnvironment() {
   const { open, focusedId, snap, toggleMaximize, close } = useWindows();
+  const toggleAthenaQuick = useAthenaQuick((s) => s.toggle);
 
   // Open a welcome window on first load if none open
   useEffect(() => {
@@ -20,6 +23,18 @@ export default function DesktopEnvironment() {
     }, 200);
     return () => clearTimeout(t);
   }, [open]);
+
+  // Win + Y → toggle Athena quick panel (rolls in from the selected edge)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "y" || e.key === "Y")) {
+        e.preventDefault();
+        toggleAthenaQuick();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [toggleAthenaQuick]);
 
   // Keyboard shortcuts for window management
   //   Win + Arrow keys  → snap to grid zones
@@ -81,6 +96,7 @@ export default function DesktopEnvironment() {
       <Wallpaper />
       <Desktop />
       <WindowLayer />
+      <AthenaQuickPanel />
       <SnapPreview />
       <Taskbar />
       <AltTabSwitcher />

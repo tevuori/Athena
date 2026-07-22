@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, Square, Sparkles, Loader2, Wrench, AlertCircle, Save, FolderOpen, LayoutGrid } from "lucide-react";
+import { Send, Square, Sparkles, Loader2, Wrench, AlertCircle, Save, FolderOpen, LayoutGrid, Maximize2, X, ChevronDown } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -11,6 +11,8 @@ import {
 } from "../../services/athena";
 import { useWindows, type AppId, type WindowRect } from "../../store/windows";
 import type { WindowInstance } from "../../store/windows";
+import { useSettings, type AthenaRollEdge } from "../../store/settings";
+import { useAthenaQuick } from "../../store/athenaQuick";
 
 interface ChatTurn extends AthenaMessage {
   tools?: AthenaToolEvent[];
@@ -44,10 +46,19 @@ const APP_ICONS: Record<string, string> = {
   athena: "Sparkles",
 };
 
-export default function AthenaApp({ win }: { win: WindowInstance }) {
+export default function AthenaApp({
+  win,
+  mode = "window",
+  onExpand,
+}: {
+  win?: WindowInstance;
+  mode?: "window" | "quick";
+  onExpand?: () => void;
+}) {
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
+  const [edgeMenuOpen, setEdgeMenuOpen] = useState(false);
   const handleRef = useRef<{ abort: () => void; done: Promise<void> } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const windows = useWindows((s) => s.windows);
@@ -58,6 +69,9 @@ export default function AthenaApp({ win }: { win: WindowInstance }) {
   const minimizeWindow = useWindows((s) => s.minimize);
   const setRect = useWindows((s) => s.setRect);
   const closeAll = useWindows((s) => s.closeAll);
+  const athenaRollEdge = useSettings((s) => s.athenaRollEdge);
+  const setAthenaRollEdge = useSettings((s) => s.setAthenaRollEdge);
+  const setAthenaQuickOpen = useAthenaQuick((s) => s.setOpen);
 
   // Keep a ref to the latest windows + store actions so the client-action
   // dispatcher always sees current state even when multiple actions fire in
@@ -306,6 +320,60 @@ export default function AthenaApp({ win }: { win: WindowInstance }) {
         <span className="text-sm font-semibold text-ink">Athena</span>
         <span className="text-[11px] text-ink-muted">workspace assistant</span>
         <div className="ml-auto flex items-center gap-1">
+          {mode === "quick" && (
+            <>
+              {/* Roll-edge selector */}
+              <div className="relative">
+                <button
+                  onClick={() => setEdgeMenuOpen((v) => !v)}
+                  className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-ink-muted hover:bg-surface-2 hover:text-ink"
+                  title="Roll-in edge"
+                >
+                  <span className="capitalize">{athenaRollEdge}</span>
+                  <ChevronDown size={12} />
+                </button>
+                {edgeMenuOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-50"
+                      onClick={() => setEdgeMenuOpen(false)}
+                    />
+                    <div className="absolute right-0 top-full z-[60] mt-1 w-28 rounded-lg border border-edge bg-surface shadow-window">
+                      {(["bottom", "top", "left", "right"] as AthenaRollEdge[]).map((e) => (
+                        <button
+                          key={e}
+                          onClick={() => {
+                            setAthenaRollEdge(e);
+                            setEdgeMenuOpen(false);
+                          }}
+                          className={`flex w-full items-center px-3 py-1.5 text-[11px] capitalize hover:bg-surface-2 ${
+                            e === athenaRollEdge ? "text-accent" : "text-ink-muted"
+                          }`}
+                        >
+                          {e}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+              <button
+                onClick={onExpand}
+                className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-ink-muted hover:bg-surface-2 hover:text-ink"
+                title="Expand to full window"
+              >
+                <Maximize2 size={12} /> Expand
+              </button>
+              <button
+                onClick={() => setAthenaQuickOpen(false)}
+                className="flex h-6 w-6 items-center justify-center rounded text-ink-muted hover:bg-red-500 hover:text-white"
+                title="Close"
+              >
+                <X size={14} />
+              </button>
+              <div className="mx-1 h-4 w-px bg-edge" />
+            </>
+          )}
           <button
             onClick={() => send("Save my current workspace layout. Ask me for a name first.")}
             disabled={streaming}

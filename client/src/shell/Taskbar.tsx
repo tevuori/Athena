@@ -10,13 +10,10 @@ export default function Taskbar() {
   const { windows, focusedId, restoreOrMinimize, open } = useWindows();
   const [startOpen, setStartOpen] = useState(false);
 
-  // Win/Meta key toggles start menu
+  // Escape closes the start menu (the Win/Meta key is not bound here because it
+  // triggers native OS shortcuts on Linux and other platforms).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Meta" || e.key === "OS") {
-        e.preventDefault();
-        setStartOpen((v) => !v);
-      }
       if (e.key === "Escape") setStartOpen(false);
     };
     window.addEventListener("keydown", onKey);

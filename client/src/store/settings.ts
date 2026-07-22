@@ -2,6 +2,12 @@ import { create } from "zustand";
 
 export type ThemeMode = "light" | "dark";
 export type WallpaperId = "aurora" | "sunset" | "ocean" | "forest" | "mesh" | "mono";
+export type AthenaRollEdge = "bottom" | "top" | "left" | "right";
+
+export interface AthenaQuickSize {
+  width: number;
+  height: number;
+}
 
 interface SettingsState {
   theme: ThemeMode;
@@ -10,12 +16,16 @@ interface SettingsState {
   volume: number; // 0-100
   notificationsEnabled: boolean;
   doNotDisturb: boolean;
+  athenaRollEdge: AthenaRollEdge;
+  athenaQuickSize: AthenaQuickSize | null;
   setTheme: (t: ThemeMode) => void;
   setAccent: (hex: string) => void;
   setWallpaper: (w: WallpaperId) => void;
   setVolume: (v: number) => void;
   setNotificationsEnabled: (b: boolean) => void;
   setDoNotDisturb: (b: boolean) => void;
+  setAthenaRollEdge: (e: AthenaRollEdge) => void;
+  setAthenaQuickSize: (s: AthenaQuickSize) => void;
 }
 
 const STORAGE_KEY = "athena.settings";
@@ -27,6 +37,8 @@ interface PersistedSettings {
   volume: number;
   notificationsEnabled: boolean;
   doNotDisturb: boolean;
+  athenaRollEdge: AthenaRollEdge;
+  athenaQuickSize: AthenaQuickSize | null;
 }
 
 function load(): Partial<PersistedSettings> {
@@ -58,6 +70,8 @@ const defaults: PersistedSettings = {
   volume: 70,
   notificationsEnabled: true,
   doNotDisturb: false,
+  athenaRollEdge: "bottom",
+  athenaQuickSize: null,
 };
 
 const loaded = { ...defaults, ...load() };
@@ -101,5 +115,13 @@ export const useSettings = create<SettingsState>((set, get) => ({
   setDoNotDisturb: (doNotDisturb) => {
     set({ doNotDisturb });
     persist({ ...get(), doNotDisturb } as PersistedSettings);
+  },
+  setAthenaRollEdge: (athenaRollEdge) => {
+    set({ athenaRollEdge });
+    persist({ ...get(), athenaRollEdge } as PersistedSettings);
+  },
+  setAthenaQuickSize: (athenaQuickSize) => {
+    set({ athenaQuickSize });
+    persist({ ...get(), athenaQuickSize } as PersistedSettings);
   },
 }));

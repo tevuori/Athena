@@ -134,9 +134,10 @@ Athena/
     - `Win+Shift+↓` — minimize
     - `Win+↓` — restore from snapped/maximized
     - `Win+W` — close focused window
+    - `Win+Y` — toggle Athena quick panel (rolls in from the selected edge)
 - Z-index focus management (click to focus)
 - Alt+Tab window switcher (Shift+Alt+Tab for reverse)
-- Meta/Win key toggles Start menu
+- Start menu opens via the Start button (Win/Meta key is not bound — it triggers native OS shortcuts)
 - Taskbar with running app indicators
 - Start menu with app search
 - System tray: clock, volume slider, notifications bell, DND toggle, mini-calendar
@@ -200,6 +201,7 @@ Athena/
     - **Client-action dispatch**: tools that affect the desktop (e.g. `start_pomodoro`) return a payload streamed as a `client_action` SSE event; the client opens/controls the relevant app (Pomodoro auto-starts with the requested phase/duration).
     - Multi-turn conversation history sent each turn; abortable via the Stop button.
     - Any `multi-llm-ts` provider works (openai, deepseek, anthropic, openrouter, ollama, groq, mistralai, google, xai, meta, cerebras). Defaults to OpenCode Zen (DeepSeek V4 Flash Free). Per-user config encrypted (AES-256-GCM) in DB; server-wide fallback via env vars.
+    - **Quick panel mode** (`Win+Y`): Athena can be activated as a rolling quick panel that slides in from a user-selected screen edge (bottom/top/left/right) instead of a normal window. The panel occupies a partial area (~80% width, ~3/4 height by default), doesn't cover all apps, is resizable with remembered size (persisted in settings), and has an **Expand** button to switch to the full window mode. Roll edge is configurable via a dropdown in the quick panel header. Athena remains openable as a full window from the Start Menu / Command Palette.
 
 ### Command Palette (Spotlight)
 - Triggered with `Ctrl+Space` (or `Cmd+Space` on Mac)
