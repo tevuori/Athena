@@ -26,21 +26,22 @@ export default function Taskbar() {
   return (
     <>
       <div className="absolute bottom-0 left-0 right-0 z-[10000] flex h-12 items-center gap-1 border-t border-edge bg-surface/80 px-2 backdrop-blur-xl">
-        {/* Start button */}
-        <button
-          onClick={() => setStartOpen((v) => !v)}
-          className={`flex h-9 w-9 items-center justify-center rounded-lg transition ${
-            startOpen ? "bg-accent text-accent-fg" : "text-ink hover:bg-surface-3"
-          }`}
-          title="Start"
-        >
-          <LayoutGrid size={18} />
-        </button>
+        {/* Left: Start button (flex-1 keeps apps centered) */}
+        <div className="flex flex-1 items-center gap-1">
+          <button
+            onClick={() => setStartOpen((v) => !v)}
+            className={`flex h-9 w-9 items-center justify-center rounded-lg transition ${
+              startOpen ? "bg-accent text-accent-fg" : "text-ink hover:bg-surface-3"
+            }`}
+            title="Start"
+          >
+            <LayoutGrid size={18} />
+          </button>
+          <div className="mx-1 h-6 w-px bg-edge" />
+        </div>
 
-        <div className="mx-1 h-6 w-px bg-edge" />
-
-        {/* Pinned + running apps */}
-        <div className="flex flex-1 items-center gap-1 overflow-x-auto">
+        {/* Center: Pinned + running apps (GNOME-style centered dash) */}
+        <div className="flex items-center gap-1 overflow-x-auto">
           {APPS.map((app) => {
             const Icon = (Lucide as unknown as Record<string, React.ComponentType<{ size?: number }>>)[app.icon] ?? Lucide.AppWindow;
             const appWindows = windows.filter((w) => w.appId === app.id);
@@ -80,8 +81,10 @@ export default function Taskbar() {
           })}
         </div>
 
-        {/* System tray */}
-        <SystemTray />
+        {/* Right: System tray (flex-1 keeps apps centered) */}
+        <div className="flex flex-1 items-center justify-end">
+          <SystemTray />
+        </div>
       </div>
 
       <StartMenu open={startOpen} onClose={() => setStartOpen(false)} />
