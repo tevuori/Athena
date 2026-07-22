@@ -59,6 +59,14 @@ export default function AthenaApp({ win }: { win: WindowInstance }) {
   const setRect = useWindows((s) => s.setRect);
   const closeAll = useWindows((s) => s.closeAll);
 
+  // Keep a ref to the latest windows + store actions so the client-action
+  // dispatcher always sees current state even when multiple actions fire in
+  // quick succession during a single SSE stream (e.g. open_app x2 then tile).
+  const windowsRef = useRef(windows);
+  windowsRef.current = windows;
+  const storeRef = useRef({ openWindow, closeWindow, focusWindow, minimizeWindow, setRect, closeAll });
+  storeRef.current = { openWindow, closeWindow, focusWindow, minimizeWindow, setRect, closeAll };
+
   // Build the window state snapshot to send with each chat request.
   const buildWindowState = useCallback((): AthenaWindowState[] => {
     return windows.map((w) => ({
@@ -82,81 +90,90 @@ export default function AthenaApp({ win }: { win: WindowInstance }) {
 
   // ===== Client-action dispatcher =====
   // Handles all client_action SSE events from the server (window mgmt,
-  // pomodoro, workspace restore).
-  const dispatchClientAction = useCallback(
-    (action: AthenaClientAction) => {
-      const p = action.payload as Record<string, any>;
-      switch (action.tool) {
-        case "start_pomodoro": {
-          openWindow({
-            appId: "pomodoro",
-            title: "Pomodoro",
-            icon: "Timer",
-            payload: {
-              autoStart: true,
-              phase: p.phase ?? "work",
-              durationMinutes: p.durationMinutes ?? null,
-            },
-          });
-          break;
-        }
-        case "open_app": {
-          openWindow({
-            appId: p.appId as AppId,
-            title: p.title ?? p.appId,
-            icon: APP_ICONS[p.appId] ?? "AppWindow",
-            rect: p.rect as Partial<WindowRect> | undefined,
-          });
-          break;
-        }
-        case "close_window": {
-          closeWindow(p.windowId);
-          break;
-        }
-        case "focus_window": {
-          focusWindow(p.windowId);
-          break;
-        }
-        case "minimize_window": {
-          minimizeWindow(p.windowId);
-          break;
-        }
-        case "resize_window": {
-          const w = windows.find((x) => x.id === p.windowId);
-          if (w) setRect(p.windowId, { ...w.rect, width: p.width, height: p.height });
-          break;
-        }
-        case "move_window": {
-          const w = windows.find((x) => x.id === p.windowId);
-          if (w) setRect(p.windowId, { ...w.rect, x: p.x, y: p.y });
-          break;
-        }
-        case "tile_windows": {
-          tileWindows(windows, setRect, p.layout ?? "grid");
-          break;
-        }
-        case "open_workspace": {
-          // Close all current windows, then reopen at saved positions.
-          closeAll();
-          const savedWindows = (p.windows as Array<{
-            appId: string;
-            title: string;
-            rect: WindowRect;
-          }>) ?? [];
-          for (const sw of savedWindows) {
-            openWindow({
-              appId: sw.appId as AppId,
-              title: sw.title,
-              icon: APP_ICONS[sw.appId] ?? "AppWindow",
-              rect: sw.rect,
-            });
-          }
-          break;
-        }
+  // pomodoro, workspace restore). Uses refs to avoid stale closures.
+  const dispatchClientAction = useCallback((action: AthenaClientAction) => {
+    const p = action.payload as Record<string, any>;
+    const { openWindow, closeWindow, focusWindow, minimizeWindow, setRect, closeAll } = storeRef.current;
+    switch (action.tool) {
+      case "start_pomodoro": {
+        openWindow({
+          appId: "pomodoro",
+          title: "Pomodoro",
+          icon: "Timer",
+          payload: {
+            autoStart: true,
+            phase: p.phase ?? "work",
+            durationMinutes: p.durationMinutes ?? null,
+          },
+        });
+        break;
       }
-    },
-    [openWindow, closeWindow, focusWindow, minimizeWindow, setRect, windows, closeAll]
-  );
+      case "open_app": {
+        openWindow({
+          appId: p.appId as AppId,
+          title: p.title ?? p.appId,
+          icon: APP_ICONS[p.appId] ?? "AppWindow",
+          rect: p.rect as Partial<WindowRect> | undefined,
+        });
+        break;
+      }
+      case "close_window": {
+        closeWindow(p.windowId);
+        break;
+      }
+      case "focus_window": {
+        focusWindow(p.windowId);
+        break;
+      }
+      case "minimize_window": {
+        minimizeWindow(p.windowId);
+        break;
+      }
+      case "resize_window": {
+        const w = windowsRef.current.find((x) => x.id === p.windowId);
+        if (w) setRect(p.windowId, { ...w.rect, width: p.width, height: p.height });
+        break;
+      }
+      case "move_window": {
+        const w = windowsRef.current.find((x) => x.id === p.windowId);
+        if (w) {
+          // Snap to 20px grid for cleaner positioning.
+          const GRID = 20;
+          setRect(p.windowId, {
+            ...w.rect,
+            x: Math.round(Number(p.x) / GRID) * GRID,
+            y: Math.round(Number(p.y) / GRID) * GRID,
+          });
+        }
+        break;
+      }
+      case "tile_windows": {
+        // Defer tiling by one tick so any pending openWindow/closeWindow
+        // state updates have flushed into windowsRef first.
+        setTimeout(() => {
+          tileWindows(windowsRef.current, setRect, p.layout ?? "grid");
+        }, 50);
+        break;
+      }
+      case "open_workspace": {
+        closeAll();
+        const savedWindows = (p.windows as Array<{
+          appId: string;
+          title: string;
+          rect: WindowRect;
+        }>) ?? [];
+        for (const sw of savedWindows) {
+          openWindow({
+            appId: sw.appId as AppId,
+            title: sw.title,
+            icon: APP_ICONS[sw.appId] ?? "AppWindow",
+            rect: sw.rect,
+          });
+        }
+        break;
+      }
+    }
+  }, []);
 
   const send = useCallback(
     (text: string) => {
@@ -375,7 +392,8 @@ function tileWindows(
   setRect: (id: string, rect: WindowRect) => void,
   layout: string
 ) {
-  const visible = windows.filter((w) => !w.minimized);
+  // Don't tile always-on-top windows (Athena itself stays put).
+  const visible = windows.filter((w) => !w.minimized && !w.alwaysOnTop);
   if (visible.length === 0) return;
   const vw = window.innerWidth;
   const vh = window.innerHeight - 48;

@@ -67,10 +67,20 @@ athena.post("/chat", zValidator("json", chatSchema), async (c) => {
 
   const clientWindows: ClientWindowInfo[] = body.windows ?? [];
   const systemPrompt = await buildSystemPrompt(userId, clientWindows);
+  // Use Message instances (multi-llm-ts expects them for vision checks etc.)
+  // but override toJSON so only { role, content } is serialized to the provider.
+  // Extra fields (attachments, toolCalls, contentForModel, reasoning) cause 400
+  // errors on some OpenAI-compatible endpoints (e.g. OpenCode Zen / DeepSeek).
   const thread: Message[] = [
     new Message("system", systemPrompt),
     ...body.messages.map((m) => new Message(m.role as "user" | "assistant", m.content)),
   ];
+  // Patch toJSON on each Message so the OpenAI SDK serializes clean API format.
+  for (const msg of thread) {
+    (msg as any).toJSON = function () {
+      return { role: this.role, content: this.content };
+    };
+  }
 
   // Abort when the client disconnects.
   const abort = new AbortController();
@@ -136,6 +146,7 @@ athena.post("/chat", zValidator("json", chatSchema), async (c) => {
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Athena request failed";
         const status = e instanceof LlmError ? e.status : 500;
+        console.error("[athena] chat error:", msg, e instanceof Error ? e.stack : e);
         await stream.writeSSE({
           event: "error",
           data: JSON.stringify({ error: msg, status }),

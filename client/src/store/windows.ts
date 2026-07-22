@@ -43,6 +43,7 @@ export interface WindowInstance {
   zIndex: number;
   minimized: boolean;
   closing: boolean; // true while exit animation plays before removal
+  alwaysOnTop?: boolean; // window stays above all others (e.g. Athena)
   // Optional payload passed to the app (e.g. noteId to open)
   payload?: Record<string, unknown>;
 }
@@ -121,14 +122,22 @@ export const useWindows = create<WindowsState>((set, get) => ({
     }
     const id = nextId();
     const base = DEFAULT_SIZE[appId];
-    const finalRect = clampToViewport({
-      ...base,
-      ...rect,
-      // cascade offset
-      x: base.x + (state.windows.length % 5) * 28,
-      y: base.y + (state.windows.length % 5) * 24,
-    });
-    const z = state.zCounter + 1;
+    // If an explicit rect with x/y is provided, use it directly (no cascade).
+    // Otherwise apply a cascade offset so multiple windows don't overlap.
+    const hasExplicitPos = rect && (rect.x !== undefined || rect.y !== undefined);
+    const finalRect = clampToViewport(
+      hasExplicitPos
+        ? { ...base, ...rect }
+        : {
+            ...base,
+            ...rect,
+            x: base.x + (state.windows.length % 5) * 28,
+            y: base.y + (state.windows.length % 5) * 24,
+          }
+    );
+    // Athena windows are always-on-top (z-index boosted above normal windows).
+    const alwaysOnTop = appId === "athena";
+    const z = alwaysOnTop ? 10000 + state.zCounter + 1 : state.zCounter + 1;
     const win: WindowInstance = {
       id,
       appId,
@@ -139,6 +148,7 @@ export const useWindows = create<WindowsState>((set, get) => ({
       zIndex: z,
       minimized: false,
       closing: false,
+      alwaysOnTop,
       payload,
     };
     set({ windows: [...state.windows, win], focusedId: id, zCounter: z });
@@ -166,9 +176,12 @@ export const useWindows = create<WindowsState>((set, get) => ({
 
   focus: (id) =>
     set((s) => {
-      const z = s.zCounter + 1;
+      const target = s.windows.find((w) => w.id === id);
+      if (!target) return s;
+      // Always-on-top windows get z in the 10000+ range; normal windows stay below.
+      const z = target.alwaysOnTop ? 10000 + s.zCounter + 1 : s.zCounter + 1;
       return {
-        zCounter: z,
+        zCounter: s.zCounter + 1,
         focusedId: id,
         windows: s.windows.map((w) =>
           w.id === id ? { ...w, zIndex: z, minimized: false } : w

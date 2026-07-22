@@ -23,7 +23,7 @@ export const windowTools: ToolDef[] = [
   {
     name: "open_app",
     description:
-      "Open a new app window on the user's desktop. Valid app ids: notes, tasks, files, music, settings, terminal, pomodoro, flashcards, grades, vut, editor, viewer, athena. Optionally provide a title and position/size.",
+      "Open a new app window on the user's desktop. Valid app ids: notes, tasks, files, music, settings, terminal, pomodoro, flashcards, grades, vut, editor, viewer, athena. For side-by-side layouts, provide x/y/width/height. Example: open notes at left half (x=0,y=0,width=960,height=700) and tasks at right half (x=960,y=0,width=960,height=700). If no position is given, the window opens at a default cascaded position.",
     clientAction: true,
     parameters: [
       {
@@ -34,10 +34,10 @@ export const windowTools: ToolDef[] = [
         required: true,
       },
       { name: "title", type: "string", description: "Window title (defaults to app name)" },
-      { name: "x", type: "number", description: "Window x position (pixels)" },
-      { name: "y", type: "number", description: "Window y position (pixels)" },
-      { name: "width", type: "number", description: "Window width (pixels)" },
-      { name: "height", type: "number", description: "Window height (pixels)" },
+      { name: "x", type: "number", description: "Window x position in pixels (0 = left edge)" },
+      { name: "y", type: "number", description: "Window y position in pixels (0 = top edge)" },
+      { name: "width", type: "number", description: "Window width in pixels" },
+      { name: "height", type: "number", description: "Window height in pixels" },
     ],
     handler: async (args) => {
       const appId = String(args.appId ?? "");
