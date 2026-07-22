@@ -11,8 +11,10 @@ import rehypeKatex from "rehype-katex";
 import {
   Search, Plus, Pin, Trash2, FolderPlus, FileText, Tag,
   Download, Loader2, Folder, Pencil, Columns2, Eye, Check,
+  ImageIcon, Paperclip, MoreVertical,
 } from "lucide-react";
 import { notesApi } from "../../services/notes";
+import { filesApi } from "../../services/files";
 import { useSettings } from "../../store/settings";
 import type { Note, NoteFolder } from "../../types";
 import type { WindowInstance } from "../../store/windows";
@@ -32,6 +34,12 @@ export default function NotesApp(_: { win: WindowInstance }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [mode, setMode] = useState<EditorMode>("split");
+
+  // Folder context menu + inline rename
+  const [folderMenu, setFolderMenu] = useState<{ x: number; y: number; folderId: string } | null>(null);
+  const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   // Dirty tracking (per-note) for save indicator + debounced flush.
   const [dirtyIds, setDirtyIds] = useState<Set<string>>(new Set());
@@ -111,6 +119,39 @@ export default function NotesApp(_: { win: WindowInstance }) {
     }
   };
 
+  const startRenameFolder = (folder: NoteFolder) => {
+    setRenamingFolderId(folder.id);
+    setRenameValue(folder.name);
+    setFolderMenu(null);
+  };
+
+  const confirmRenameFolder = async () => {
+    if (!renamingFolderId || !renameValue.trim()) {
+      setRenamingFolderId(null);
+      return;
+    }
+    try {
+      const { folder } = await notesApi.updateFolder(renamingFolderId, { name: renameValue.trim() });
+      setFolders((prev) => prev.map((f) => (f.id === folder.id ? folder : f)));
+    } catch (e) {
+      console.error(e);
+    }
+    setRenamingFolderId(null);
+  };
+
+  const deleteFolder = async (folder: NoteFolder) => {
+    setFolderMenu(null);
+    if (!confirm(`Delete folder "${folder.name}"? Notes inside will be moved to All Notes.`)) return;
+    try {
+      await notesApi.deleteFolder(folder.id);
+      setFolders((prev) => prev.filter((f) => f.id !== folder.id));
+      if (selectedFolder === folder.id) setSelectedFolder(null);
+      loadNotes();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   // Flush a single note's pending changes to the server immediately.
   const flushSave = useCallback(async (id: string) => {
     const timer = saveTimersRef.current.get(id);
@@ -162,6 +203,51 @@ export default function NotesApp(_: { win: WindowInstance }) {
     },
     [flushSave]
   );
+
+  // Insert markdown text at the end of the current note's content.
+  const insertAtCursor = useCallback((text: string) => {
+    const note = notesRef.current.find((n) => n.id === selectedId);
+    if (!note) return;
+    const newContent = note.content + (note.content && !note.content.endsWith("\n") ? "\n\n" : "") + text;
+    updateNote(note.id, { content: newContent });
+  }, [selectedId, updateNote]);
+
+  // Upload an image file and insert a markdown image reference.
+  const onImagePicked = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selected) return;
+    try {
+      const { file: uploaded } = await filesApi.upload(file);
+      const url = filesApi.downloadUrl(uploaded.id);
+      const alt = file.name.replace(/\.[^.]+$/, "");
+      insertAtCursor(`![${alt}](${url})`);
+    } catch (err) {
+      console.error("Image upload failed", err);
+    } finally {
+      e.target.value = "";
+    }
+  };
+
+  // Handle file drag-drop onto the editor — inserts a markdown link/image.
+  const onEditorDrop = async (e: React.DragEvent) => {
+    const fileId = e.dataTransfer.getData("text/file-id");
+    if (!fileId || !selected) return;
+    e.preventDefault();
+    try {
+      const { files } = await filesApi.all();
+      const file = files.find((f) => f.id === fileId);
+      if (!file) return;
+      const url = filesApi.downloadUrl(file.id);
+      const isImage = file.mimeType.startsWith("image/");
+      if (isImage) {
+        insertAtCursor(`![${file.name.replace(/\.[^.]+$/, "")}](${url})`);
+      } else {
+        insertAtCursor(`[${file.name}](${url})`);
+      }
+    } catch (err) {
+      console.error("File reference insert failed", err);
+    }
+  };
 
   // Flush all pending saves on unmount.
   useEffect(() => {
@@ -273,18 +359,80 @@ export default function NotesApp(_: { win: WindowInstance }) {
             <Folder size={14} /> All notes
           </button>
           {folders.map((f) => (
-            <button
+            <div
               key={f.id}
-              onClick={() => setSelectedFolder(f.id)}
-              className={`mb-0.5 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs ${
+              className={`group mb-0.5 flex w-full items-center gap-1 rounded-md px-1.5 py-1.5 text-left text-xs ${
                 selectedFolder === f.id ? "bg-accent/15 text-accent" : "text-ink hover:bg-surface-3"
               }`}
             >
-              <Folder size={14} /> {f.name}
-            </button>
+              <Folder size={14} className="shrink-0" />
+              {renamingFolderId === f.id ? (
+                <input
+                  autoFocus
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onBlur={confirmRenameFolder}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") confirmRenameFolder();
+                    if (e.key === "Escape") setRenamingFolderId(null);
+                  }}
+                  className="flex-1 rounded border border-accent bg-surface px-1 py-0 text-xs text-ink outline-none"
+                />
+              ) : (
+                <button
+                  onClick={() => setSelectedFolder(f.id)}
+                  onDoubleClick={() => startRenameFolder(f)}
+                  className="flex-1 truncate text-left"
+                >
+                  {f.name}
+                </button>
+              )}
+              {renamingFolderId !== f.id && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setFolderMenu({ x: e.clientX, y: e.clientY, folderId: f.id });
+                  }}
+                  className="shrink-0 rounded p-0.5 text-ink-muted opacity-0 transition hover:bg-surface-3 hover:text-ink group-hover:opacity-100"
+                  title="More options"
+                >
+                  <MoreVertical size={12} />
+                </button>
+              )}
+            </div>
           ))}
         </div>
       </div>
+
+      {/* Folder context menu */}
+      {folderMenu && (
+        <>
+          <div className="fixed inset-0 z-50" onClick={() => setFolderMenu(null)} onContextMenu={(e) => { e.preventDefault(); setFolderMenu(null); }} />
+          <div
+            className="fixed z-50 min-w-[140px] rounded-lg border border-edge bg-surface py-1 shadow-window"
+            style={{ left: folderMenu.x, top: folderMenu.y }}
+          >
+            <button
+              onClick={() => {
+                const f = folders.find((x) => x.id === folderMenu.folderId);
+                if (f) startRenameFolder(f);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-ink hover:bg-surface-3"
+            >
+              <Pencil size={12} /> Rename
+            </button>
+            <button
+              onClick={() => {
+                const f = folders.find((x) => x.id === folderMenu.folderId);
+                if (f) deleteFolder(f);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-red-400 hover:bg-surface-3"
+            >
+              <Trash2 size={12} /> Delete
+            </button>
+          </div>
+        </>
+      )}
 
       {/* Note list */}
       <div className="flex w-60 shrink-0 flex-col border-r border-edge">
@@ -351,6 +499,20 @@ export default function NotesApp(_: { win: WindowInstance }) {
                 placeholder="Note title"
                 className="flex-1 bg-transparent text-sm font-semibold text-ink outline-none"
               />
+              <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={onImagePicked}
+              />
+              <button
+                onClick={() => imageInputRef.current?.click()}
+                className="flex h-7 w-7 items-center justify-center rounded text-ink-muted hover:bg-surface-3"
+                title="Insert image"
+              >
+                <ImageIcon size={14} />
+              </button>
               <button
                 onClick={() => togglePin(selected)}
                 className={`flex h-7 w-7 items-center justify-center rounded ${
@@ -425,6 +587,7 @@ export default function NotesApp(_: { win: WindowInstance }) {
               extensions={markdownExtensions}
               onChange={(content) => updateNote(selected.id, { content })}
               onBlur={() => void flushSave(selected.id)}
+              onDrop={onEditorDrop}
             />
           </>
         ) : (
@@ -471,6 +634,7 @@ function NoteEditor({
   extensions,
   onChange,
   onBlur,
+  onDrop,
 }: {
   note: Note;
   mode: EditorMode;
@@ -478,12 +642,17 @@ function NoteEditor({
   extensions: Extension[];
   onChange: (content: string) => void;
   onBlur: () => void;
+  onDrop?: (e: React.DragEvent) => void;
 }) {
   const showEditor = mode === "edit" || mode === "split";
   const showPreview = mode === "preview" || mode === "split";
 
   return (
-    <div className="flex flex-1 overflow-hidden">
+    <div
+      className="flex flex-1 overflow-hidden"
+      onDragOver={(e) => { if (e.dataTransfer.types.includes("text/file-id")) e.preventDefault(); }}
+      onDrop={onDrop}
+    >
       {showEditor && (
         <div className={showPreview ? "w-1/2 border-r border-edge" : "w-full"}>
           <CodeMirror
@@ -513,6 +682,21 @@ function NoteEditor({
             <ReactMarkdown
               remarkPlugins={[remarkGfm, remarkMath]}
               rehypePlugins={[rehypeKatex]}
+              components={{
+                img: ({ src, alt }) => (
+                  <img
+                    src={typeof src === "string" ? src : undefined}
+                    alt={alt ?? ""}
+                    className="my-3 max-w-full rounded-lg border border-edge"
+                    loading="lazy"
+                  />
+                ),
+                a: ({ href, children }) => (
+                  <a href={href} target="_blank" rel="noopener noreferrer" className="text-accent underline hover:opacity-80">
+                    {children}
+                  </a>
+                ),
+              }}
             >
               {note.content || "*Nothing to preview yet.*"}
             </ReactMarkdown>

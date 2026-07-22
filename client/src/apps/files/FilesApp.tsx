@@ -60,6 +60,13 @@ export default function FilesApp(_: { win: WindowInstance }) {
   const dragCounter = useRef(0);
   const [dragOver, setDragOver] = useState(false);
 
+  // Rubber band (lasso) selection state
+  const fileAreaRef = useRef<HTMLDivElement>(null);
+  const [rubberBand, setRubberBand] = useState<{ startX: number; startY: number; endX: number; endY: number } | null>(null);
+  const rubberBandRef = useRef<{ startX: number; startY: number; endX: number; endY: number } | null>(null);
+  const rubberBaseSelection = useRef<Set<string>>(new Set());
+  const isRubberBanding = useRef(false);
+
   // ---- Data loading ----
   const loadTree = useCallback(async () => {
     try {
@@ -238,6 +245,66 @@ export default function FilesApp(_: { win: WindowInstance }) {
 
   const clearSelection = useCallback(() => {
     setSelected(new Set());
+  }, []);
+
+  // ---- Rubber band (lasso) selection ----
+  const onFileAreaMouseDown = useCallback((e: React.MouseEvent) => {
+    // Only start rubber band on left-click on empty area (not on a file/folder item)
+    if (e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    if (target.closest("[data-file-item]") || target.closest("[data-folder-item]")) return;
+    const area = fileAreaRef.current;
+    if (!area) return;
+    const rect = area.getBoundingClientRect();
+    const startX = e.clientX - rect.left + area.scrollLeft;
+    const startY = e.clientY - rect.top + area.scrollTop;
+    isRubberBanding.current = true;
+    rubberBaseSelection.current = e.ctrlKey || e.metaKey ? new Set(selected) : new Set();
+    const band = { startX, startY, endX: startX, endY: startY };
+    rubberBandRef.current = band;
+    setRubberBand({ ...band });
+    // Don't clear selection yet — we'll set it based on intersection
+    e.preventDefault();
+  }, [selected]);
+
+  const onFileAreaMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!isRubberBanding.current || !fileAreaRef.current) return;
+    const area = fileAreaRef.current;
+    const rect = area.getBoundingClientRect();
+    const endX = e.clientX - rect.left + area.scrollLeft;
+    const endY = e.clientY - rect.top + area.scrollTop;
+    const band = rubberBandRef.current;
+    if (!band) return;
+    band.endX = endX;
+    band.endY = endY;
+    setRubberBand({ ...band });
+
+    // Compute which file items intersect with the rubber band rectangle
+    const rbLeft = Math.min(band.startX, band.endX);
+    const rbTop = Math.min(band.startY, band.endY);
+    const rbRight = Math.max(band.startX, band.endX);
+    const rbBottom = Math.max(band.startY, band.endY);
+
+    const items = area.querySelectorAll("[data-file-item]");
+    const intersecting = new Set(rubberBaseSelection.current);
+    items.forEach((item) => {
+      const el = item as HTMLElement;
+      const elRect = el.getBoundingClientRect();
+      const elLeft = elRect.left - rect.left + area.scrollLeft;
+      const elTop = elRect.top - rect.top + area.scrollTop;
+      const elRight = elLeft + elRect.width;
+      const elBottom = elTop + elRect.height;
+      if (rbLeft < elRight && rbRight > elLeft && rbTop < elBottom && rbBottom > elTop) {
+        intersecting.add(el.dataset.fileId ?? "");
+      }
+    });
+    setSelected(intersecting);
+  }, []);
+
+  const onFileAreaMouseUp = useCallback(() => {
+    isRubberBanding.current = false;
+    rubberBandRef.current = null;
+    setRubberBand(null);
   }, []);
 
   // ---- File operations ----
@@ -840,13 +907,30 @@ export default function FilesApp(_: { win: WindowInstance }) {
 
         {/* File area */}
         <div
-          className={`relative flex-1 overflow-y-auto p-3 ${dragOver ? "bg-accent/5" : ""}`}
+          ref={fileAreaRef}
+          className={`relative flex-1 overflow-y-auto p-3 ${dragOver ? "bg-accent/5" : ""} ${isRubberBanding.current ? "select-none" : ""}`}
           onDragOver={onDragOver}
           onDragEnter={onDragEnter}
           onDragLeave={onDragLeave}
           onDrop={onDrop}
-          onClick={() => { clearSelection(); setPreview(null); }}
+          onMouseDown={onFileAreaMouseDown}
+          onMouseMove={onFileAreaMouseMove}
+          onMouseUp={onFileAreaMouseUp}
+          onClick={() => { if (!isRubberBanding.current) { clearSelection(); setPreview(null); } }}
         >
+          {/* Rubber band selection rectangle */}
+          {rubberBand && (
+            <div
+              className="pointer-events-none absolute z-20 border border-accent/60 bg-accent/15"
+              style={{
+                left: Math.min(rubberBand.startX, rubberBand.endX),
+                top: Math.min(rubberBand.startY, rubberBand.endY),
+                width: Math.abs(rubberBand.endX - rubberBand.startX),
+                height: Math.abs(rubberBand.endY - rubberBand.startY),
+              }}
+            />
+          )}
+
           {dragOver && (
             <div className="pointer-events-none absolute inset-3 z-10 flex items-center justify-center rounded-xl border-2 border-dashed border-accent bg-accent/10">
               <div className="flex flex-col items-center gap-2 text-accent">
@@ -916,6 +1000,7 @@ export default function FilesApp(_: { win: WindowInstance }) {
                 <div
                   key={file.id}
                   data-file-item
+                  data-file-id={file.id}
                   onDoubleClick={() => openFile(file)}
                   onClick={(e) => { e.stopPropagation(); selectFile(file.id, e); setPreview(file); }}
                   onContextMenu={(e) => showFileContextMenu(e, file)}
@@ -1019,6 +1104,7 @@ export default function FilesApp(_: { win: WindowInstance }) {
                   <tr
                     key={file.id}
                     data-file-item
+                    data-file-id={file.id}
                     onDoubleClick={() => openFile(file)}
                     onClick={(e) => { e.stopPropagation(); selectFile(file.id, e); setPreview(file); }}
                     onContextMenu={(e) => showFileContextMenu(e, file)}
