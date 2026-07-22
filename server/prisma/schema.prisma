@@ -27,6 +27,7 @@ model User {
   courses     Course[]
   vutCreds    VutCredentials?
   aiCred      AiCredential?
+  workspaces  Workspace[]
 }
 
 model NoteFolder {
@@ -244,4 +245,18 @@ model AiCredential {
   modelId    String?  // optional model id override
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+}
+
+// ===== Athena Workspaces (saved window layouts) =====
+
+model Workspace {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  layout    String   // JSON: array of { appId, title, rect, payload }
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, name])
 }

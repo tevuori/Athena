@@ -9,8 +9,19 @@ import {
   type PluginParameter,
 } from "multi-llm-ts";
 
+export interface ClientWindowInfo {
+  id: string;
+  appId: string;
+  title: string;
+  rect: { x: number; y: number; width: number; height: number };
+  minimized: boolean;
+  focused: boolean;
+}
+
 export interface ToolContext {
   userId: string;
+  /** Current open windows on the client (sent with the chat request). */
+  windows: ClientWindowInfo[];
 }
 
 export interface ToolDef {

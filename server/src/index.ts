@@ -52,9 +52,12 @@ const port = Number(process.env.SERVER_PORT ?? 3000);
 const hostname = process.env.SERVER_HOST ?? "0.0.0.0";
 
 // Bun-native serve pattern: export default { port, fetch }.
+// idleTimeout is in seconds — default 10s kills SSE streams mid-tool-loop.
+// Set to 300s (5 min) so Athena chat streams with multi-step tool calls survive.
 console.log(`[athena-server] Bun serving on http://${hostname}:${port}`);
 export default {
   port,
   hostname,
+  idleTimeout: 255,
   fetch: app.fetch,
 };

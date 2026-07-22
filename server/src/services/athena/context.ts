@@ -7,6 +7,7 @@
 import path from "node:path";
 import { readFile } from "node:fs/promises";
 import prisma from "../../db/client";
+import type { ClientWindowInfo } from "./tools/plugin";
 
 const UPLOAD_DIR = path.resolve(process.cwd(), "uploads");
 const RECENT_FILE_COUNT = 5;
@@ -93,11 +94,24 @@ export async function workspaceSummary(userId: string): Promise<string> {
   return `Tasks: ${taskCount} (${openTasks} open) | Notes: ${noteCount} | Courses: ${courseCount} | Files: ${fileCount}`;
 }
 
-export async function buildSystemPrompt(userId: string): Promise<string> {
+function windowsContext(windows: ClientWindowInfo[]): string {
+  if (windows.length === 0) return "No windows open.";
+  const lines = windows.map((w) => {
+    const state = w.minimized ? "minimized" : w.focused ? "focused" : "open";
+    return `- id=${w.id} | ${w.appId} "${w.title}" | ${state} | pos=(${w.rect.x},${w.rect.y}) size=${w.rect.width}x${w.rect.height}`;
+  });
+  return lines.join("\n");
+}
+
+export async function buildSystemPrompt(
+  userId: string,
+  windows: ClientWindowInfo[] = []
+): Promise<string> {
   const [recent, summary] = await Promise.all([
     recentFilesContext(userId),
     workspaceSummary(userId),
   ]);
+  const winCtx = windowsContext(windows);
   return `You are Athena, the user's personal workspace assistant living inside their Athena Student OS desktop. You can see and act on the user's workspace through tools.
 
 Capabilities (via tools):
@@ -106,6 +120,8 @@ Capabilities (via tools):
 - Notes: list_notes, read_note, create_note
 - Files: list_files, search_files, read_file, edit_file
 - Focus: start_pomodoro (opens the Pomodoro timer on the user's desktop)
+- Window management: open_app, close_window, focus_window, minimize_window, resize_window, move_window, list_open_windows, tile_windows
+- Workspaces: save_workspace, open_workspace, list_workspaces, delete_workspace
 
 Guidelines:
 - Be concise and direct. Prefer action over explanation.
@@ -113,10 +129,15 @@ Guidelines:
 - Before editing a file, read it first so you know the current content, then call edit_file with the FULL new content (edit_file replaces the whole file).
 - Destructive actions (edit_file, create_note, update_task_status) are confirmed by the user on the client; proceed normally.
 - For start_pomodoro, just call the tool — the timer opens automatically on the user's desktop.
+- For window management: use the window ids from "Open windows" below. open_app starts a new app window. Window tools (close/focus/minimize/resize/move) are client-side actions that execute immediately.
+- For workspaces: save_workspace captures the current window layout (all open windows + their positions/sizes). open_workspace restores a saved layout by closing all current windows and reopening them at their saved positions.
 - Use Markdown for formatting responses.
-- Don't invent file ids or note ids — always obtain them from list_files / search_files / list_notes first.
+- Don't invent file ids, note ids, or window ids — always obtain them from the context lists or list_files / search_files / list_notes first.
 
 Workspace summary: ${summary}
+
+Open windows (id | app | title | state | position | size):
+${winCtx}
 
 Recently opened files (id | path | type | size | preview):
 ${recent}`;

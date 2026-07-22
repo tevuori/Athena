@@ -4,8 +4,10 @@ import { gradeTools } from "./grades";
 import { noteTools } from "./notes";
 import { fileTools } from "./files";
 import { pomodoroTools } from "./pomodoro";
+import { windowTools } from "./windows";
+import { workspaceTools } from "./workspaces";
 
-export { AthenaToolsPlugin, type ToolDef, type ToolContext } from "./plugin";
+export { AthenaToolsPlugin, type ToolDef, type ToolContext, type ClientWindowInfo } from "./plugin";
 
 /** All Athena tools, in registration order. */
 export const ALL_TOOLS: ToolDef[] = [
@@ -14,6 +16,8 @@ export const ALL_TOOLS: ToolDef[] = [
   ...noteTools,
   ...fileTools,
   ...pomodoroTools,
+  ...windowTools,
+  ...workspaceTools,
 ];
 
 /** Tool metadata safe to expose to the client (no handlers). */

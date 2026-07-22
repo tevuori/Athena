@@ -11,6 +11,7 @@ import {
   ALL_TOOLS,
   CLIENT_ACTION_TOOLS,
   toolManifest,
+  type ClientWindowInfo,
 } from "../services/athena/tools";
 
 const athena = new Hono();
@@ -18,6 +19,20 @@ athena.use("*", authMiddleware);
 
 /** GET /api/athena/tools — list available tools (for client UI). */
 athena.get("/tools", (c) => c.json({ tools: toolManifest() }));
+
+const windowSchema = z.object({
+  id: z.string(),
+  appId: z.string(),
+  title: z.string(),
+  rect: z.object({
+    x: z.number(),
+    y: z.number(),
+    width: z.number(),
+    height: z.number(),
+  }),
+  minimized: z.boolean().default(false),
+  focused: z.boolean().default(false),
+});
 
 const chatSchema = z.object({
   messages: z
@@ -29,6 +44,8 @@ const chatSchema = z.object({
     )
     .min(1)
     .max(50),
+  /** Current open windows on the client (for window management tools + context). */
+  windows: z.array(windowSchema).default([]),
 });
 
 /**
@@ -48,7 +65,8 @@ athena.post("/chat", zValidator("json", chatSchema), async (c) => {
     );
   }
 
-  const systemPrompt = await buildSystemPrompt(userId);
+  const clientWindows: ClientWindowInfo[] = body.windows ?? [];
+  const systemPrompt = await buildSystemPrompt(userId, clientWindows);
   const thread: Message[] = [
     new Message("system", systemPrompt),
     ...body.messages.map((m) => new Message(m.role as "user" | "assistant", m.content)),
@@ -62,7 +80,10 @@ athena.post("/chat", zValidator("json", chatSchema), async (c) => {
     c,
     async (stream) => {
       const model = buildModel(cfg);
-      const plugin = new AthenaToolsPlugin(ALL_TOOLS, { userId });
+      const plugin = new AthenaToolsPlugin(ALL_TOOLS, {
+        userId,
+        windows: clientWindows,
+      });
       model.addPlugin(plugin);
 
       try {
@@ -76,7 +97,6 @@ athena.post("/chat", zValidator("json", chatSchema), async (c) => {
               data: JSON.stringify({ text: chunk.text ?? "", done: chunk.done }),
             });
           } else if (chunk.type === "reasoning") {
-            // Reasoning content — forward as a separate event (optional UI use).
             await stream.writeSSE({
               event: "reasoning",
               data: JSON.stringify({ text: chunk.text ?? "" }),
@@ -92,7 +112,6 @@ athena.post("/chat", zValidator("json", chatSchema), async (c) => {
                 result: chunk.state === "completed" ? chunk.call?.result : undefined,
               }),
             });
-            // Forward client-action tool results so the desktop can act on them.
             if (
               chunk.state === "completed" &&
               CLIENT_ACTION_TOOLS.has(chunk.name) &&

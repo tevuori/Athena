@@ -9,6 +9,15 @@ export interface AthenaMessage {
   content: string;
 }
 
+export interface AthenaWindowState {
+  id: string;
+  appId: string;
+  title: string;
+  rect: { x: number; y: number; width: number; height: number };
+  minimized: boolean;
+  focused: boolean;
+}
+
 export interface AthenaToolEvent {
   id: string;
   name: string;
@@ -40,7 +49,8 @@ export interface AthenaChatHandle {
 /** Stream one Athena turn. Resolves when the stream ends (done or error). */
 export function streamAthenaChat(
   messages: AthenaMessage[],
-  cb: AthenaStreamCallbacks
+  cb: AthenaStreamCallbacks,
+  windows: AthenaWindowState[] = []
 ): AthenaChatHandle {
   const controller = new AbortController();
   const token = getToken();
@@ -54,7 +64,7 @@ export function streamAthenaChat(
           "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ messages }),
+        body: JSON.stringify({ messages, windows }),
         signal: controller.signal,
       });
     } catch (e) {
