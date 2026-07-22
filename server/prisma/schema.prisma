@@ -26,6 +26,7 @@ model User {
   flashcardDecks FlashcardDeck[]
   courses     Course[]
   vutCreds    VutCredentials?
+  aiCred      AiCredential?
 }
 
 model NoteFolder {
@@ -98,6 +99,7 @@ model VFolder {
   userId   String
   user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([userId, parentId])
 }
@@ -112,9 +114,14 @@ model VFile {
   folder     VFolder? @relation("VFolderFiles", fields: [folderId], references: [id], onDelete: SetNull)
   userId     String
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  starred    Boolean  @default(false)
   createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  lastOpenedAt DateTime?
 
   @@index([userId, folderId])
+  @@index([userId, starred])
+  @@index([userId, lastOpenedAt])
 }
 
 model LyricsCache {
@@ -223,4 +230,18 @@ model VutCredentials {
   passwordEnc String // AES-256-GCM encrypted
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ===== AI provider credentials (OpenCode Zen / OpenAI-compatible) =====
+
+model AiCredential {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  apiKeyEnc  String   // AES-256-GCM encrypted API key
+  provider   String   @default("openai") // multi-llm-ts engine id (openai|deepseek|anthropic|openrouter|ollama|...)
+  baseUrl    String?  // optional custom base URL (e.g. OpenCode Zen: https://opencode.ai/zen/v1)
+  modelId    String?  // optional model id override
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }

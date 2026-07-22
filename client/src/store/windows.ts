@@ -10,7 +10,10 @@ export type AppId =
   | "pomodoro"
   | "flashcards"
   | "grades"
-  | "vut";
+  | "vut"
+  | "editor"
+  | "viewer"
+  | "athena";
 
 export interface WindowRect {
   x: number;
@@ -85,6 +88,9 @@ const DEFAULT_SIZE: Record<AppId, WindowRect> = {
   flashcards: { x: 160, y: 80, width: 880, height: 600 },
   grades: { x: 140, y: 70, width: 920, height: 620 },
   vut: { x: 120, y: 60, width: 960, height: 660 },
+  editor: { x: 160, y: 70, width: 920, height: 640 },
+  viewer: { x: 200, y: 90, width: 820, height: 620 },
+  athena: { x: 200, y: 90, width: 760, height: 620 },
 };
 
 function clampToViewport(rect: WindowRect): WindowRect {

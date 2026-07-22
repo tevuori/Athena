@@ -69,6 +69,7 @@ See `.env.example`. Key ones:
 - `SEED_USERNAME` / `SEED_PASSWORD` — default user created by seed
 - `VITE_API_URL` — backend URL for client (used by Vite proxy)
 - `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` / `SPOTIFY_REFRESH_TOKEN` — Spotify integration
+- `OPENAI_PROVIDER` / `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL` — Athena LLM server-wide fallback (per-user config in DB takes priority). Default provider `openai`, base URL `https://opencode.ai/zen/v1`, model `deepseek-v4-flash-free`.
 
 ## Project structure
 
@@ -81,8 +82,9 @@ Athena/
 │   └── src/
 │       ├── index.ts              # Hono app entry
 │       ├── db/{client.ts, seed.ts}
-│       ├── routes/{auth, notes, tasks, files, spotify, lyrics, flashcards, grades, vut}.ts
-│       ├── services/{spotify.ts, lrclib.ts, jwt.ts, vut.ts}
+│       ├── routes/{auth, notes, tasks, files, spotify, lyrics, flashcards, grades, vut, ai, athena}.ts
+│       ├── services/{spotify.ts, lrclib.ts, jwt.ts, vut.ts, crypto.ts}
+│       ├── services/athena/{llm.ts, context.ts, tools/}  # multi-llm-ts client, system prompt, tool plugins
 │       └── middleware/auth.ts
 └── client/
     └── src/
@@ -95,15 +97,18 @@ Athena/
         │   ├── registry.tsx      # app manifest
         │   ├── notes/            # Notes (markdown editor)
         │   ├── tasks/            # Tasks (Kanban)
-        │   ├── files/            # File Manager (virtual FS)
+        │   ├── files/            # File Manager (virtual FS, tree sidebar, list/grid, multi-select, context menus, drag-drop, bulk zip)
+        │   ├── editor/           # Code Editor (CodeMirror 6, 40+ languages, markdown live-preview, auto-save)
+        │   ├── viewer/           # File Viewer (image zoom/pan, PDF, audio, video, fullscreen)
         │   ├── music/            # Music Player (Spotify + LRCLIB lyrics)
         │   ├── pomodoro/         # Pomodoro/Focus Timer (SVG ring, DND)
         │   ├── flashcards/       # Flashcards (SM-2, 3D flip review)
         │   ├── grades/           # Grade Tracker (GPA, weighted assignments)
         │   ├── vut/              # VUT Studis (grades, timetable, updates, web view)
-        │   └── settings/         # Settings (theme, wallpaper, account)
+        │   ├── athena/           # Athena assistant (chat UI, tool-call chips, SSE stream)
+        │   └── settings/         # Settings (theme, wallpaper, account, AI provider)
         ├── store/                # Zustand stores (auth, windows, settings, music, notifications)
-        ├── services/             # API clients (api, notes, tasks, files, spotify, lyrics, flashcards, grades, vut)
+        ├── services/             # API clients (api, notes, tasks, files, spotify, lyrics, flashcards, grades, vut, athena)
         └── types/                # shared TS types
 ```
 
@@ -140,14 +145,45 @@ Athena/
 - Settings app: light/dark theme, accent color picker, wallpaper picker, account info, notification preferences
 
 ### Apps
-1. **Notes** — Markdown editor with live preview, folder organization, tags, search, auto-save (debounced), pin, export to Markdown/PDF
+1. **Notes** — Markdown editor with live preview, folder organization, tags, search, auto-save (debounced), pin, export to Markdown/PDF. **Realtime split editor** (CodeMirror 6 markdown + live preview, edit/split/preview modes), **full LaTeX** via KaTeX (`$...$` inline, `$$...$$` display), debounced auto-save (1.5s, saves on blur + `Ctrl/Cmd+S`, dirty indicator per note).
 2. **Tasks** — Kanban board (To Do / In Progress / Done) with drag-and-drop, priority tags, due dates
-3. **File Manager** — Virtual folder tree, upload/download, image/PDF/text preview, delete
-4. **Music Player** — Spotify Web Playback SDK integration, now-playing controls (play/pause/skip/seek/volume), LRCLIB synced lyrics with auto-scroll + highlight, manual lyrics search fallback, mini-player floating widget
-5. **Pomodoro / Focus Timer** — Circular SVG progress ring, 25/5/15 work-break intervals, auto long-break after 4 sessions, Web Audio API chime on phase change, auto-enables Do-Not-Disturb during focus, daily session stats (localStorage), sound toggle
-6. **Flashcards** — SM-2 spaced repetition algorithm, deck browser with color tags, card CRUD, 3D flip-card review mode (CSS `rotateY` + `backface-visibility`), 4-level quality rating (Again/Hard/Good/Easy), due-date scheduling, progress bar during review
-7. **Grade Tracker / GPA Calculator** — Course management with semester filtering, weighted assignment categories (Homework/Quiz/Exam/Lab/etc.), credit-weighted GPA on 4.0 scale, letter grade conversion (A/A-/B+/...), animated percentage bars, color-coded scores, expandable course cards
-8. **VUT Studis** — Brno University of Technology integration:
+3. **File Manager** — Full-featured virtual file system:
+   - 3-pane layout: sidebar (folder tree + smart collections) | main (toolbar + breadcrumbs + file area) | quick-look panel
+   - Smart collections: Home, Recent (last opened), Starred, All Files
+   - Recursive folder tree sidebar with expand/collapse, file counts per folder, drag-drop to move
+   - Grid and list views with sortable columns (name/size/modified/type, asc/desc)
+   - Multi-select: click, Ctrl/Cmd+click (toggle), Shift+click (range), Ctrl+A (select all)
+   - Selection bar: bulk download as ZIP, copy/cut/paste files, bulk delete
+   - Right-click context menus (per file, per folder, empty space) using shared ContextMenu component
+   - File operations: rename (F2), duplicate, star/unstar, move (drag-drop or paste), delete
+   - Folder operations: rename, move (drag-drop with cycle detection), download as ZIP, delete (recursive)
+   - Drag-and-drop file upload (drop anywhere in file area)
+   - Search box (filters current view by name)
+   - Storage usage bar in sidebar
+   - Keyboard shortcuts: Delete, F2, Enter, Ctrl+A/C/X/V, F5, Backspace (go up)
+   - Quick-look panel: single-click shows preview (image/PDF/audio/video/text) + file metadata + Open/Download buttons
+   - Double-click opens file in Editor (text/code) or Viewer (media) window
+4. **Code Editor** — CodeMirror 6-based text/code editor:
+   - Syntax highlighting for 40+ languages (JS/TS, Python, Go, Rust, Java, C/C++, C#, PHP, HTML, CSS, JSON, SQL, XML, Markdown, YAML, TOML, Shell, Ruby, Lua, R, Swift, Kotlin, Scala, Dart, GraphQL, Diff, and more)
+   - Markdown live-preview: edit / split / preview modes
+   - Auto-save (debounced 1.5s for existing files; prompt for name on new files)
+   - Ctrl+S manual save, word-wrap toggle, download
+   - Light/dark theme follows app settings
+   - Status bar: language, char count, line count, file size, save status
+   - Dirty-state indicator (● in window title)
+   - Opened via Files double-click or Command Palette
+5. **File Viewer** — Media viewer for non-text files:
+   - Image: zoom (wheel/buttons), pan (drag), fit-to-screen, actual size (1:1), fullscreen
+   - PDF: embedded iframe viewer
+   - Audio: native player with controls
+   - Video: native player with controls
+   - Fallback: "No preview available" + download button
+   - Opened via Files double-click or Command Palette
+6. **Music Player** — Spotify Web Playback SDK integration, now-playing controls (play/pause/skip/seek/volume), LRCLIB synced lyrics with auto-scroll + highlight, manual lyrics search fallback, mini-player floating widget
+7. **Pomodoro / Focus Timer** — Circular SVG progress ring, 25/5/15 work-break intervals, auto long-break after 4 sessions, Web Audio API chime on phase change, auto-enables Do-Not-Disturb during focus, daily session stats (localStorage), sound toggle
+8. **Flashcards** — SM-2 spaced repetition algorithm, deck browser with color tags, card CRUD, 3D flip-card review mode (CSS `rotateY` + `backface-visibility`), 4-level quality rating (Again/Hard/Good/Easy), due-date scheduling, progress bar during review
+9. **Grade Tracker / GPA Calculator** — Course management with semester filtering, weighted assignment categories (Homework/Quiz/Exam/Lab/etc.), credit-weighted GPA on 4.0 scale, letter grade conversion (A/A-/B+/...), animated percentage bars, color-coded scores, expandable course cards
+10. **VUT Studis** — Brno University of Technology integration:
    - One-time login with VUT credentials (id.vut.cz) — encrypted with AES-256-GCM, stored in DB
    - Backend handles full Shibboleth/SAML SSO flow with cookie jar + session caching (25min TTL)
    - **Overview tab**: today's classes, quick stats (graded courses, weekly classes, updates), recent subject updates, quick links
@@ -156,11 +192,19 @@ Athena/
    - **Updates tab**: subject announcements feed parsed from `aktuality_predmet`, sorted by date
    - **Web View tab**: embedded browser via backend reverse proxy (strips X-Frame-Options, rewrites URLs for seamless navigation), address bar, open-in-new-tab
    - HTML parsing with cheerio, resilient multi-strategy parsers (table-based + div-based)
-9. **Settings** — Theme, wallpaper, accent, account, notifications
+11. **Settings** — Theme, wallpaper, accent, account, notifications, AI provider (key + provider/baseURL/model)
+12. **Athena** — LLM workspace assistant (chat UI) powered by `multi-llm-ts`:
+    - Streaming chat over SSE (`POST /api/athena/chat`): content + tool-call progress + client-action events
+    - Tool calling via `MultiToolPlugin` (per-request, per-user): `create_task`, `list_tasks`, `update_task_status`, `list_courses`, `get_course_grades`, `list_notes`, `read_note`, `create_note`, `list_files`, `search_files`, `read_file`, `edit_file`, `start_pomodoro`
+    - **Recent-files context**: the 5 most recently opened files (id, path, type, size, short text preview — NOT full content) are injected into the system prompt every turn, so Athena already "knows" what files exist. Full contents are loaded on demand via `read_file`.
+    - **Client-action dispatch**: tools that affect the desktop (e.g. `start_pomodoro`) return a payload streamed as a `client_action` SSE event; the client opens/controls the relevant app (Pomodoro auto-starts with the requested phase/duration).
+    - Multi-turn conversation history sent each turn; abortable via the Stop button.
+    - Any `multi-llm-ts` provider works (openai, deepseek, anthropic, openrouter, ollama, groq, mistralai, google, xai, meta, cerebras). Defaults to OpenCode Zen (DeepSeek V4 Flash Free). Per-user config encrypted (AES-256-GCM) in DB; server-wide fallback via env vars.
 
 ### Command Palette (Spotlight)
 - Triggered with `Ctrl+Space` (or `Cmd+Space` on Mac)
-- Fuzzy search across: apps, quick actions, notes, tasks
+- Fuzzy search across: apps, quick actions, files, notes, tasks
+- File results open in Editor (text/code) or Viewer (media) depending on file type
 - Built-in calculator: type a math expression → get instant result (click to copy)
 - Keyboard navigation: `↑↓` to move, `Enter` to select, `Esc` to close
 - Animated overlay with backdrop blur
@@ -168,12 +212,14 @@ Athena/
 ### Backend
 - JWT auth (login/register/me)
 - Full CRUD for notes, note folders, tasks, files, virtual folders
+- File management: upload/download, rename, move, duplicate, star, text content read/write, bulk zip download (fflate), folder zip, recursive folder tree, storage stats, file search, recent/starred filters
 - File upload/download with streaming
 - Spotify proxy: token refresh, player control (play/pause/skip/seek/volume/shuffle/repeat/transfer), currently-playing
 - LRCLIB proxy: exact match (`/get`) with DB cache, fuzzy search (`/search`), manual cache, LRC parser, User-Agent header, 300ms throttle
 - Flashcards: deck CRUD, card CRUD, SM-2 review endpoint (`POST /cards/:id/review` with quality 0-5), due cards aggregation (`GET /due`)
 - Grades: course CRUD, assignment CRUD, semester listing, weighted percentage + GPA computation helpers (client-side in `services/grades.ts`)
 - VUT: credential management (AES-256-GCM encrypted), Shibboleth/SAML SSO authentication, session caching, HTML parsing (cheerio), reverse proxy for iframe embedding
+- Athena (assistant): per-user LLM provider config (AES-256-GCM encrypted in DB: apiKey + provider + baseUrl + modelId), unified via `multi-llm-ts` (`services/athena/llm.ts`), `POST /api/athena/chat` SSE streaming agent with tool calling (`MultiToolPlugin` per request, `services/athena/tools/`), `GET /api/athena/tools` manifest; system prompt built in `services/athena/context.ts` with workspace summary + 5 recent files; server-wide fallback via `OPENAI_PROVIDER` / `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL`
 
 ## Deferred (future iterations)
 

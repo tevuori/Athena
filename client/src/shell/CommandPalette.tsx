@@ -3,15 +3,17 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Search, CornerDownLeft, AppWindow, StickyNote, CheckSquare,
   Calculator, Play, Brain, GraduationCap, Timer, Folder, Settings as SettingsIcon,
+  FileText, Image as ImageIcon, FileCode, Eye, Code2, Music as MusicIcon, Video as VideoIcon,
 } from "lucide-react";
 import { useWindows, type AppId } from "../store/windows";
 import { APPS } from "../apps/registry";
 import { api } from "../services/api";
-import type { Note, Task } from "../types";
+import { openTargetForFile, isImageFile, isPdfFile, isAudioFile, isVideoFile, isTextFile } from "../services/files";
+import type { Note, Task, VFile } from "../types";
 
 interface SearchResult {
   id: string;
-  type: "app" | "note" | "task" | "action" | "calc";
+  type: "app" | "note" | "task" | "action" | "calc" | "file";
   title: string;
   subtitle: string;
   icon: React.ReactNode;
@@ -52,7 +54,18 @@ const APP_ICONS: Record<string, React.ReactNode> = {
   flashcards: <Brain size={18} />,
   grades: <GraduationCap size={18} />,
   vut: <GraduationCap size={18} />,
+  editor: <Code2 size={18} />,
+  viewer: <Eye size={18} />,
 };
+
+function fileIcon(file: VFile): React.ReactNode {
+  if (isImageFile(file)) return <ImageIcon size={18} className="text-green-400" />;
+  if (isPdfFile(file)) return <FileText size={18} className="text-red-400" />;
+  if (isAudioFile(file)) return <MusicIcon size={18} className="text-purple-400" />;
+  if (isVideoFile(file)) return <VideoIcon size={18} className="text-pink-400" />;
+  if (isTextFile(file)) return <FileCode size={18} className="text-blue-400" />;
+  return <FileText size={18} className="text-ink-muted" />;
+}
 
 export default function CommandPalette() {
   const [open, setOpen] = useState(false);
@@ -60,11 +73,12 @@ export default function CommandPalette() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [notes, setNotes] = useState<Note[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [fileList, setFileList] = useState<VFile[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const { open: openWindow } = useWindows();
 
-  // Load notes + tasks when palette opens
+  // Load notes + tasks + files when palette opens
   useEffect(() => {
     if (!open) return;
     setQuery("");
@@ -72,9 +86,11 @@ export default function CommandPalette() {
     Promise.all([
       api.get<{ notes: Note[] }>("/api/notes").catch(() => ({ notes: [] })),
       api.get<{ tasks: Task[] }>("/api/tasks").catch(() => ({ tasks: [] })),
-    ]).then(([n, t]) => {
+      api.get<{ files: VFile[] }>("/api/files/all").catch(() => ({ files: [] })),
+    ]).then(([n, t, f]) => {
       setNotes(n.notes ?? []);
       setTasks(t.tasks ?? []);
+      setFileList(f.files ?? []);
     });
   }, [open]);
 
@@ -231,10 +247,32 @@ export default function CommandPalette() {
           });
         }
       }
+      // Files
+      for (const file of fileList.slice(0, 20)) {
+        if (file.name.toLowerCase().includes(q)) {
+          const target = openTargetForFile(file);
+          out.push({
+            id: `file-${file.id}`,
+            type: "file",
+            title: file.name,
+            subtitle: target === "editor" ? "Open in Editor" : "Open in Viewer",
+            icon: fileIcon(file),
+            action: () => {
+              openWindow({
+                appId: target,
+                title: file.name,
+                icon: target === "editor" ? "Code2" : "Eye",
+                payload: { fileId: file.id },
+              });
+              setOpen(false);
+            },
+          });
+        }
+      }
     }
 
     return out.slice(0, 12);
-  }, [query, notes, tasks, openWindow]);
+  }, [query, notes, tasks, fileList, openWindow]);
 
   // Reset selection when results change
   useEffect(() => {
@@ -287,7 +325,7 @@ export default function CommandPalette() {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={onKeyDown}
-                placeholder="Search apps, notes, tasks, or calculate..."
+                placeholder="Search apps, files, notes, tasks, or calculate..."
                 className="flex-1 bg-transparent text-base text-ink outline-none placeholder:text-ink-muted"
               />
               <kbd className="rounded border border-edge px-1.5 py-0.5 text-[10px] text-ink-muted">

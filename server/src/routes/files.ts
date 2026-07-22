@@ -4,7 +4,8 @@ import { zValidator } from "@hono/zod-validator";
 import prisma from "../db/client";
 import { authMiddleware } from "../middleware/auth";
 import path from "node:path";
-import { mkdir, writeFile, unlink, stat } from "node:fs/promises";
+import { mkdir, writeFile, unlink, stat, readFile, copyFile } from "node:fs/promises";
+import { zipSync, strToU8 } from "fflate";
 
 const files = new Hono();
 files.use("*", authMiddleware);
@@ -15,6 +16,40 @@ async function ensureUploadDir(userId: string) {
   const dir = path.join(UPLOAD_DIR, userId);
   await mkdir(dir, { recursive: true });
   return dir;
+}
+
+/** Heuristic: is this a text-based mime type we can safely edit/preview as text? */
+function isTextMime(mime: string): boolean {
+  if (mime.startsWith("text/")) return true;
+  if (mime === "application/json") return true;
+  if (mime === "application/xml") return true;
+  if (mime === "application/javascript") return true;
+  if (mime === "application/x-sh") return true;
+  if (mime === "application/x-yaml") return true;
+  if (mime.includes("yaml")) return true;
+  if (mime.includes("csv")) return true;
+  // Many servers send octet-stream for code files; extension check happens upstream.
+  return false;
+}
+
+/** Common code/text extensions (used when mime is octet-stream). */
+const TEXT_EXT = new Set([
+  "txt","md","markdown","js","jsx","ts","tsx","mjs","cjs","json","json5","html",
+  "htm","css","scss","sass","less","xml","svg","py","rb","php","go","rs","java",
+  "c","h","cpp","hpp","cc","cs","kt","swift","sh","bash","zsh","fish","ps1",
+  "yml","yaml","toml","ini","cfg","conf","env","gitignore","sql","graphql",
+  "gql","vue","svelte","astro","lua","pl","r","dart","scala","clj","ex","exs",
+  "erl","hs","ml","nim","v","zig","makefile","dockerfile","tf","hcl","log",
+  "csv","tsv","diff","patch","lock","editorconfig","prettierrc","eslintrc",
+]);
+
+export function isTextFile(name: string, mime: string): boolean {
+  if (isTextMime(mime)) return true;
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  if (TEXT_EXT.has(ext)) return true;
+  const base = path.basename(name).toLowerCase();
+  if (base === "makefile" || base === "dockerfile" || base.startsWith(".")) return true;
+  return false;
 }
 
 // ---------- Folders ----------
@@ -43,7 +78,93 @@ files.post("/folders", zValidator("json", folderSchema), async (c) => {
 
 files.delete("/folders/:id", async (c) => {
   const { userId } = c.get("auth");
-  await prisma.vFolder.delete({ where: { id: c.req.param("id"), userId } });
+  // Cascade delete handled by Prisma relation; also wipe files on disk.
+  const folder = await prisma.vFolder.findFirst({ where: { id: c.req.param("id"), userId } });
+  if (!folder) return c.json({ error: "Not found" }, 404);
+  // Collect all descendant file storage keys to remove from disk.
+  const allFolders = await prisma.vFolder.findMany({ where: { userId } });
+  const byParent = new Map<string | null, typeof allFolders>();
+  for (const f of allFolders) {
+    const key = f.parentId ?? null;
+    if (!byParent.has(key)) byParent.set(key, []);
+    byParent.get(key)!.push(f);
+  }
+  const toDelete: string[] = [folder.id];
+  const stack = [folder.id];
+  while (stack.length) {
+    const cur = stack.pop()!;
+    const kids = byParent.get(cur) ?? [];
+    for (const k of kids) {
+      toDelete.push(k.id);
+      stack.push(k.id);
+    }
+  }
+  const descendantFiles = await prisma.vFile.findMany({
+    where: { userId, folderId: { in: toDelete } },
+    select: { storageKey: true },
+  });
+  await prisma.vFolder.delete({ where: { id: folder.id, userId } });
+  for (const f of descendantFiles) {
+    await unlink(path.join(UPLOAD_DIR, f.storageKey)).catch(() => {});
+  }
+  return c.json({ ok: true });
+});
+
+// Rename folder
+const renameFolderSchema = z.object({ name: z.string().min(1).max(64) });
+files.patch("/folders/:id", zValidator("json", renameFolderSchema), async (c) => {
+  const { userId } = c.get("auth");
+  const { name } = c.req.valid("json");
+  const folder = await prisma.vFolder.updateMany({
+    where: { id: c.req.param("id"), userId },
+    data: { name },
+  });
+  if (folder.count === 0) return c.json({ error: "Not found" }, 404);
+  return c.json({ ok: true });
+});
+
+// Move folder under a new parent (or root)
+const moveFolderSchema = z.object({ parentId: z.string().nullable() });
+files.patch("/folders/:id/move", zValidator("json", moveFolderSchema), async (c) => {
+  const { userId } = c.get("auth");
+  const id = c.req.param("id");
+  const { parentId } = c.req.valid("json");
+
+  if (parentId === id) return c.json({ error: "Cannot move folder into itself" }, 400);
+
+  // Cycle detection: parentId must not be a descendant of id.
+  if (parentId !== null) {
+    const allFolders = await prisma.vFolder.findMany({ where: { userId } });
+    const byParent = new Map<string | null, typeof allFolders>();
+    for (const f of allFolders) {
+      const key = f.parentId ?? null;
+      if (!byParent.has(key)) byParent.set(key, []);
+      byParent.get(key)!.push(f);
+    }
+    const descendants = new Set<string>([id]);
+    const stack = [id];
+    while (stack.length) {
+      const cur = stack.pop()!;
+      for (const child of byParent.get(cur) ?? []) {
+        if (!descendants.has(child.id)) {
+          descendants.add(child.id);
+          stack.push(child.id);
+        }
+      }
+    }
+    if (descendants.has(parentId)) {
+      return c.json({ error: "Cannot move folder into its own descendant" }, 400);
+    }
+    // Verify target parent exists & belongs to user
+    const target = allFolders.find((f) => f.id === parentId);
+    if (!target) return c.json({ error: "Target folder not found" }, 404);
+  }
+
+  const res = await prisma.vFolder.updateMany({
+    where: { id, userId },
+    data: { parentId: parentId ?? null },
+  });
+  if (res.count === 0) return c.json({ error: "Not found" }, 404);
   return c.json({ ok: true });
 });
 
@@ -57,6 +178,56 @@ files.get("/", async (c) => {
   return c.json({ files: list });
 });
 
+// Flat list with optional filters: ?q= (name search), ?starred=true, ?recent=true
+files.get("/all", async (c) => {
+  const { userId } = c.get("auth");
+  const q = c.req.query("q")?.trim();
+  const starred = c.req.query("starred") === "true";
+  const recent = c.req.query("recent") === "true";
+  const where: Record<string, unknown> = { userId };
+  if (starred) where.starred = true;
+  if (q) where.name = { contains: q };
+  const orderBy = recent
+    ? { lastOpenedAt: "desc" as const }
+    : { name: "asc" as const };
+  const list = await prisma.vFile.findMany({
+    where: where as never,
+    orderBy,
+    ...(recent ? { take: 20 } : {}),
+  });
+  return c.json({ files: list });
+});
+
+// Recursive folder tree (for sidebar)
+files.get("/tree", async (c) => {
+  const { userId } = c.get("auth");
+  const [folders, fileCounts] = await Promise.all([
+    prisma.vFolder.findMany({ where: { userId }, orderBy: { name: "asc" } }),
+    prisma.vFile.groupBy({
+      by: ["folderId"],
+      where: { userId },
+      _count: { _all: true },
+    }),
+  ]);
+  const countMap = new Map<string, number>();
+  for (const row of fileCounts) {
+    const key = row.folderId ?? "__root__";
+    countMap.set(key, (countMap.get(key) ?? 0) + row._count._all);
+  }
+  return c.json({ folders, fileCounts: countMap });
+});
+
+// Storage usage
+files.get("/storage", async (c) => {
+  const { userId } = c.get("auth");
+  const agg = await prisma.vFile.aggregate({
+    where: { userId },
+    _sum: { size: true },
+    _count: { _all: true },
+  });
+  return c.json({ total: agg._sum.size ?? 0, count: agg._count._all });
+});
+
 /** POST /files/upload  multipart: file + optional folderId */
 files.post("/upload", async (c) => {
   const { userId } = c.get("auth");
@@ -66,7 +237,6 @@ files.post("/upload", async (c) => {
   if (!(file instanceof File)) {
     return c.json({ error: "No file provided" }, 400);
   }
-  const userDir = await ensureUploadDir(userId);
   const safeName = path.basename(file.name).replace(/[^\w.\- ]+/g, "_");
   const storageKey = `${userId}/${Date.now()}-${safeName}`;
   const absPath = path.join(UPLOAD_DIR, storageKey);
@@ -83,6 +253,41 @@ files.post("/upload", async (c) => {
       folderId: folderId || null,
       userId,
     },
+  });
+  return c.json({ file: record }, 201);
+});
+
+// Create a new text file with content
+const createTextSchema = z.object({
+  name: z.string().min(1).max(128),
+  folderId: z.string().nullable().optional(),
+  content: z.string().default(""),
+});
+files.post("/text", zValidator("json", createTextSchema), async (c) => {
+  const { userId } = c.get("auth");
+  const { name, folderId, content } = c.req.valid("json");
+  const safeName = path.basename(name).replace(/[^\w.\- ]+/g, "_");
+  const storageKey = `${userId}/${Date.now()}-${safeName}`;
+  const absPath = path.join(UPLOAD_DIR, storageKey);
+  await mkdir(path.dirname(absPath), { recursive: true });
+  const buf = Buffer.from(content, "utf-8");
+  await writeFile(absPath, buf);
+  const ext = path.extname(name).slice(1).toLowerCase();
+  const mime = ext === "md" || ext === "markdown"
+    ? "text/markdown"
+    : ext === "json"
+    ? "application/json"
+    : ext === "html" || ext === "htm"
+    ? "text/html"
+    : ext === "css"
+    ? "text/css"
+    : ext === "svg"
+    ? "image/svg+xml"
+    : ext === "xml"
+    ? "application/xml"
+    : "text/plain";
+  const record = await prisma.vFile.create({
+    data: { name, mimeType: mime, size: buf.length, storageKey, folderId: folderId ?? null, userId },
   });
   return c.json({ file: record }, 201);
 });
@@ -104,6 +309,231 @@ files.get("/:id/download", async (c) => {
       "Content-Type": record.mimeType,
       "Content-Disposition": `inline; filename="${record.name}"`,
       "Content-Length": String(record.size),
+    },
+  });
+});
+
+// Get text content (for editor)
+files.get("/:id/content", async (c) => {
+  const { userId } = c.get("auth");
+  const record = await prisma.vFile.findFirst({ where: { id: c.req.param("id"), userId } });
+  if (!record) return c.json({ error: "Not found" }, 404);
+  if (!isTextFile(record.name, record.mimeType)) {
+    return c.json({ error: "Not a text file" }, 400);
+  }
+  const absPath = path.join(UPLOAD_DIR, record.storageKey);
+  try {
+    const data = await readFile(absPath, "utf-8");
+    return c.json({ content: data, name: record.name, mimeType: record.mimeType });
+  } catch {
+    return c.json({ error: "File missing on disk" }, 410);
+  }
+});
+
+// Save text content
+const saveContentSchema = z.object({ content: z.string() });
+files.put("/:id/content", zValidator("json", saveContentSchema), async (c) => {
+  const { userId } = c.get("auth");
+  const record = await prisma.vFile.findFirst({ where: { id: c.req.param("id"), userId } });
+  if (!record) return c.json({ error: "Not found" }, 404);
+  if (!isTextFile(record.name, record.mimeType)) {
+    return c.json({ error: "Not a text file" }, 400);
+  }
+  const { content } = c.req.valid("json");
+  const absPath = path.join(UPLOAD_DIR, record.storageKey);
+  const buf = Buffer.from(content, "utf-8");
+  await writeFile(absPath, buf);
+  const updated = await prisma.vFile.update({
+    where: { id: record.id },
+    data: { size: buf.length },
+  });
+  return c.json({ file: updated });
+});
+
+// Mark file opened (bump lastOpenedAt)
+files.post("/:id/opened", async (c) => {
+  const { userId } = c.get("auth");
+  const res = await prisma.vFile.updateMany({
+    where: { id: c.req.param("id"), userId },
+    data: { lastOpenedAt: new Date() },
+  });
+  if (res.count === 0) return c.json({ error: "Not found" }, 404);
+  return c.json({ ok: true });
+});
+
+// Rename file
+const renameSchema = z.object({ name: z.string().min(1).max(128) });
+files.patch("/:id", zValidator("json", renameSchema), async (c) => {
+  const { userId } = c.get("auth");
+  const { name } = c.req.valid("json");
+  const res = await prisma.vFile.updateMany({
+    where: { id: c.req.param("id"), userId },
+    data: { name },
+  });
+  if (res.count === 0) return c.json({ error: "Not found" }, 404);
+  return c.json({ ok: true });
+});
+
+// Move file to a folder
+const moveSchema = z.object({ folderId: z.string().nullable() });
+files.patch("/:id/move", zValidator("json", moveSchema), async (c) => {
+  const { userId } = c.get("auth");
+  const { folderId } = c.req.valid("json");
+  if (folderId !== null) {
+    const target = await prisma.vFolder.findFirst({ where: { id: folderId, userId } });
+    if (!target) return c.json({ error: "Target folder not found" }, 404);
+  }
+  const res = await prisma.vFile.updateMany({
+    where: { id: c.req.param("id"), userId },
+    data: { folderId: folderId ?? null },
+  });
+  if (res.count === 0) return c.json({ error: "Not found" }, 404);
+  return c.json({ ok: true });
+});
+
+// Duplicate a file
+files.post("/duplicate/:id", async (c) => {
+  const { userId } = c.get("auth");
+  const record = await prisma.vFile.findFirst({ where: { id: c.req.param("id"), userId } });
+  if (!record) return c.json({ error: "Not found" }, 404);
+  const srcPath = path.join(UPLOAD_DIR, record.storageKey);
+  const safeName = path.basename(record.name).replace(/[^\w.\- ]+/g, "_");
+  const storageKey = `${userId}/${Date.now()}-copy-${safeName}`;
+  const destPath = path.join(UPLOAD_DIR, storageKey);
+  await mkdir(path.dirname(destPath), { recursive: true });
+  try {
+    await copyFile(srcPath, destPath);
+  } catch {
+    return c.json({ error: "Source file missing on disk" }, 410);
+  }
+  // Derive "copy" name
+  const dot = record.name.lastIndexOf(".");
+  const baseName = dot > 0 ? record.name.slice(0, dot) : record.name;
+  const ext = dot > 0 ? record.name.slice(dot) : "";
+  const copyName = `${baseName} (copy)${ext}`;
+  const dup = await prisma.vFile.create({
+    data: {
+      name: copyName,
+      mimeType: record.mimeType,
+      size: record.size,
+      storageKey,
+      folderId: record.folderId,
+      userId,
+    },
+  });
+  return c.json({ file: dup }, 201);
+});
+
+// Toggle star
+files.post("/:id/star", async (c) => {
+  const { userId } = c.get("auth");
+  const record = await prisma.vFile.findFirst({ where: { id: c.req.param("id"), userId } });
+  if (!record) return c.json({ error: "Not found" }, 404);
+  const updated = await prisma.vFile.update({
+    where: { id: record.id },
+    data: { starred: !record.starred },
+  });
+  return c.json({ file: updated });
+});
+
+// Bulk download as zip
+const zipSchema = z.object({ fileIds: z.array(z.string()).min(1).max(500) });
+files.post("/zip", zValidator("json", zipSchema), async (c) => {
+  const { userId } = c.get("auth");
+  const { fileIds } = c.req.valid("json");
+  const records = await prisma.vFile.findMany({ where: { id: { in: fileIds }, userId } });
+  if (records.length === 0) return c.json({ error: "No files found" }, 404);
+  const tree: Record<string, Uint8Array> = {};
+  const usedNames = new Set<string>();
+  for (const r of records) {
+    let safe = r.name.replace(/[\\/]+/g, "_");
+    let n = 1;
+    while (usedNames.has(safe)) {
+      const dot = r.name.lastIndexOf(".");
+      const base = dot > 0 ? r.name.slice(0, dot) : r.name;
+      const ext = dot > 0 ? r.name.slice(dot) : "";
+      safe = `${base} (${n})${ext}`.replace(/[\\/]+/g, "_");
+      n++;
+    }
+    usedNames.add(safe);
+    try {
+      const data = await readFile(path.join(UPLOAD_DIR, r.storageKey));
+      tree[safe] = new Uint8Array(data);
+    } catch {
+      tree[safe] = strToU8(`[missing on disk: ${r.storageKey}]`);
+    }
+  }
+  const zipped = zipSync(tree);
+  return new Response(zipped, {
+    headers: {
+      "Content-Type": "application/zip",
+      "Content-Disposition": `attachment; filename="athena-download-${Date.now()}.zip"`,
+      "Content-Length": String(zipped.length),
+    },
+  });
+});
+
+// Zip a whole folder (recursive)
+files.post("/folders/:id/zip", async (c) => {
+  const { userId } = c.get("auth");
+  const folder = await prisma.vFolder.findFirst({ where: { id: c.req.param("id"), userId } });
+  if (!folder) return c.json({ error: "Not found" }, 404);
+  const allFolders = await prisma.vFolder.findMany({ where: { userId } });
+  const byParent = new Map<string | null, typeof allFolders>();
+  for (const f of allFolders) {
+    const key = f.parentId ?? null;
+    if (!byParent.has(key)) byParent.set(key, []);
+    byParent.get(key)!.push(f);
+  }
+  // Walk descendants collecting (relativePath, folderId)
+  const folderPaths: { id: string; rel: string }[] = [{ id: folder.id, rel: folder.name }];
+  const stack = [{ id: folder.id, rel: folder.name }];
+  while (stack.length) {
+    const cur = stack.pop()!;
+    for (const child of byParent.get(cur.id) ?? []) {
+      const rel = `${cur.rel}/${child.name}`;
+      folderPaths.push({ id: child.id, rel });
+      stack.push({ id: child.id, rel });
+    }
+  }
+  const allFiles = await prisma.vFile.findMany({
+    where: { userId, folderId: { in: folderPaths.map((f) => f.id) } },
+  });
+  const tree: Record<string, Uint8Array> = {};
+  const usedNames = new Set<string>();
+  for (const f of allFiles) {
+    const parent = folderPaths.find((fp) => fp.id === f.folderId);
+    const rel = parent ? `${parent.rel}/${f.name}` : f.name;
+    let safe = rel.replace(/[\\/]+/g, "/");
+    let n = 1;
+    while (usedNames.has(safe)) {
+      const slash = safe.lastIndexOf("/");
+      const dir = slash > 0 ? safe.slice(0, slash + 1) : "";
+      const file = slash > 0 ? safe.slice(slash + 1) : safe;
+      const dot = file.lastIndexOf(".");
+      const base = dot > 0 ? file.slice(0, dot) : file;
+      const ext = dot > 0 ? file.slice(dot) : "";
+      safe = `${dir}${base} (${n})${ext}`;
+      n++;
+    }
+    usedNames.add(safe);
+    try {
+      const data = await readFile(path.join(UPLOAD_DIR, f.storageKey));
+      tree[safe] = new Uint8Array(data);
+    } catch {
+      tree[safe] = strToU8(`[missing on disk: ${f.storageKey}]`);
+    }
+  }
+  if (Object.keys(tree).length === 0) {
+    // Empty folder: add a placeholder so zip isn't empty/invalid
+    tree[`${folder.name}/.empty`] = strToU8("");
+  }
+  const zipped = zipSync(tree);
+  return new Response(zipped, {
+    headers: {
+      "Content-Type": "application/zip",
+      "Content-Disposition": `attachment; filename="${folder.name}.zip"`,
+      "Content-Length": String(zipped.length),
     },
   });
 });

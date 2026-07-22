@@ -1,15 +1,29 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import CodeMirror from "@uiw/react-codemirror";
+import { EditorView } from "@codemirror/view";
+import type { Extension } from "@codemirror/state";
+import { oneDark } from "@codemirror/theme-one-dark";
+import { markdown } from "@codemirror/lang-markdown";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 import {
   Search, Plus, Pin, Trash2, FolderPlus, FileText, Tag,
-  Download, Loader2, Folder,
+  Download, Loader2, Folder, Pencil, Columns2, Eye, Check,
 } from "lucide-react";
 import { notesApi } from "../../services/notes";
+import { useSettings } from "../../store/settings";
 import type { Note, NoteFolder } from "../../types";
 import type { WindowInstance } from "../../store/windows";
 
+type EditorMode = "edit" | "split" | "preview";
+
+const SAVE_DEBOUNCE_MS = 1500;
+
 export default function NotesApp(_: { win: WindowInstance }) {
+  const isDark = useSettings((s) => s.theme === "dark");
+
   const [folders, setFolders] = useState<NoteFolder[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -17,7 +31,14 @@ export default function NotesApp(_: { win: WindowInstance }) {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [showPreview, setShowPreview] = useState(true);
+  const [mode, setMode] = useState<EditorMode>("split");
+
+  // Dirty tracking (per-note) for save indicator + debounced flush.
+  const [dirtyIds, setDirtyIds] = useState<Set<string>>(new Set());
+  const notesRef = useRef<Note[]>([]);
+  const saveTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  notesRef.current = notes;
 
   const selected = useMemo(
     () => notes.find((n) => n.id === selectedId) ?? null,
@@ -62,17 +83,20 @@ export default function NotesApp(_: { win: WindowInstance }) {
     return () => clearTimeout(t);
   }, [query, loadNotes]);
 
-  const createNote = async () => {
+  const createNote = async (initial?: Partial<Note>) => {
     try {
       const { note } = await notesApi.create({
         title: "Untitled",
         content: "",
         folderId: selectedFolder,
+        ...initial,
       });
       setNotes((prev) => [note, ...prev]);
       setSelectedId(note.id);
+      return note;
     } catch (e) {
       console.error(e);
+      return null;
     }
   };
 
@@ -87,26 +111,73 @@ export default function NotesApp(_: { win: WindowInstance }) {
     }
   };
 
-  // Auto-save (debounced)
+  // Flush a single note's pending changes to the server immediately.
+  const flushSave = useCallback(async (id: string) => {
+    const timer = saveTimersRef.current.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      saveTimersRef.current.delete(id);
+    }
+    const note = notesRef.current.find((n) => n.id === id);
+    if (!note) return;
+    setSaving(true);
+    try {
+      await notesApi.update(id, {
+        title: note.title,
+        content: note.content,
+        tags: note.tags,
+        pinned: note.pinned,
+      });
+      setDirtyIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    } catch (e) {
+      console.error("Save failed", e);
+    } finally {
+      setSaving(false);
+    }
+  }, []);
+
+  // Optimistic local update + debounced server persist.
   const updateNote = useCallback(
-    async (id: string, data: Partial<Note>) => {
+    (id: string, data: Partial<Note>) => {
       setNotes((prev) =>
-        prev.map((n) => (n.id === id ? { ...n, ...data, updatedAt: new Date().toISOString() } : n))
+        prev.map((n) =>
+          n.id === id ? { ...n, ...data, updatedAt: new Date().toISOString() } : n
+        )
       );
-      setSaving(true);
-      try {
-        await notesApi.update(id, data);
-      } catch (e) {
-        console.error("Save failed", e);
-      } finally {
-        setSaving(false);
-      }
+      setDirtyIds((prev) => {
+        const next = new Set(prev);
+        next.add(id);
+        return next;
+      });
+      const existing = saveTimersRef.current.get(id);
+      if (existing) clearTimeout(existing);
+      const timer = setTimeout(() => {
+        void flushSave(id);
+      }, SAVE_DEBOUNCE_MS);
+      saveTimersRef.current.set(id, timer);
     },
-    []
+    [flushSave]
   );
+
+  // Flush all pending saves on unmount.
+  useEffect(() => {
+    return () => {
+      saveTimersRef.current.forEach((t) => clearTimeout(t));
+      saveTimersRef.current.clear();
+    };
+  }, []);
 
   const deleteNote = async (id: string) => {
     if (!confirm("Delete this note?")) return;
+    const timer = saveTimersRef.current.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      saveTimersRef.current.delete(id);
+    }
     try {
       await notesApi.delete(id);
       setNotes((prev) => prev.filter((n) => n.id !== id));
@@ -116,8 +187,8 @@ export default function NotesApp(_: { win: WindowInstance }) {
     }
   };
 
-  const togglePin = async (note: Note) => {
-    await updateNote(note.id, { pinned: !note.pinned });
+  const togglePin = (note: Note) => {
+    updateNote(note.id, { pinned: !note.pinned });
   };
 
   const exportMarkdown = (note: Note) => {
@@ -145,6 +216,22 @@ export default function NotesApp(_: { win: WindowInstance }) {
     w.document.close();
   };
 
+  // Ctrl/Cmd+S saves the selected note immediately.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+        if (selectedId) {
+          e.preventDefault();
+          void flushSave(selectedId);
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedId, flushSave]);
+
+  const markdownExtensions = useMemo(() => [EditorView.lineWrapping], []);
+
   return (
     <div className="flex h-full">
       {/* Sidebar: folders + search */}
@@ -161,7 +248,7 @@ export default function NotesApp(_: { win: WindowInstance }) {
           </div>
           <div className="flex gap-1">
             <button
-              onClick={createNote}
+              onClick={() => createNote()}
               className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-accent py-1.5 text-xs font-medium text-accent-fg hover:opacity-90"
             >
               <Plus size={13} /> New
@@ -176,7 +263,6 @@ export default function NotesApp(_: { win: WindowInstance }) {
           </div>
         </div>
 
-        {/* Folder tree */}
         <div className="flex-1 overflow-y-auto px-2 pb-2">
           <button
             onClick={() => setSelectedFolder(null)}
@@ -230,6 +316,7 @@ export default function NotesApp(_: { win: WindowInstance }) {
               >
                 <div className="flex items-start justify-between gap-1">
                   <span className="line-clamp-1 text-sm font-medium text-ink">
+                    {dirtyIds.has(note.id) && <span className="text-amber-400">● </span>}
                     {note.title || "Untitled"}
                   </span>
                   {note.pinned && <Pin size={11} className="mt-0.5 shrink-0 text-accent" />}
@@ -260,6 +347,7 @@ export default function NotesApp(_: { win: WindowInstance }) {
               <input
                 value={selected.title}
                 onChange={(e) => updateNote(selected.id, { title: e.target.value })}
+                onBlur={() => void flushSave(selected.id)}
                 placeholder="Note title"
                 className="flex-1 bg-transparent text-sm font-semibold text-ink outline-none"
               />
@@ -272,12 +360,17 @@ export default function NotesApp(_: { win: WindowInstance }) {
               >
                 <Pin size={14} />
               </button>
-              <button
-                onClick={() => setShowPreview(!showPreview)}
-                className="rounded px-2 py-1 text-xs text-ink-muted hover:bg-surface-3"
-              >
-                {showPreview ? "Edit" : "Preview"}
-              </button>
+              <div className="mr-1 flex items-center rounded-lg border border-edge">
+                <ToolToggle active={mode === "edit"} onClick={() => setMode("edit")} title="Editor only">
+                  <Pencil size={13} />
+                </ToolToggle>
+                <ToolToggle active={mode === "split"} onClick={() => setMode("split")} title="Split view">
+                  <Columns2 size={13} />
+                </ToolToggle>
+                <ToolToggle active={mode === "preview"} onClick={() => setMode("preview")} title="Preview only">
+                  <Eye size={13} />
+                </ToolToggle>
+              </div>
               <button
                 onClick={() => exportMarkdown(selected)}
                 className="flex h-7 w-7 items-center justify-center rounded text-ink-muted hover:bg-surface-3"
@@ -301,31 +394,38 @@ export default function NotesApp(_: { win: WindowInstance }) {
               </button>
             </div>
 
+            <div className="flex items-center gap-2 border-b border-edge bg-surface-2 px-3 py-1.5">
+              <div className="ml-auto flex items-center gap-2">
+                {dirtyIds.has(selected.id) && (
+                  <span className="text-[10px] text-amber-400">Unsaved</span>
+                )}
+                {!dirtyIds.has(selected.id) && (
+                  <span className="flex items-center gap-1 text-[10px] text-emerald-500">
+                    <Check size={10} /> Saved
+                  </span>
+                )}
+              </div>
+            </div>
+
             <div className="flex items-center gap-2 border-b border-edge px-3 py-1.5">
               <Tag size={12} className="text-ink-muted" />
               <input
                 value={selected.tags}
                 onChange={(e) => updateNote(selected.id, { tags: e.target.value })}
+                onBlur={() => void flushSave(selected.id)}
                 placeholder="tags, comma, separated"
                 className="flex-1 bg-transparent text-xs text-ink outline-none placeholder:text-ink-muted"
               />
             </div>
 
-            {showPreview ? (
-              <div className="selectable flex-1 overflow-y-auto p-5 prose-sm max-w-none">
-                <ReactMarkdown remarkPlugins={[remarkGfm]} className="markdown-body">
-                  {selected.content || "*Nothing to preview yet.*"}
-                </ReactMarkdown>
-              </div>
-            ) : (
-              <textarea
-                value={selected.content}
-                onChange={(e) => updateNote(selected.id, { content: e.target.value })}
-                placeholder="Start writing in Markdown..."
-                className="selectable flex-1 resize-none bg-transparent p-5 font-mono text-sm leading-relaxed text-ink outline-none"
-                spellCheck={false}
-              />
-            )}
+            <NoteEditor
+              note={selected}
+              mode={mode}
+              isDark={isDark}
+              extensions={markdownExtensions}
+              onChange={(content) => updateNote(selected.id, { content })}
+              onBlur={() => void flushSave(selected.id)}
+            />
           </>
         ) : (
           <div className="flex flex-1 flex-col items-center justify-center text-ink-muted">
@@ -334,6 +434,91 @@ export default function NotesApp(_: { win: WindowInstance }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ===== Subcomponents =====
+
+function ToolToggle({
+  active,
+  onClick,
+  title,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className={`flex h-7 w-7 items-center justify-center ${
+        active ? "bg-surface-3 text-ink" : "text-ink-muted hover:text-ink"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function NoteEditor({
+  note,
+  mode,
+  isDark,
+  extensions,
+  onChange,
+  onBlur,
+}: {
+  note: Note;
+  mode: EditorMode;
+  isDark: boolean;
+  extensions: Extension[];
+  onChange: (content: string) => void;
+  onBlur: () => void;
+}) {
+  const showEditor = mode === "edit" || mode === "split";
+  const showPreview = mode === "preview" || mode === "split";
+
+  return (
+    <div className="flex flex-1 overflow-hidden">
+      {showEditor && (
+        <div className={showPreview ? "w-1/2 border-r border-edge" : "w-full"}>
+          <CodeMirror
+            value={note.content}
+            onChange={onChange}
+            extensions={[markdown(), ...extensions]}
+            theme={isDark ? oneDark : "light"}
+            height="100%"
+            className="h-full text-sm"
+            basicSetup={{
+              lineNumbers: false,
+              foldGutter: false,
+              highlightActiveLine: true,
+              bracketMatching: true,
+              closeBrackets: true,
+              autocompletion: true,
+              searchKeymap: true,
+              tabSize: 2,
+            }}
+            onBlur={onBlur}
+          />
+        </div>
+      )}
+      {showPreview && (
+        <div className={`${showEditor ? "w-1/2" : "w-full"} overflow-auto bg-surface p-5`}>
+          <div className="selectable markdown-body mx-auto max-w-2xl prose-sm">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm, remarkMath]}
+              rehypePlugins={[rehypeKatex]}
+            >
+              {note.content || "*Nothing to preview yet.*"}
+            </ReactMarkdown>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

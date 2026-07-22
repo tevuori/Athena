@@ -10,6 +10,8 @@ import lyrics from "./routes/lyrics";
 import flashcards from "./routes/flashcards";
 import grades from "./routes/grades";
 import vut from "./routes/vut";
+import ai from "./routes/ai";
+import athena from "./routes/athena";
 import { isSpotifyConfigured } from "./services/spotify";
 
 const app = new Hono();
@@ -43,6 +45,8 @@ app.route("/api/lyrics", lyrics);
 app.route("/api/flashcards", flashcards);
 app.route("/api/grades", grades);
 app.route("/api/vut", vut);
+app.route("/api/ai", ai);
+app.route("/api/athena", athena);
 
 const port = Number(process.env.SERVER_PORT ?? 3000);
 const hostname = process.env.SERVER_HOST ?? "0.0.0.0";

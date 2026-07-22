@@ -45,6 +45,8 @@ export interface VFolder {
   id: string;
   name: string;
   parentId: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface VFile {
@@ -54,7 +56,23 @@ export interface VFile {
   size: number;
   storageKey: string;
   folderId: string | null;
+  starred: boolean;
   createdAt: string;
+  updatedAt: string;
+  lastOpenedAt: string | null;
+}
+
+export interface FolderTreeNode {
+  id: string;
+  name: string;
+  parentId: string | null;
+  children: FolderTreeNode[];
+  fileCount: number;
+}
+
+export interface StorageInfo {
+  total: number;
+  count: number;
 }
 
 export interface LyricsLine {

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Play, Pause, RotateCcw, SkipForward, Coffee, Brain, Volume2, VolumeX } from "lucide-react";
 import { useSettings } from "../../store/settings";
+import type { WindowInstance } from "../../store/windows";
 
 type Phase = "focus" | "short-break" | "long-break";
 
@@ -36,7 +37,7 @@ function saveStats(stats: SessionStats) {
   localStorage.setItem("pomodoro-stats", JSON.stringify(stats));
 }
 
-export default function PomodoroApp() {
+export default function PomodoroApp({ win }: { win: WindowInstance }) {
   const [phase, setPhase] = useState<Phase>("focus");
   const [secondsLeft, setSecondsLeft] = useState(PHASE_CONFIG["focus"].minutes * 60);
   const [running, setRunning] = useState(false);
@@ -45,6 +46,31 @@ export default function PomodoroApp() {
   const [muted, setMuted] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { setDoNotDisturb } = useSettings();
+
+  // Honor an auto-start payload sent by the Athena assistant (start_pomodoro).
+  useEffect(() => {
+    const p = win?.payload as
+      | { autoStart?: boolean; phase?: string; durationMinutes?: number }
+      | undefined;
+    if (!p) return;
+    const map: Record<string, Phase> = {
+      work: "focus",
+      focus: "focus",
+      short_break: "short-break",
+      "short-break": "short-break",
+      long_break: "long-break",
+      "long-break": "long-break",
+    };
+    const target = (p.phase && map[p.phase]) || "focus";
+    setPhase(target);
+    setSecondsLeft(
+      p.durationMinutes && p.durationMinutes > 0
+        ? Math.round(p.durationMinutes * 60)
+        : PHASE_CONFIG[target].minutes * 60
+    );
+    if (p.autoStart) setRunning(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const config = PHASE_CONFIG[phase];
   const totalSeconds = config.minutes * 60;
