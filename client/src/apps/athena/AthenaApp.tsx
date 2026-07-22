@@ -180,10 +180,29 @@ export default function AthenaApp({ win }: { win: WindowInstance }) {
       const content = text.trim();
       if (!content || streaming) return;
 
+      // Build conversation history for the server. We must maintain
+      // alternating user/assistant messages — some providers reject
+      // consecutive same-role messages with 400.
+      // If an assistant turn has no text content (e.g. it only called
+      // client-action tools like tile_windows), use a placeholder so
+      // the alternation is preserved.
       const history: AthenaMessage[] = [
         ...turns
-          .filter((t) => !t.error && t.content.trim())
-          .map((t) => ({ role: t.role, content: t.content })),
+          .filter((t) => !t.error)
+          .map((t) => {
+            if (t.role === "assistant" && !t.content.trim()) {
+              // Assistant turn with no text (tool-only turn).
+              const toolNames = (t.tools ?? []).map((tc) => tc.name).join(", ");
+              return {
+                role: "assistant" as const,
+                content: toolNames
+                  ? `(Completed: ${toolNames})`
+                  : "(Done)",
+              };
+            }
+            return { role: t.role, content: t.content };
+          })
+          .filter((t) => t.content.trim()),
         { role: "user", content },
       ];
 

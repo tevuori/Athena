@@ -67,13 +67,32 @@ athena.post("/chat", zValidator("json", chatSchema), async (c) => {
 
   const clientWindows: ClientWindowInfo[] = body.windows ?? [];
   const systemPrompt = await buildSystemPrompt(userId, clientWindows);
+
+  // Build the message list, ensuring alternating user/assistant roles.
+  // Some providers (DeepSeek/OpenAI) reject consecutive same-role messages
+  // with 400. If the client sends two user messages in a row (e.g. because
+  // an assistant turn with only tool calls was omitted), insert a placeholder.
+  const rawMessages = body.messages;
+  const fixedMessages: { role: "user" | "assistant"; content: string }[] = [];
+  for (const m of rawMessages) {
+    const last = fixedMessages[fixedMessages.length - 1];
+    if (last && last.role === m.role) {
+      // Consecutive same-role — insert a placeholder of the opposite role.
+      fixedMessages.push({
+        role: m.role === "user" ? "assistant" : "user",
+        content: "(Done)",
+      });
+    }
+    fixedMessages.push({ role: m.role as "user" | "assistant", content: m.content });
+  }
+
   // Use Message instances (multi-llm-ts expects them for vision checks etc.)
   // but override toJSON so only { role, content } is serialized to the provider.
   // Extra fields (attachments, toolCalls, contentForModel, reasoning) cause 400
   // errors on some OpenAI-compatible endpoints (e.g. OpenCode Zen / DeepSeek).
   const thread: Message[] = [
     new Message("system", systemPrompt),
-    ...body.messages.map((m) => new Message(m.role as "user" | "assistant", m.content)),
+    ...fixedMessages.map((m) => new Message(m.role, m.content)),
   ];
   // Patch toJSON on each Message so the OpenAI SDK serializes clean API format.
   for (const msg of thread) {
