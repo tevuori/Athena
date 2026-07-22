@@ -1,5 +1,5 @@
 import path from "node:path";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
 import type { ToolDef } from "./plugin";
 import prisma from "../../../db/client";
 
@@ -150,6 +150,69 @@ export const fileTools: ToolDef[] = [
         data: { size: buf.length, lastOpenedAt: new Date() },
       });
       return { file: { id: updated.id, name: updated.name, size: updated.size }, updated: true };
+    },
+  },
+  {
+    name: "create_file",
+    description:
+      "Create a new text/code file in the user's virtual file system with the given content. Use this when the user asks to create, generate, or write a new file (one that doesn't exist yet). If the file already exists, use edit_file instead. Returns the new file id.",
+    destructive: true,
+    parameters: [
+      { name: "name", type: "string", description: "File name with extension (e.g. 'HelloWorld.java', 'script.py', 'notes.md')", required: true },
+      { name: "content", type: "string", description: "Full file content", required: true },
+      { name: "folderId", type: "string", description: "Optional parent folder id (omit for root level)" },
+    ],
+    handler: async (args, { userId }) => {
+      const name = String(args.name ?? "").trim();
+      if (!name) return { error: "File name is required" };
+      const safeName = path.basename(name).replace(/[^\w.\- ]+/g, "_");
+      // Check if a file with the same name already exists at this location.
+      const existing = await prisma.vFile.findFirst({
+        where: { userId, name, folderId: args.folderId ?? null },
+      });
+      if (existing) {
+        return {
+          error: `A file named '${name}' already exists. Use edit_file with fileId='${existing.id}' to modify it.`,
+        };
+      }
+      const storageKey = `${userId}/${Date.now()}-${safeName}`;
+      const absPath = path.join(UPLOAD_DIR, storageKey);
+      try {
+        await mkdir(path.dirname(absPath), { recursive: true });
+        const buf = Buffer.from(String(args.content ?? ""), "utf-8");
+        await writeFile(absPath, buf);
+        const ext = path.extname(name).slice(1).toLowerCase();
+        const mime = ext === "md" || ext === "markdown"
+          ? "text/markdown"
+          : ext === "json"
+          ? "application/json"
+          : ext === "html" || ext === "htm"
+          ? "text/html"
+          : ext === "css"
+          ? "text/css"
+          : ext === "svg"
+          ? "image/svg+xml"
+          : ext === "xml"
+          ? "application/xml"
+          : "text/plain";
+        const record = await prisma.vFile.create({
+          data: {
+            name,
+            mimeType: mime,
+            size: buf.length,
+            storageKey,
+            folderId: args.folderId ?? null,
+            userId,
+            lastOpenedAt: new Date(),
+          },
+        });
+        return {
+          file: { id: record.id, name: record.name, size: record.size, mimeType: record.mimeType },
+          created: true,
+        };
+      } catch (e) {
+        return { error: `Failed to create file: ${e instanceof Error ? e.message : "unknown error"}` };
+      }
     },
   },
 ];
