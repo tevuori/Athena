@@ -44,6 +44,8 @@ export interface WindowInstance {
   minimized: boolean;
   closing: boolean; // true while exit animation plays before removal
   alwaysOnTop?: boolean; // window stays above all others (e.g. Athena)
+  /** When true, position/size changes animate via CSS transition (auto-tiling). */
+  tiling?: boolean;
   // Optional payload passed to the app (e.g. noteId to open)
   payload?: Record<string, unknown>;
 }
@@ -73,6 +75,8 @@ interface WindowsState {
   restoreOrMinimize: (id: string) => void; // taskbar click behavior
   cycleFocus: (direction: 1 | -1) => void; // Alt+Tab
   closeAll: () => void;
+  /** Re-tile all visible windows into a grid. Called automatically on open/close. */
+  retile: () => void;
 }
 
 let idCounter = 0;
@@ -104,6 +108,42 @@ function clampToViewport(rect: WindowRect): WindowRect {
   return { x, y, width, height };
 }
 
+const TASKBAR_H = 48;
+
+/**
+ * Compute a grid layout for the given windows.
+ * Returns a map of windowId → rect.
+ * Always-on-top, minimized, and closing windows are excluded.
+ */
+function computeGridLayout(windows: WindowInstance[]): Record<string, WindowRect> {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight - TASKBAR_H;
+  const tileable = windows.filter((w) => !w.alwaysOnTop && !w.minimized && !w.closing);
+  if (tileable.length === 0) return {};
+
+  // Single window → full screen
+  if (tileable.length === 1) {
+    return { [tileable[0].id]: { x: 0, y: 0, width: vw, height: vh } };
+  }
+
+  const cols = Math.ceil(Math.sqrt(tileable.length));
+  const rows = Math.ceil(tileable.length / cols);
+  const cw = Math.floor(vw / cols);
+  const ch = Math.floor(vh / rows);
+  const result: Record<string, WindowRect> = {};
+  tileable.forEach((win, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    // Last row may have fewer items — stretch them to fill remaining width
+    const isLastRow = row === rows - 1;
+    const itemsInLastRow = tileable.length - row * cols;
+    const width = isLastRow && itemsInLastRow < cols ? Math.floor(vw / itemsInLastRow) : cw;
+    const x = isLastRow && itemsInLastRow < cols ? col * width : col * cw;
+    result[win.id] = { x, y: row * ch, width, height: ch };
+  });
+  return result;
+}
+
 export const useWindows = create<WindowsState>((set, get) => ({
   windows: [],
   focusedId: null,
@@ -122,22 +162,19 @@ export const useWindows = create<WindowsState>((set, get) => ({
     }
     const id = nextId();
     const base = DEFAULT_SIZE[appId];
-    // If an explicit rect with x/y is provided, use it directly (no cascade).
-    // Otherwise apply a cascade offset so multiple windows don't overlap.
+    // If an explicit rect with x/y is provided, use it directly (no cascade, no auto-tile).
+    // Otherwise, the window will be auto-tiled with the other windows.
     const hasExplicitPos = rect && (rect.x !== undefined || rect.y !== undefined);
+    const alwaysOnTop = appId === "athena";
+    const z = alwaysOnTop ? 10000 + state.zCounter + 1 : state.zCounter + 1;
+
+    // For auto-tiling, start the new window at a reasonable size.
+    // The retile() call will position it in the grid.
     const finalRect = clampToViewport(
       hasExplicitPos
         ? { ...base, ...rect }
-        : {
-            ...base,
-            ...rect,
-            x: base.x + (state.windows.length % 5) * 28,
-            y: base.y + (state.windows.length % 5) * 24,
-          }
+        : { ...base, ...rect }
     );
-    // Athena windows are always-on-top (z-index boosted above normal windows).
-    const alwaysOnTop = appId === "athena";
-    const z = alwaysOnTop ? 10000 + state.zCounter + 1 : state.zCounter + 1;
     const win: WindowInstance = {
       id,
       appId,
@@ -152,6 +189,11 @@ export const useWindows = create<WindowsState>((set, get) => ({
       payload,
     };
     set({ windows: [...state.windows, win], focusedId: id, zCounter: z });
+
+    // Auto-tile all windows unless an explicit position was provided.
+    if (!hasExplicitPos) {
+      get().retile();
+    }
     return id;
   },
 
@@ -163,9 +205,11 @@ export const useWindows = create<WindowsState>((set, get) => ({
       ),
       focusedId: s.focusedId === id ? null : s.focusedId,
     }));
-    // Remove after animation duration (must match Window.tsx exit duration)
+    // Remove after animation duration (must match Window.tsx exit duration),
+    // then retile remaining windows to fill the gap.
     setTimeout(() => {
       get().removeWindow(id);
+      get().retile();
     }, 180);
   },
 
@@ -189,13 +233,16 @@ export const useWindows = create<WindowsState>((set, get) => ({
       };
     }),
 
-  minimize: (id) =>
+  minimize: (id) => {
     set((s) => ({
       windows: s.windows.map((w) =>
         w.id === id ? { ...w, minimized: !w.minimized } : w
       ),
       focusedId: s.focusedId === id ? null : s.focusedId,
-    })),
+    }));
+    // Retile to fill/restore the gap when a window is minimized/restored.
+    get().retile();
+  },
 
   toggleMaximize: (id) =>
     set((s) => ({
@@ -298,4 +345,27 @@ export const useWindows = create<WindowsState>((set, get) => ({
   },
 
   closeAll: () => set({ windows: [], focusedId: null }),
+
+  retile: () => {
+    const layout = computeGridLayout(get().windows);
+    if (Object.keys(layout).length === 0) return;
+    set((s) => ({
+      windows: s.windows.map((w) => {
+        const newRect = layout[w.id];
+        if (!newRect) return w;
+        // Set tiling=true so the Window component enables CSS transitions
+        // for a smooth slide animation. The flag is cleared on next interaction.
+        return { ...w, rect: newRect, tiling: true, snap: "none" };
+      }),
+    }));
+    // Clear the tiling flag after the transition completes so that
+    // subsequent drag/resize operations don't have transitions.
+    setTimeout(() => {
+      set((s) => ({
+        windows: s.windows.map((w) =>
+          w.tiling ? { ...w, tiling: false } : w
+        ),
+      }));
+    }, 350);
+  },
 }));

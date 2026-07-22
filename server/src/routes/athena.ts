@@ -87,19 +87,10 @@ athena.post("/chat", zValidator("json", chatSchema), async (c) => {
   }
 
   // Use Message instances (multi-llm-ts expects them for vision checks etc.)
-  // but override toJSON so only { role, content } is serialized to the provider.
-  // Extra fields (attachments, toolCalls, contentForModel, reasoning) cause 400
-  // errors on some OpenAI-compatible endpoints (e.g. OpenCode Zen / DeepSeek).
   const thread: Message[] = [
     new Message("system", systemPrompt),
     ...fixedMessages.map((m) => new Message(m.role, m.content)),
   ];
-  // Patch toJSON on each Message so the OpenAI SDK serializes clean API format.
-  for (const msg of thread) {
-    (msg as any).toJSON = function () {
-      return { role: this.role, content: this.content };
-    };
-  }
 
   // Abort when the client disconnects.
   const abort = new AbortController();
@@ -114,6 +105,35 @@ athena.post("/chat", zValidator("json", chatSchema), async (c) => {
         windows: clientWindows,
       });
       model.addPlugin(plugin);
+
+      // Patch the internal OpenAI client's fetch to retry on transient
+      // "Upstream request failed" 400 errors from the provider proxy
+      // (OpenCode Zen → DeepSeek). This happens intermittently during
+      // multi-step tool call loops and is not a request format issue.
+      const engine = (model as any).engine;
+      const client = engine?.client;
+      if (client && typeof client.fetch === "function") {
+        const origFetch = client.fetch.bind(client);
+        client.fetch = async (url: string, init?: any) => {
+          const maxRetries = 3;
+          for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            const res = await origFetch(url, init);
+            if (res.status !== 400 || attempt === maxRetries) return res;
+            // Check if the error body is "Upstream request failed" (transient)
+            const cloned = res.clone();
+            let isTransient = false;
+            try {
+              const body = await cloned.json();
+              const msg = body?.error?.message ?? body?.message ?? "";
+              isTransient = /upstream request failed/i.test(msg);
+            } catch { /* not JSON */ }
+            if (!isTransient) return res;
+            console.warn(`[athena] transient upstream error, retrying (${attempt + 1}/${maxRetries})…`);
+            await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+          }
+          return origFetch(url, init);
+        };
+      }
 
       try {
         for await (const chunk of model.generate(thread, {
@@ -165,7 +185,17 @@ athena.post("/chat", zValidator("json", chatSchema), async (c) => {
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Athena request failed";
         const status = e instanceof LlmError ? e.status : 500;
-        console.error("[athena] chat error:", msg, e instanceof Error ? e.stack : e);
+        console.error("[athena] chat error:", msg);
+        if (e instanceof Error) {
+          const err = e as any;
+          console.error("[athena] error details:", {
+            status: err.status,
+            code: err.code,
+            type: err.type,
+            error: err.error,
+            requestID: err.requestID,
+          });
+        }
         await stream.writeSSE({
           event: "error",
           data: JSON.stringify({ error: msg, status }),

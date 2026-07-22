@@ -69,6 +69,7 @@ export default function AthenaApp({
   const minimizeWindow = useWindows((s) => s.minimize);
   const setRect = useWindows((s) => s.setRect);
   const closeAll = useWindows((s) => s.closeAll);
+  const retile = useWindows((s) => s.retile);
   const athenaRollEdge = useSettings((s) => s.athenaRollEdge);
   const setAthenaRollEdge = useSettings((s) => s.setAthenaRollEdge);
   const setAthenaQuickOpen = useAthenaQuick((s) => s.setOpen);
@@ -78,8 +79,8 @@ export default function AthenaApp({
   // quick succession during a single SSE stream (e.g. open_app x2 then tile).
   const windowsRef = useRef(windows);
   windowsRef.current = windows;
-  const storeRef = useRef({ openWindow, closeWindow, focusWindow, minimizeWindow, setRect, closeAll });
-  storeRef.current = { openWindow, closeWindow, focusWindow, minimizeWindow, setRect, closeAll };
+  const storeRef = useRef({ openWindow, closeWindow, focusWindow, minimizeWindow, setRect, closeAll, retile });
+  storeRef.current = { openWindow, closeWindow, focusWindow, minimizeWindow, setRect, closeAll, retile };
 
   // Build the window state snapshot to send with each chat request.
   const buildWindowState = useCallback((): AthenaWindowState[] => {
@@ -107,7 +108,7 @@ export default function AthenaApp({
   // pomodoro, workspace restore). Uses refs to avoid stale closures.
   const dispatchClientAction = useCallback((action: AthenaClientAction) => {
     const p = action.payload as Record<string, any>;
-    const { openWindow, closeWindow, focusWindow, minimizeWindow, setRect, closeAll } = storeRef.current;
+    const { openWindow, closeWindow, focusWindow, minimizeWindow, setRect, closeAll, retile } = storeRef.current;
     switch (action.tool) {
       case "start_pomodoro": {
         openWindow({
@@ -163,9 +164,9 @@ export default function AthenaApp({
       }
       case "tile_windows": {
         // Defer tiling by one tick so any pending openWindow/closeWindow
-        // state updates have flushed into windowsRef first.
+        // state updates have flushed into the store first.
         setTimeout(() => {
-          tileWindows(windowsRef.current, setRect, p.layout ?? "grid");
+          retile();
         }, 50);
         break;
       }
@@ -470,43 +471,6 @@ export default function AthenaApp({
       </div>
     </div>
   );
-}
-
-// ===== Window tiling helper =====
-
-function tileWindows(
-  windows: WindowInstance[],
-  setRect: (id: string, rect: WindowRect) => void,
-  layout: string
-) {
-  // Don't tile always-on-top windows (Athena itself stays put).
-  const visible = windows.filter((w) => !w.minimized && !w.alwaysOnTop);
-  if (visible.length === 0) return;
-  const vw = window.innerWidth;
-  const vh = window.innerHeight - 48;
-
-  if (layout === "horizontal") {
-    const w = Math.floor(vw / visible.length);
-    visible.forEach((win, i) => {
-      setRect(win.id, { x: i * w, y: 0, width: w, height: vh });
-    });
-  } else if (layout === "vertical") {
-    const h = Math.floor(vh / visible.length);
-    visible.forEach((win, i) => {
-      setRect(win.id, { x: 0, y: i * h, width: vw, height: h });
-    });
-  } else {
-    // grid
-    const cols = Math.ceil(Math.sqrt(visible.length));
-    const rows = Math.ceil(visible.length / cols);
-    const cw = Math.floor(vw / cols);
-    const ch = Math.floor(vh / rows);
-    visible.forEach((win, i) => {
-      const col = i % cols;
-      const row = Math.floor(i / cols);
-      setRect(win.id, { x: col * cw, y: row * ch, width: cw, height: ch });
-    });
-  }
 }
 
 // ===== UI components =====

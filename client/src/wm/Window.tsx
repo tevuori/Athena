@@ -1,4 +1,4 @@
-import { useRef, useCallback, type ReactNode } from "react";
+import { useRef, useCallback, useState, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { Minus, Square, X, Copy } from "lucide-react";
 import { useWindows, type WindowInstance, type SnapZone } from "../store/windows";
@@ -51,12 +51,15 @@ export default function Window({ win, children }: Props) {
     shiftKey: boolean;
   } | null>(null);
   const snapPreviewRef = useRef<SnapZone>("none");
+  // Track whether the user is actively dragging/resizing to disable CSS transitions.
+  const [isInteracting, setIsInteracting] = useState(false);
 
   const onPointerDown = useCallback(
     (mode: DragMode) => (e: React.PointerEvent) => {
       if (win.snap === "maximized" && mode === "move") return;
       e.stopPropagation();
       focus(win.id);
+      setIsInteracting(true);
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
       dragState.current = {
         mode,
@@ -128,6 +131,7 @@ export default function Window({ win, children }: Props) {
     (e: React.PointerEvent) => {
       const st = dragState.current;
       dragState.current = null;
+      setIsInteracting(false);
       (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
       const zone = snapPreviewRef.current;
       snapPreviewRef.current = "none";
@@ -169,6 +173,9 @@ export default function Window({ win, children }: Props) {
   }
 
   const isMax = win.snap === "maximized";
+  // Enable smooth CSS transitions for position/size when auto-tiling.
+  // Disable during drag/resize so the window follows the cursor instantly.
+  const useTransition = win.tiling && !isInteracting;
 
   return (
     <motion.div
@@ -193,6 +200,9 @@ export default function Window({ win, children }: Props) {
         zIndex: win.zIndex,
         pointerEvents: "auto",
         transformOrigin: "center",
+        ...(useTransition
+          ? { transition: "left 0.3s ease, top 0.3s ease, width 0.3s ease, height 0.3s ease" }
+          : {}),
       }}
     >
       {/* Title bar */}
