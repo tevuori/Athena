@@ -1,0 +1,226 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  displayName  String   @default("")
+  avatarColor  String   @default("#6366f1")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  notes       Note[]
+  noteFolders NoteFolder[]
+  tasks       Task[]
+  files       VFile[]
+  folders     VFolder[]
+  settings    Setting[]
+  lyricsCache LyricsCache[]
+  flashcardDecks FlashcardDeck[]
+  courses     Course[]
+  vutCreds    VutCredentials?
+}
+
+model NoteFolder {
+  id       String @id @default(cuid())
+  name     String
+  parentId String?
+  parent   NoteFolder? @relation("NoteFolderTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children NoteFolder[] @relation("NoteFolderTree")
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  notes    Note[]
+  position Int    @default(0)
+
+  @@index([userId, parentId])
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  title     String   @default("Untitled")
+  content   String   @default("")
+  tags      String   @default("") // comma-separated
+  folderId  String?
+  folder    NoteFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pinned    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, folderId])
+  @@index([userId, updatedAt])
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model Task {
+  id          String       @id @default(cuid())
+  title       String
+  description String       @default("")
+  status      TaskStatus   @default(TODO)
+  priority    TaskPriority @default(MEDIUM)
+  dueDate     DateTime?
+  recurring   String       @default("") // e.g. "daily", "weekly"
+  order       Int          @default(0)
+  userId      String
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([userId, status])
+}
+
+model VFolder {
+  id       String   @id @default(cuid())
+  name     String
+  parentId String?
+  parent   VFolder? @relation("VFolderTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children VFolder[] @relation("VFolderTree")
+  files    VFile[]   @relation("VFolderFiles")
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([userId, parentId])
+}
+
+model VFile {
+  id         String   @id @default(cuid())
+  name       String
+  mimeType   String   @default("application/octet-stream")
+  size       Int      @default(0)
+  storageKey String   // relative path under uploads/
+  folderId   String?
+  folder     VFolder? @relation("VFolderFiles", fields: [folderId], references: [id], onDelete: SetNull)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@index([userId, folderId])
+}
+
+model LyricsCache {
+  id            String   @id @default(cuid())
+  trackId       String   // Spotify track URI or id
+  trackName     String
+  artistName    String
+  albumName     String   @default("")
+  duration      Int      @default(0)
+  syncedLyrics  String   @default("") // LRC text
+  plainLyrics   String   @default("")
+  instrumental  Boolean  @default(false)
+  userId        String?
+  user          User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fetchedAt     DateTime @default(now())
+
+  @@unique([trackId])
+  @@index([trackName, artistName])
+}
+
+model Setting {
+  id     String @id @default(cuid())
+  key    String
+  value  String
+  userId String?
+  user   User?  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
+}
+
+// ===== Flashcards (Spaced Repetition / SM-2) =====
+
+model FlashcardDeck {
+  id          String   @id @default(cuid())
+  name        String
+  description String   @default("")
+  color       String   @default("#6366f1")
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cards       Flashcard[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model Flashcard {
+  id          String   @id @default(cuid())
+  deckId      String
+  deck        FlashcardDeck @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  front       String
+  back        String
+  // SM-2 algorithm fields
+  easeFactor  Float    @default(2.5)
+  interval    Int      @default(0)  // days
+  repetitions Int      @default(0)
+  dueDate     DateTime @default(now())
+  lastReviewed DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([deckId])
+  @@index([dueDate])
+}
+
+// ===== Grade Tracker / GPA Calculator =====
+
+model Course {
+  id          String   @id @default(cuid())
+  name        String
+  code        String   @default("")  // e.g. "CS 101"
+  semester    String   @default("")  // e.g. "Fall 2025"
+  credits     Int      @default(3)
+  color       String   @default("#6366f1")
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignments Assignment[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId, semester])
+}
+
+model Assignment {
+  id         String  @id @default(cuid())
+  courseId   String
+  course     Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  name       String
+  score      Float   // e.g. 92.5
+  maxScore   Float   @default(100)
+  weight     Float   @default(1) // multiplier for weighted average
+  category   String  @default("General") // e.g. "Homework", "Exam", "Quiz"
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([courseId])
+}
+
+// ===== VUT Integration =====
+
+model VutCredentials {
+  id        String  @id @default(cuid())
+  userId    String  @unique
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  username  String  // VUT login (e.g. xlogin00)
+  passwordEnc String // AES-256-GCM encrypted
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

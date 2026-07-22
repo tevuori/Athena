@@ -1,0 +1,6 @@
+[install]
+# Allow Prisma engine binaries
+allow = ["*"]
+
+[install.scopes]
+# No private scopes needed

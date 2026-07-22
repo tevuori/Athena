@@ -1,0 +1,479 @@
+import { useState, useEffect, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Brain, Plus, Trash2, ArrowLeft, ChevronRight, RotateCcw,
+  Check, X, AlertCircle, Layers,
+} from "lucide-react";
+import { flashcardsApi } from "../../services/flashcards";
+import type { Flashcard, FlashcardDeck } from "../../types";
+
+type View = "decks" | "cards" | "review";
+
+const DECK_COLORS = ["#6366f1", "#ec4899", "#22c55e", "#f59e0b", "#06b6d4", "#8b5cf6"];
+
+export default function FlashcardsApp() {
+  const [view, setView] = useState<View>("decks");
+  const [decks, setDecks] = useState<(FlashcardDeck & { _count: { cards: number } })[]>([]);
+  const [selectedDeck, setSelectedDeck] = useState<FlashcardDeck | null>(null);
+  const [cards, setCards] = useState<Flashcard[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Deck form
+  const [showDeckForm, setShowDeckForm] = useState(false);
+  const [deckName, setDeckName] = useState("");
+  const [deckDesc, setDeckDesc] = useState("");
+  const [deckColor, setDeckColor] = useState(DECK_COLORS[0]);
+
+  // Card form
+  const [showCardForm, setShowCardForm] = useState(false);
+  const [cardFront, setCardFront] = useState("");
+  const [cardBack, setCardBack] = useState("");
+
+  // Review state
+  const [reviewQueue, setReviewQueue] = useState<Flashcard[]>([]);
+  const [reviewIdx, setReviewIdx] = useState(0);
+  const [flipped, setFlipped] = useState(false);
+  const [reviewStats, setReviewStats] = useState({ again: 0, hard: 0, good: 0, easy: 0 });
+
+  const loadDecks = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { decks } = await flashcardsApi.listDecks();
+      setDecks(decks);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadDecks(); }, [loadDecks]);
+
+  const loadCards = useCallback(async (deckId: string) => {
+    setLoading(true);
+    try {
+      const { cards } = await flashcardsApi.listCards(deckId);
+      setCards(cards);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const openDeck = (deck: FlashcardDeck) => {
+    setSelectedDeck(deck);
+    setView("cards");
+    loadCards(deck.id);
+  };
+
+  const createDeck = async () => {
+    if (!deckName.trim()) return;
+    try {
+      await flashcardsApi.createDeck({ name: deckName, description: deckDesc, color: deckColor });
+      setShowDeckForm(false);
+      setDeckName(""); setDeckDesc(""); setDeckColor(DECK_COLORS[0]);
+      loadDecks();
+    } catch (e) { setError((e as Error).message); }
+  };
+
+  const deleteDeck = async (id: string) => {
+    try {
+      await flashcardsApi.deleteDeck(id);
+      loadDecks();
+    } catch (e) { setError((e as Error).message); }
+  };
+
+  const createCard = async () => {
+    if (!cardFront.trim() || !cardBack.trim() || !selectedDeck) return;
+    try {
+      await flashcardsApi.createCard(selectedDeck.id, { front: cardFront, back: cardBack });
+      setShowCardForm(false);
+      setCardFront(""); setCardBack("");
+      loadCards(selectedDeck.id);
+      loadDecks(); // update card count
+    } catch (e) { setError((e as Error).message); }
+  };
+
+  const deleteCard = async (cardId: string) => {
+    try {
+      await flashcardsApi.deleteCard(cardId);
+      setCards((cs) => cs.filter((c) => c.id !== cardId));
+      loadDecks();
+    } catch (e) { setError((e as Error).message); }
+  };
+
+  const startReview = async () => {
+    if (!selectedDeck) return;
+    // Use due cards, or all cards if none are due
+    const dueCards = cards.filter((c) => new Date(c.dueDate) <= new Date());
+    const queue = dueCards.length > 0 ? dueCards : cards;
+    if (queue.length === 0) return;
+    setReviewQueue(queue);
+    setReviewIdx(0);
+    setFlipped(false);
+    setReviewStats({ again: 0, hard: 0, good: 0, easy: 0 });
+    setView("review");
+  };
+
+  const reviewCard = async (quality: number) => {
+    const card = reviewQueue[reviewIdx];
+    if (!card) return;
+    try {
+      await flashcardsApi.reviewCard(card.id, quality);
+      const labels = ["again", "hard", "good", "easy"] as const;
+      setReviewStats((s) => ({ ...s, [labels[quality]]: s[labels[quality]] + 1 }));
+      if (reviewIdx + 1 < reviewQueue.length) {
+        setReviewIdx(reviewIdx + 1);
+        setFlipped(false);
+      } else {
+        // Review complete — go back to cards
+        setView("cards");
+        if (selectedDeck) loadCards(selectedDeck.id);
+        loadDecks();
+      }
+    } catch (e) { setError((e as Error).message); }
+  };
+
+  // ===== Decks View =====
+  if (view === "decks") {
+    return (
+      <div className="flex h-full flex-col bg-surface">
+        <div className="flex items-center justify-between border-b border-edge px-4 py-3">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-ink">
+            <Brain size={16} className="text-accent" /> Flashcard Decks
+          </h2>
+          <button
+            onClick={() => setShowDeckForm(true)}
+            className="flex items-center gap-1 rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white transition hover:bg-accent/90"
+          >
+            <Plus size={14} /> New Deck
+          </button>
+        </div>
+
+        {error && <p className="px-4 py-2 text-xs text-red-400">{error}</p>}
+
+        <div className="flex-1 overflow-y-auto p-4">
+          {loading ? (
+            <p className="py-8 text-center text-sm text-ink-muted">Loading...</p>
+          ) : decks.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <Layers size={48} className="mb-3 text-ink-muted opacity-40" />
+              <p className="text-sm text-ink-muted">No decks yet. Create one to start studying!</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+              {decks.map((deck) => (
+                <motion.button
+                  key={deck.id}
+                  layout
+                  onClick={() => openDeck(deck)}
+                  className="group relative overflow-hidden rounded-xl border border-edge bg-surface-2 p-4 text-left transition hover:border-accent/50"
+                >
+                  <div
+                    className="absolute right-0 top-0 h-20 w-20 rounded-bl-full opacity-20"
+                    style={{ backgroundColor: deck.color }}
+                  />
+                  <div className="relative">
+                    <div className="mb-2 h-1.5 w-10 rounded-full" style={{ backgroundColor: deck.color }} />
+                    <h3 className="mb-1 font-semibold text-ink">{deck.name}</h3>
+                    <p className="mb-3 line-clamp-2 text-xs text-ink-muted">{deck.description || "No description"}</p>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-ink-muted">{deck._count.cards} cards</span>
+                      <ChevronRight size={16} className="text-ink-muted transition group-hover:translate-x-0.5" />
+                    </div>
+                  </div>
+                </motion.button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* New deck modal */}
+        <AnimatePresence>
+          {showDeckForm && (
+            <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowDeckForm(false)}>
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full max-w-sm rounded-xl border border-edge bg-surface p-5 shadow-window"
+              >
+                <h3 className="mb-4 text-sm font-semibold text-ink">New Deck</h3>
+                <input
+                  autoFocus value={deckName} onChange={(e) => setDeckName(e.target.value)}
+                  placeholder="Deck name"
+                  className="mb-3 w-full rounded-lg border border-edge bg-surface-2 px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+                />
+                <textarea
+                  value={deckDesc} onChange={(e) => setDeckDesc(e.target.value)}
+                  placeholder="Description (optional)" rows={2}
+                  className="mb-3 w-full rounded-lg border border-edge bg-surface-2 px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+                />
+                <div className="mb-4 flex gap-2">
+                  {DECK_COLORS.map((c) => (
+                    <button
+                      key={c} onClick={() => setDeckColor(c)}
+                      className={`h-7 w-7 rounded-full transition ${deckColor === c ? "ring-2 ring-offset-2 ring-offset-surface ring-accent" : ""}`}
+                      style={{ backgroundColor: c }}
+                    />
+                  ))}
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button onClick={() => setShowDeckForm(false)} className="rounded-lg px-3 py-1.5 text-xs text-ink-muted hover:text-ink">Cancel</button>
+                  <button onClick={createDeck} className="rounded-lg bg-accent px-4 py-1.5 text-xs font-medium text-white hover:bg-accent/90">Create</button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  }
+
+  // ===== Cards View =====
+  if (view === "cards" && selectedDeck) {
+    return (
+      <div className="flex h-full flex-col bg-surface">
+        <div className="flex items-center justify-between border-b border-edge px-4 py-3">
+          <div className="flex items-center gap-2">
+            <button onClick={() => { setView("decks"); setSelectedDeck(null); }} className="text-ink-muted hover:text-ink">
+              <ArrowLeft size={16} />
+            </button>
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-ink">
+              <div className="h-3 w-3 rounded-full" style={{ backgroundColor: selectedDeck.color }} />
+              {selectedDeck.name}
+            </h2>
+          </div>
+          <div className="flex items-center gap-2">
+            {cards.length > 0 && (
+              <button
+                onClick={startReview}
+                className="flex items-center gap-1 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-green-700"
+              >
+                <Brain size={14} /> Study
+              </button>
+            )}
+            <button
+              onClick={() => setShowCardForm(true)}
+              className="flex items-center gap-1 rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white transition hover:bg-accent/90"
+            >
+              <Plus size={14} /> Add Card
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4">
+          {loading ? (
+            <p className="py-8 text-center text-sm text-ink-muted">Loading...</p>
+          ) : cards.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <Plus size={48} className="mb-3 text-ink-muted opacity-40" />
+              <p className="text-sm text-ink-muted">No cards yet. Add some to start studying!</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {cards.map((card) => {
+                const isDue = new Date(card.dueDate) <= new Date();
+                return (
+                  <div key={card.id} className="group flex items-start gap-3 rounded-lg border border-edge bg-surface-2 p-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="mb-1 text-sm font-medium text-ink">{card.front}</p>
+                      <p className="text-xs text-ink-muted">{card.back}</p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                        isDue ? "bg-amber-500/20 text-amber-400" : "bg-surface-3 text-ink-muted"
+                      }`}>
+                        {isDue ? "Due" : `${card.interval}d`}
+                      </span>
+                      <button
+                        onClick={() => deleteCard(card.id)}
+                        className="text-ink-muted opacity-0 transition hover:text-red-400 group-hover:opacity-100"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Add card modal */}
+        <AnimatePresence>
+          {showCardForm && (
+            <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowCardForm(false)}>
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full max-w-md rounded-xl border border-edge bg-surface p-5 shadow-window"
+              >
+                <h3 className="mb-4 text-sm font-semibold text-ink">New Card</h3>
+                <label className="mb-1 block text-xs text-ink-muted">Front (question)</label>
+                <textarea
+                  autoFocus value={cardFront} onChange={(e) => setCardFront(e.target.value)}
+                  placeholder="What is...?" rows={2}
+                  className="mb-3 w-full rounded-lg border border-edge bg-surface-2 px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+                />
+                <label className="mb-1 block text-xs text-ink-muted">Back (answer)</label>
+                <textarea
+                  value={cardBack} onChange={(e) => setCardBack(e.target.value)}
+                  placeholder="The answer is..." rows={3}
+                  className="mb-4 w-full rounded-lg border border-edge bg-surface-2 px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+                />
+                <div className="flex justify-end gap-2">
+                  <button onClick={() => setShowCardForm(false)} className="rounded-lg px-3 py-1.5 text-xs text-ink-muted hover:text-ink">Cancel</button>
+                  <button onClick={createCard} className="rounded-lg bg-accent px-4 py-1.5 text-xs font-medium text-white hover:bg-accent/90">Add</button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  }
+
+  // ===== Review View =====
+  if (view === "review" && selectedDeck) {
+    const card = reviewQueue[reviewIdx];
+    if (!card) {
+      setView("cards");
+      return null;
+    }
+    const progress = ((reviewIdx + 1) / reviewQueue.length) * 100;
+
+    return (
+      <div className="flex h-full flex-col bg-surface">
+        {/* Header */}
+        <div className="border-b border-edge px-4 py-3">
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-ink">
+              <Brain size={16} className="text-accent" />
+              {selectedDeck.name} — Review
+            </h2>
+            <button
+              onClick={() => setView("cards")}
+              className="text-xs text-ink-muted hover:text-ink"
+            >
+              Exit
+            </button>
+          </div>
+          {/* Progress bar */}
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-3">
+            <motion.div
+              className="h-full rounded-full bg-accent"
+              animate={{ width: `${progress}%` }}
+              transition={{ duration: 0.3 }}
+            />
+          </div>
+          <p className="mt-1 text-xs text-ink-muted">{reviewIdx + 1} of {reviewQueue.length}</p>
+        </div>
+
+        {/* Flashcard with 3D flip */}
+        <div className="flex flex-1 flex-col items-center justify-center p-6" style={{ perspective: "1000px" }}>
+          <motion.div
+            key={card.id}
+            initial={{ opacity: 0, x: 30 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.2 }}
+            className="relative w-full max-w-md"
+            style={{ transformStyle: "preserve-3d" }}
+          >
+            <div
+              onClick={() => setFlipped(!flipped)}
+              className="relative min-h-[280px] cursor-pointer rounded-2xl border border-edge p-8 shadow-window"
+              style={{
+                transformStyle: "preserve-3d",
+                transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)",
+                transition: "transform 0.5s ease",
+                backgroundColor: selectedDeck.color + "15",
+              }}
+            >
+              {/* Front */}
+              <div
+                className="absolute inset-0 flex flex-col items-center justify-center p-8"
+                style={{ backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" }}
+              >
+                <p className="mb-4 text-xs font-semibold uppercase tracking-wide text-ink-muted">Question</p>
+                <p className="text-center text-xl font-medium text-ink">{card.front}</p>
+                <p className="absolute bottom-4 text-xs text-ink-muted">Click to flip</p>
+              </div>
+              {/* Back */}
+              <div
+                className="absolute inset-0 flex flex-col items-center justify-center p-8"
+                style={{
+                  backfaceVisibility: "hidden",
+                  WebkitBackfaceVisibility: "hidden",
+                  transform: "rotateY(180deg)",
+                }}
+              >
+                <p className="mb-4 text-xs font-semibold uppercase tracking-wide" style={{ color: selectedDeck.color }}>Answer</p>
+                <p className="text-center text-lg text-ink">{card.back}</p>
+                <p className="absolute bottom-4 text-xs text-ink-muted">How well did you know this?</p>
+              </div>
+            </div>
+          </motion.div>
+
+          {/* Rating buttons (only show after flip) */}
+          <AnimatePresence>
+            {flipped && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 10 }}
+                className="mt-6 grid w-full max-w-md grid-cols-4 gap-2"
+              >
+                <button
+                  onClick={() => reviewCard(0)}
+                  className="flex flex-col items-center gap-1 rounded-xl bg-red-500/15 py-3 text-red-400 transition hover:bg-red-500/25"
+                >
+                  <X size={18} />
+                  <span className="text-xs font-medium">Again</span>
+                </button>
+                <button
+                  onClick={() => reviewCard(1)}
+                  className="flex flex-col items-center gap-1 rounded-xl bg-orange-500/15 py-3 text-orange-400 transition hover:bg-orange-500/25"
+                >
+                  <AlertCircle size={18} />
+                  <span className="text-xs font-medium">Hard</span>
+                </button>
+                <button
+                  onClick={() => reviewCard(2)}
+                  className="flex flex-col items-center gap-1 rounded-xl bg-blue-500/15 py-3 text-blue-400 transition hover:bg-blue-500/25"
+                >
+                  <Check size={18} />
+                  <span className="text-xs font-medium">Good</span>
+                </button>
+                <button
+                  onClick={() => reviewCard(3)}
+                  className="flex flex-col items-center gap-1 rounded-xl bg-green-500/15 py-3 text-green-400 transition hover:bg-green-500/25"
+                >
+                  <RotateCcw size={18} />
+                  <span className="text-xs font-medium">Easy</span>
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Review stats footer */}
+        <div className="border-t border-edge px-4 py-2">
+          <div className="flex justify-center gap-4 text-xs text-ink-muted">
+            <span className="text-red-400">Again: {reviewStats.again}</span>
+            <span className="text-orange-400">Hard: {reviewStats.hard}</span>
+            <span className="text-blue-400">Good: {reviewStats.good}</span>
+            <span className="text-green-400">Easy: {reviewStats.easy}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}

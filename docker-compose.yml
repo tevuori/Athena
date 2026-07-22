@@ -1,0 +1,40 @@
+services:
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: athena-server
+    ports:
+      - "3001:3000"
+    environment:
+      SERVER_PORT: 3000
+      SERVER_HOST: 0.0.0.0
+      DATABASE_URL: "file:/app/data/athena.db"
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+      SEED_USERNAME: ${SEED_USERNAME:-admin}
+      SEED_PASSWORD: ${SEED_PASSWORD:-admin}
+      SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID}
+      SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET}
+      SPOTIFY_REFRESH_TOKEN: ${SPOTIFY_REFRESH_TOKEN}
+      SPOTIFY_REDIRECT_URI: ${SPOTIFY_REDIRECT_URI:-http://localhost:5173/auth/spotify/callback}
+    volumes:
+      - athena-data:/app/data
+      - athena-uploads:/app/uploads
+    restart: unless-stopped
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: athena-client
+    ports:
+      - "5173:80"
+    environment:
+      VITE_API_URL: http://localhost:3001
+    depends_on:
+      - server
+    restart: unless-stopped
+
+volumes:
+  athena-data:
+  athena-uploads:

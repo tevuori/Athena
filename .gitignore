@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build outputs
+dist/
+build/
+**/dist/
+**/build/
+*.tsbuildinfo
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+server/.env
+client/.env
+
+# Database & uploads (runtime data, not committed)
+server/data/
+server/uploads/
+*.db
+*.db-journal
+*.sqlite
+*.sqlite-journal
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Vite
+client/.vite/
+
+# Prisma generated client (committed in schema dir is fine, but not root artifacts)
+server/prisma/migrations/dev.db*
+
+# Misc
+.cache/
+coverage/

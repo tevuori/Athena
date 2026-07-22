@@ -1,0 +1,26 @@
+{
+  "name": "athena-student-os",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A desktop-environment-style productivity dashboard for students.",
+  "scripts": {
+    "dev:server": "cd server && bun run dev",
+    "dev:client": "cd client && bun run dev",
+    "dev": "concurrently -n server,client -c blue,magenta \"bun run dev:server\" \"bun run dev:client\"",
+    "build:client": "cd client && bun run build",
+    "build:server": "cd server && bun run build",
+    "build": "bun run build:server && bun run build:client",
+    "typecheck:server": "cd server && bun run typecheck",
+    "typecheck:client": "cd client && bun run typecheck",
+    "typecheck": "bun run typecheck:server && bun run typecheck:client",
+    "db:generate": "cd server && bunx prisma generate",
+    "db:migrate": "cd server && bunx prisma migrate dev",
+    "db:seed": "cd server && bun run src/db/seed.ts",
+    "docker:up": "docker compose up --build",
+    "docker:down": "docker compose down",
+    "install:all": "bun install && cd server && bun install && cd ../client && bun install"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

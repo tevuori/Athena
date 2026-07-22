@@ -1,0 +1,29 @@
+import { useSettings, type WallpaperId } from "../store/settings";
+
+const GRADIENTS: Record<WallpaperId, string> = {
+  aurora: "radial-gradient(at 20% 20%, #4f46e5 0%, transparent 50%), radial-gradient(at 80% 30%, #9333ea 0%, transparent 50%), radial-gradient(at 50% 80%, #06b6d4 0%, transparent 50%), linear-gradient(135deg, #0f172a, #1e1b4b)",
+  sunset: "radial-gradient(at 20% 80%, #f97316 0%, transparent 50%), radial-gradient(at 80% 20%, #ec4899 0%, transparent 50%), linear-gradient(135deg, #1e1b4b, #831843)",
+  ocean: "radial-gradient(at 30% 30%, #0ea5e9 0%, transparent 50%), radial-gradient(at 70% 70%, #14b8a6 0%, transparent 50%), linear-gradient(135deg, #0c4a6e, #164e63)",
+  forest: "radial-gradient(at 25% 25%, #22c55e 0%, transparent 50%), radial-gradient(at 75% 75%, #15803d 0%, transparent 50%), linear-gradient(135deg, #14532d, #052e16)",
+  mesh: "linear-gradient(135deg, #1e293b 0%, #334155 50%, #475569 100%)",
+  mono: "linear-gradient(135deg, #0f172a, #1e293b)",
+};
+
+export default function Wallpaper() {
+  const wallpaper = useSettings((s) => s.wallpaper);
+  return (
+    <div
+      className="fixed inset-0 -z-10"
+      style={{ background: GRADIENTS[wallpaper] }}
+    >
+      {/* subtle noise overlay */}
+      <div
+        className="absolute inset-0 opacity-[0.03]"
+        style={{
+          backgroundImage:
+            "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='0.9'/%3E%3C/filter%3E%3Crect width='100' height='100' filter='url(%23n)'/%3E%3C/svg%3E\")",
+        }}
+      />
+    </div>
+  );
+}
