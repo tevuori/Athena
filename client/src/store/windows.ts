@@ -321,7 +321,10 @@ export const useWindows = create<WindowsState>((set, get) => ({
     const w = get().windows.find((x) => x.id === id);
     if (!w) return;
     if (w.minimized) {
+      // Restoring from minimized — un-minimize and retile so the window
+      // fits into the grid alongside the others (instead of overlapping).
       get().focus(id);
+      get().retile();
     } else if (get().focusedId === id) {
       get().minimize(id);
     } else {

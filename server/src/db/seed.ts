@@ -113,60 +113,8 @@ async function main() {
     ],
   });
 
-  // Demo courses + assignments for grade tracker
-  const course1 = await prisma.course.create({
-    data: {
-      name: "Data Structures",
-      code: "CS 101",
-      semester: "Fall 2025",
-      credits: 4,
-      color: "#6366f1",
-      userId: user.id,
-      assignments: {
-        create: [
-          { name: "Homework 1", score: 92, maxScore: 100, weight: 1, category: "Homework" },
-          { name: "Homework 2", score: 88, maxScore: 100, weight: 1, category: "Homework" },
-          { name: "Midterm Exam", score: 85, maxScore: 100, weight: 2, category: "Exam" },
-          { name: "Lab 1", score: 10, maxScore: 10, weight: 1, category: "Lab" },
-        ],
-      },
-    },
-  });
-
-  const course2 = await prisma.course.create({
-    data: {
-      name: "Linear Algebra",
-      code: "MATH 220",
-      semester: "Fall 2025",
-      credits: 3,
-      color: "#22c55e",
-      userId: user.id,
-      assignments: {
-        create: [
-          { name: "Quiz 1", score: 18, maxScore: 20, weight: 1, category: "Quiz" },
-          { name: "Quiz 2", score: 19, maxScore: 20, weight: 1, category: "Quiz" },
-          { name: "Midterm", score: 78, maxScore: 100, weight: 2, category: "Exam" },
-        ],
-      },
-    },
-  });
-
-  const course3 = await prisma.course.create({
-    data: {
-      name: "Spanish I",
-      code: "SPAN 101",
-      semester: "Fall 2025",
-      credits: 3,
-      color: "#ec4899",
-      userId: user.id,
-      assignments: {
-        create: [
-          { name: "Participation", score: 95, maxScore: 100, weight: 1, category: "Participation" },
-          { name: "Oral Exam", score: 82, maxScore: 100, weight: 2, category: "Exam" },
-        ],
-      },
-    },
-  });
+  // Note: Grade Tracker starts empty. Use "Sync from VUT" in the Grades app
+  // to import real grades from VUT Studis, or add courses manually.
 
   console.log("Seed complete.");
 }

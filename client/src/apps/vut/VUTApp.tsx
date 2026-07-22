@@ -509,27 +509,49 @@ export default function VUTApp() {
   );
 
   async function importGradesToTracker(vutGrades: VutGrade[], semesters: string[]) {
-    // Import VUT grades into the Grade Tracker app
+    // Import VUT grades into the Grade Tracker app — creates a course (if not
+    // already present) and an assignment representing the official VUT grade.
     let imported = 0;
+    let updated = 0;
     for (const g of vutGrades) {
       if (!g.courseName) continue;
       try {
         const semester = g.semester || semesters[0] || "";
         const { courses } = await gradesApi.listCourses(semester || undefined);
-        const existing = courses.find((c) => c.name === g.courseName);
+        let existing = courses.find((c) => c.name === g.courseName);
         if (!existing) {
-          await gradesApi.createCourse({
+          const { course } = await gradesApi.createCourse({
             name: g.courseName,
             code: g.courseCode,
             semester,
             credits: parseInt(g.credits) || 3,
             color: "#6366f1",
           });
+          existing = course;
           imported++;
+        }
+        // Create or update an assignment with the official VUT grade.
+        // VUT score is typically "X / Y" or a plain number; parse it.
+        const scoreNum = parseFloat(g.score) || 0;
+        const gradeAssignmentName = `VUT Official Grade (${g.completionType || "Assessment"})`;
+        const existingGrade = existing.assignments?.find(
+          (a) => a.name === gradeAssignmentName
+        );
+        if (!existingGrade) {
+          await gradesApi.createAssignment(existing.id, {
+            name: gradeAssignmentName,
+            score: scoreNum,
+            maxScore: 100,
+            weight: 1,
+            category: "Exam",
+          });
+          updated++;
         }
       } catch { /* ignore errors, continue */ }
     }
-    alert(`Imported ${imported} new course(s) to Grade Tracker. Open the Grades app to see them.`);
+    alert(
+      `Imported ${imported} new course(s) and ${updated} grade(s) to Grade Tracker. Open the Grades app to see them.`
+    );
   }
 }
 
