@@ -16,6 +16,8 @@ export interface AthenaWindowState {
   rect: { x: number; y: number; width: number; height: number };
   minimized: boolean;
   focused: boolean;
+  /** For Browser windows: the URL currently displayed. */
+  browserUrl?: string;
 }
 
 export interface AthenaToolEvent {

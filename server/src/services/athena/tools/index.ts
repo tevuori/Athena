@@ -18,6 +18,7 @@ import { crossAppTools } from "./crossapp";
 import { researchTools } from "./research";
 import { memoryTools } from "./memory";
 import { linkTools } from "./links";
+import { browserTools } from "./browser";
 
 export { AthenaToolsPlugin, type ToolDef, type ToolContext, type ClientWindowInfo } from "./plugin";
 
@@ -42,6 +43,7 @@ export const ALL_TOOLS: ToolDef[] = [
   ...crossAppTools,
   ...memoryTools,
   ...linkTools,
+  ...browserTools,
 ];
 
 /** Tool metadata safe to expose to the client (no handlers). */

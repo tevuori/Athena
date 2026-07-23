@@ -20,6 +20,7 @@ import type { WindowInstance } from "../../store/windows";
 import type { VFolder } from "../../types";
 import { useSettings, type AthenaRollEdge } from "../../store/settings";
 import { useAthenaQuick } from "../../store/athenaQuick";
+import { useBrowser } from "../../store/browser";
 
 interface ChatTurn extends AthenaMessage {
   tools?: AthenaToolEvent[];
@@ -52,6 +53,7 @@ const APP_ICONS: Record<string, string> = {
   viewer: "Image",
   athena: "Sparkles",
   study: "GraduationCap",
+  browser: "Globe",
 };
 
 export default function AthenaApp({
@@ -110,6 +112,8 @@ export default function AthenaApp({
   const athenaRollEdge = useSettings((s) => s.athenaRollEdge);
   const setAthenaRollEdge = useSettings((s) => s.setAthenaRollEdge);
   const setAthenaQuickOpen = useAthenaQuick((s) => s.setOpen);
+  const browserUrls = useBrowser((s) => s.urls);
+  const requestNav = useBrowser((s) => s.requestNav);
 
   // Keep a ref to the latest windows + store actions so the client-action
   // dispatcher always sees current state even when multiple actions fire in
@@ -118,6 +122,10 @@ export default function AthenaApp({
   windowsRef.current = windows;
   const storeRef = useRef({ openWindow, closeWindow, focusWindow, minimizeWindow, setRect, closeAll, retile });
   storeRef.current = { openWindow, closeWindow, focusWindow, minimizeWindow, setRect, closeAll, retile };
+  const browserUrlsRef = useRef(browserUrls);
+  browserUrlsRef.current = browserUrls;
+  const requestNavRef = useRef(requestNav);
+  requestNavRef.current = requestNav;
   // Ref to the send function so dispatchClientAction can trigger a chat
   // message (used by Quick Capture's open_athena client action).
   const sendRef = useRef<((text: string) => void) | null>(null);
@@ -131,9 +139,10 @@ export default function AthenaApp({
       rect: { x: w.rect.x, y: w.rect.y, width: w.rect.width, height: w.rect.height },
       minimized: w.minimized,
       focused: focusedId === w.id,
+      ...(w.appId === "browser" && browserUrls[w.id] ? { browserUrl: browserUrls[w.id] } : {}),
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [windows, focusedId]);
+  }, [windows, focusedId, browserUrls]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -326,6 +335,18 @@ export default function AthenaApp({
       ? { ...p.clientAction.payload }
       : p;
     const act = (p.action ?? p.clientAction?.tool ?? action.tool) as string;
+    // Helper: find a browser window by id, or fall back to a non-minimized /
+    // last-open one.
+    const findBrowserWindow = (windowId?: string) => {
+      const wins = windowsRef.current.filter((w) => w.appId === "browser");
+      if (!wins.length) return null;
+      if (windowId) {
+        const byId = wins.find((w) => w.id === String(windowId));
+        if (byId) return byId;
+      }
+      // Prefer a non-minimized browser window, else the last in the list.
+      return wins.find((w) => !w.minimized) ?? wins[wins.length - 1];
+    };
     switch (act) {
       case "start_pomodoro": {
         openWindow({
@@ -453,6 +474,47 @@ export default function AthenaApp({
       case "show_code_result": {
         // run_code results are rendered inline from the tool event's `result`
         // field in ToolResultBlock. No window action needed here.
+        break;
+      }
+      case "open_browser": {
+        // Open the Browser app and navigate to a URL. If a Browser window is
+        // already open, focus it and navigate via the browser store; otherwise
+        // open a new window seeded with the URL payload.
+        const url = String(payload.url ?? "");
+        const existing = windowsRef.current.find((w) => w.appId === "browser");
+        if (existing) {
+          focusWindow(existing.id);
+          if (existing.minimized) minimizeWindow(existing.id);
+          requestNavRef.current(existing.id, "navigate", url);
+        } else {
+          openWindow({
+            appId: "browser",
+            title: "Browser",
+            icon: "Globe",
+            payload: url ? { url } : undefined,
+          });
+        }
+        break;
+      }
+      case "navigate_browser": {
+        const url = String(payload.url ?? "");
+        const target = findBrowserWindow(payload.windowId);
+        if (target) requestNavRef.current(target.id, "navigate", url);
+        break;
+      }
+      case "browser_back": {
+        const target = findBrowserWindow(payload.windowId);
+        if (target) requestNavRef.current(target.id, "back");
+        break;
+      }
+      case "browser_forward": {
+        const target = findBrowserWindow(payload.windowId);
+        if (target) requestNavRef.current(target.id, "forward");
+        break;
+      }
+      case "browser_reload": {
+        const target = findBrowserWindow(payload.windowId);
+        if (target) requestNavRef.current(target.id, "reload");
         break;
       }
       default: {

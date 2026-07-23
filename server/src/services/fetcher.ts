@@ -3,7 +3,7 @@
 // article content using @postlight/parser (Readability-based). Falls back to
 // cheerio-based heuristics if Parser returns empty. Includes SSRF protection.
 
-import Parser from "@postlight/parser";
+import * as Parser from "@postlight/parser";
 import { load } from "cheerio";
 
 export interface FetchedPage {
@@ -25,7 +25,7 @@ const MAX_REDIRECTS = 5;
 const MAX_BYTES = 5 * 1024 * 1024; // 5 MB raw HTML cap
 
 /** Block private/loopback/link-local/CGNAT ranges to prevent SSRF. */
-function isBlockedHost(hostname: string): boolean {
+export function isBlockedHost(hostname: string): boolean {
   const h = hostname.toLowerCase().replace(/^\[+|\]+$/g, "");
   if (h === "localhost") return true;
   if (h.endsWith(".local")) return true;
@@ -49,7 +49,7 @@ function isBlockedHost(hostname: string): boolean {
   return false;
 }
 
-function validateUrl(raw: string): URL {
+export function validateUrl(raw: string): URL {
   let u: URL;
   try {
     u = new URL(raw);
