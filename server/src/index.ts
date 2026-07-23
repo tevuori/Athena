@@ -22,6 +22,7 @@ import capture from "./routes/capture";
 import microsoft from "./routes/microsoft";
 import users from "./routes/users";
 import ntfy from "./routes/ntfy";
+import voice from "./routes/voice";
 import links from "./routes/links";
 import proactiveAlerts from "./routes/proactive-alerts";
 import { isSpotifyConfigured } from "./services/spotify";
@@ -72,6 +73,7 @@ app.route("/api/capture", capture);
 app.route("/api/microsoft", microsoft);
 app.route("/api/users", users);
 app.route("/api/ntfy", ntfy);
+app.route("/api/voice", voice);
 app.route("/api/links", links);
 app.route("/api/proactive-alerts", proactiveAlerts);
 

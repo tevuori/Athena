@@ -6,10 +6,12 @@
 
 import { useState, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Zap, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { Zap, Loader2, CheckCircle2, AlertCircle, Mic, Square } from "lucide-react";
 import { useWindows, type AppId } from "../store/windows";
 import { useNotifications } from "../store/notifications";
 import { api } from "../services/api";
+import { useRecorder, fmtDuration } from "../apps/voice/useRecorder";
+import { voiceApi } from "../services/voice";
 
 interface CaptureResponse {
   target: "task" | "note" | "flashcard" | "athena" | "study";
@@ -30,9 +32,11 @@ export default function QuickCapture() {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [voiceMode, setVoiceMode] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const { open: openWindow } = useWindows();
   const pushNotification = useNotifications((s) => s.push);
+  const rec = useRecorder();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -53,8 +57,13 @@ export default function QuickCapture() {
       setText("");
       setFeedback(null);
       setBusy(false);
+      setVoiceMode(false);
       setTimeout(() => inputRef.current?.focus(), 50);
+    } else {
+      // Stop any in-progress recording when the overlay closes.
+      if (rec.recording) rec.stop();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const dispatch = (res: CaptureResponse) => {
@@ -119,6 +128,45 @@ export default function QuickCapture() {
     }
   };
 
+  const submitVoice = async () => {
+    if (busy) return;
+    if (rec.recording) {
+      // Stop the recording first, then process the resulting blob.
+      setBusy(true);
+      setFeedback(null);
+      const blob = await rec.stop();
+      if (!blob || blob.size === 0) {
+        setFeedback({ ok: false, msg: "Recording was empty." });
+        setBusy(false);
+        return;
+      }
+      try {
+        const res = await voiceApi.save(blob, { cleanup: true });
+        const msg = res.transcribed
+          ? `Voice note created: ${res.note.title}`
+          : "Voice note saved (transcription unavailable).";
+        setFeedback({ ok: true, msg });
+        pushNotification({ app: "Quick Capture", title: "Voice Note", body: msg });
+        // Open the created note.
+        openWindow({
+          appId: "notes",
+          title: "Notes",
+          icon: "StickyNote",
+          payload: { noteId: res.note.id },
+        });
+        setTimeout(() => setOpen(false), 800);
+      } catch (e) {
+        setFeedback({ ok: false, msg: (e as Error).message });
+      } finally {
+        setBusy(false);
+      }
+    } else {
+      // Not recording → start recording.
+      setFeedback(null);
+      await rec.start();
+    }
+  };
+
   return (
     <AnimatePresence>
       {open && (
@@ -144,30 +192,99 @@ export default function QuickCapture() {
               <span className="ml-auto text-[10px] text-ink-muted">Ctrl+Shift+N · Esc to close</span>
             </div>
             <div className="p-3">
-              <div className="flex items-center gap-2">
-                <input
-                  ref={inputRef}
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      submit();
-                    }
-                  }}
-                  disabled={busy}
-                  className="flex-1 rounded-md border border-edge bg-surface-2 px-3 py-2 text-sm text-ink outline-none focus:border-accent disabled:opacity-50"
-                  placeholder="Type anything — a task, idea, question… Athena will route it."
-                />
-                <button
-                  onClick={submit}
-                  disabled={busy || !text.trim()}
-                  className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-40"
-                >
-                  {busy ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
-                  Capture
-                </button>
-              </div>
+              {voiceMode ? (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={submitVoice}
+                    disabled={busy || !rec.supported}
+                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white transition disabled:opacity-40 ${
+                      rec.recording ? "bg-red-500 hover:bg-red-600" : "bg-accent hover:opacity-90"
+                    }`}
+                    title={rec.recording ? "Stop & transcribe" : "Start recording"}
+                  >
+                    {busy ? (
+                      <Loader2 size={15} className="animate-spin" />
+                    ) : rec.recording ? (
+                      <Square size={14} fill="currentColor" />
+                    ) : (
+                      <Mic size={16} />
+                    )}
+                  </button>
+                  <div className="flex flex-1 items-center gap-2 rounded-md border border-edge bg-surface-2 px-3 py-2">
+                    <span
+                      className={`h-2 w-2 rounded-full ${
+                        rec.recording
+                          ? rec.paused
+                            ? "bg-amber-400"
+                            : "animate-pulse bg-red-500"
+                          : "bg-surface-3"
+                      }`}
+                    />
+                    <span className="font-mono text-sm tabular-nums text-ink">
+                      {fmtDuration(rec.elapsed)}
+                    </span>
+                    <span className="text-xs text-ink-muted">
+                      {rec.recording
+                        ? rec.paused
+                          ? "paused"
+                          : "recording…"
+                        : "ready — tap mic to record"}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (rec.recording) rec.stop();
+                      setVoiceMode(false);
+                    }}
+                    disabled={busy}
+                    className="rounded-md bg-surface-2 px-3 py-2 text-sm text-ink-muted transition hover:bg-surface-3 hover:text-ink disabled:opacity-40"
+                  >
+                    Text
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <input
+                    ref={inputRef}
+                    value={text}
+                    onChange={(e) => setText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        submit();
+                      }
+                    }}
+                    disabled={busy}
+                    className="flex-1 rounded-md border border-edge bg-surface-2 px-3 py-2 text-sm text-ink outline-none focus:border-accent disabled:opacity-50"
+                    placeholder="Type anything — a task, idea, question… Athena will route it."
+                  />
+                  <button
+                    onClick={() => {
+                      setVoiceMode(true);
+                      setFeedback(null);
+                      rec.start();
+                    }}
+                    disabled={busy || !rec.supported}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-surface-2 text-ink-muted transition hover:bg-surface-3 hover:text-ink disabled:opacity-40"
+                    title="Record voice note"
+                  >
+                    <Mic size={16} />
+                  </button>
+                  <button
+                    onClick={submit}
+                    disabled={busy || !text.trim()}
+                    className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-40"
+                  >
+                    {busy ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
+                    Capture
+                  </button>
+                </div>
+              )}
+              {rec.error && (
+                <div className="mt-2 flex items-center gap-1.5 text-xs text-red-500">
+                  <AlertCircle size={13} /> {rec.error}
+                </div>
+              )}
               {feedback && (
                 <div
                   className={`mt-2 flex items-center gap-1.5 text-xs ${
@@ -179,7 +296,9 @@ export default function QuickCapture() {
                 </div>
               )}
               <p className="mt-2 text-[11px] text-ink-muted">
-                The AI classifies your input and creates a Task, Note, Flashcard, or opens Athena — then opens the result.
+                {voiceMode
+                  ? "Record a voice note — it's transcribed and saved as a linked Note."
+                  : "Type or speak — Athena routes it to a Task, Note, Flashcard, or chat."}
               </p>
             </div>
           </motion.div>
