@@ -37,11 +37,16 @@ function sleep(ms: number): Promise<void> {
  * non-interactive and can afford to retry heavily — the free OpenCode Zen
  * endpoint frequently drops connections mid-generation.
  *
+ * Key optimization: tool results from the first attempt are captured and
+ * injected into retry turns, so retries don't re-fetch the same data. The
+ * flaky endpoint typically drops during text generation (after tools complete),
+ * so this avoids redundant tool calls on retry.
+ *
  * Handles:
  *   - Network-level errors (fetch throws TypeError on connection drop)
  *   - HTTP 5xx server errors
  *   - HTTP 400 "upstream request failed" (transient provider errors)
- *   - Top-level turn retries (re-run the entire generation if it fails)
+ *   - Top-level turn retries with tool-result caching (no re-gathering)
  */
 async function runProactiveTurn(userId: string, userText: string): Promise<string | null> {
   const cfg = await getUserConfig(userId);
@@ -49,10 +54,19 @@ async function runProactiveTurn(userId: string, userText: string): Promise<strin
 
   const systemPrompt = await buildSystemPrompt(userId, []);
 
+  // Accumulated tool results from prior attempts — injected into retry turns
+  // so Athena doesn't re-call tools it already ran.
+  let gatheredContext = "";
+
   for (let turnAttempt = 0; turnAttempt < TURN_RETRIES; turnAttempt++) {
+    // On retry, append the gathered context so Athena can skip re-calling tools.
+    const effectivePrompt = gatheredContext
+      ? `${userText}\n\n---\nContext already gathered from your tools (do NOT re-call these tools — use this data directly):\n${gatheredContext}\n---\nNow write the briefing based on the above.`
+      : userText;
+
     const thread: Message[] = [
       new Message("system", systemPrompt),
-      new Message("user", userText),
+      new Message("user", effectivePrompt),
     ];
 
     const model = buildModel(cfg);
@@ -92,39 +106,54 @@ async function runProactiveTurn(userId: string, userText: string): Promise<strin
     let text = "";
     let completedTools = 0;
     let failedTools = 0;
+    const newToolResults: string[] = [];
 
     try {
       for await (const chunk of model.generate(thread, { tools: true })) {
         if (chunk.type === "content") {
           text += chunk.text ?? "";
         } else if (chunk.type === "tool" && chunk.state === "completed") {
-          const result = chunk.call?.result as any;
-          if (result && typeof result === "object" && "error" in result) {
+          const call = chunk.call;
+          const result = call?.result as any;
+          const isError = result && typeof result === "object" && "error" in result;
+          if (isError) {
             failedTools++;
           } else {
             completedTools++;
+            // Cache the tool result for retry injection.
+            const toolName = (chunk as any).name ?? "unknown";
+            const summary = summarizeToolResult(toolName, result);
+            if (summary) newToolResults.push(summary);
           }
         }
       }
       const result = text.trim();
       if (result) return result;
-      // Empty text but no error — if tools ran, try once more to get a summary.
+      // Empty text but no error — cache tools and try once more.
+      if (newToolResults.length) {
+        gatheredContext += newToolResults.join("\n");
+      }
       if (turnAttempt < TURN_RETRIES - 1) {
         await sleep(5000);
         continue;
       }
       return "(no response)";
     } catch (e) {
+      // Cache whatever tools completed before the failure.
+      if (newToolResults.length) {
+        gatheredContext += newToolResults.join("\n");
+      }
       const msg = e instanceof Error ? e.message : "unknown";
       const isTransient = /upstream|timeout|fetch|network|connection|ECONN/i.test(msg);
       if (isTransient && turnAttempt < TURN_RETRIES - 1) {
         console.error(
-          `[proactive] turn ${turnAttempt + 1}/${TURN_RETRIES} failed (${msg}), retrying...`
+          `[proactive] turn ${turnAttempt + 1}/${TURN_RETRIES} failed (${msg}), ` +
+            `retrying with ${completedTools} cached tool result${completedTools === 1 ? "" : "s"}...`
         );
         await sleep(8000 * (turnAttempt + 1));
         continue;
       }
-      // Last attempt failed — return a honest error rather than a canned "I completed" message.
+      // Last attempt failed — return an honest error.
       if (completedTools > 0) {
         return (
           `I gathered your workspace context (${completedTools} tool call${completedTools > 1 ? "s" : ""} ` +
@@ -136,6 +165,22 @@ async function runProactiveTurn(userId: string, userText: string): Promise<strin
     }
   }
   return "(no response)";
+}
+
+/**
+ * Summarize a tool result into a compact text string for retry injection.
+ * Truncates large results to avoid blowing up the prompt.
+ */
+function summarizeToolResult(toolName: string, result: any): string {
+  if (!result) return "";
+  try {
+    const json = typeof result === "string" ? result : JSON.stringify(result);
+    // Truncate to 800 chars per tool to keep the retry prompt manageable.
+    const truncated = json.length > 800 ? json.slice(0, 800) + "…(truncated)" : json;
+    return `[${toolName}] → ${truncated}`;
+  } catch {
+    return `[${toolName}] → (unserializable result)`;
+  }
 }
 
 /** Check if an HTTP error response is transient and should be retried. */
