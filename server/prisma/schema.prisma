@@ -38,8 +38,32 @@ model User {
   ntfyConfig    NtfyConfig?
   ntfyCronJobs  NtfyCronJob[]
   ntfyMessages  NtfyMessage[]
+  proactiveAlertConfig ProactiveAlertConfig?
   memories      AthenaMemory[]
   itemLinks     ItemLink[]
+}
+
+// ===== Proactive Alerts (Athena daily briefing scheduler) =====
+// One row per user. When enabled, the proactive scheduler fires an Athena
+// LLM turn at the configured hour:minute each day, gathers context via tools
+// (calendar, tasks, habits, + due flashcards in the system prompt), and pushes
+// a concise briefing to the user's ntfy notify topic.
+
+model ProactiveAlertConfig {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  enabled     Boolean  @default(false)
+  hour        Int      @default(8)      // 0-23, server-local time
+  minute      Int      @default(0)      // 0-59
+  categories  String   @default("calendar,tasks,flashcards,habits") // comma-separated
+  customPrompt String  @default("")     // optional override of the briefing prompt
+  lastRunAt   DateTime?
+  nextRunAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([enabled, nextRunAt])
 }
 
 // ===== Generic symmetric item links (drag-to-link between apps) =====

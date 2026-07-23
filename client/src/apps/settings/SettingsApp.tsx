@@ -9,6 +9,7 @@ import {
   Sparkles,
   Plug,
   Bell,
+  BellRing,
   Users as UsersIcon,
   Database,
   Info,
@@ -24,6 +25,7 @@ import SoundAthenaSection from "./sections/SoundAthenaSection";
 import AthenaSection from "./sections/AthenaSection";
 import IntegrationsSection from "./sections/IntegrationsSection";
 import NotificationsSection from "./sections/NotificationsSection";
+import ProactiveAlertsSection from "./sections/ProactiveAlertsSection";
 import UsersSection from "./sections/UsersSection";
 import DataStorageSection from "./sections/DataStorageSection";
 import AboutSection from "./sections/AboutSection";
@@ -44,6 +46,7 @@ const SECTIONS: SectionDef[] = [
   { id: "athena", label: "Athena Assistant", icon: <Sparkles size={15} /> },
   { id: "integrations", label: "Integrations", icon: <Plug size={15} /> },
   { id: "notifications", label: "Notifications", icon: <Bell size={15} /> },
+  { id: "proactive-alerts", label: "Proactive Alerts", icon: <BellRing size={15} /> },
   { id: "users", label: "Users", icon: <UsersIcon size={15} />, adminOnly: true },
   { id: "data", label: "Data & Storage", icon: <Database size={15} /> },
   { id: "about", label: "About", icon: <Info size={15} /> },
@@ -96,6 +99,7 @@ export default function SettingsApp(_: { win: WindowInstance }) {
         {active === "athena" && <AthenaSection />}
         {active === "integrations" && <IntegrationsSection />}
         {active === "notifications" && <NotificationsSection />}
+        {active === "proactive-alerts" && <ProactiveAlertsSection />}
         {active === "users" && isAdmin && <UsersSection />}
         {active === "data" && <DataStorageSection />}
         {active === "about" && <AboutSection />}
