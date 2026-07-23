@@ -14,7 +14,7 @@ Vite + React 18 · TypeScript · Tailwind CSS 3 · Bun + Hono · Prisma + SQLite
 
 ## Overview
 
-Athena is a self-hosted, browser-based "operating system" for students. It recreates the feel of a real desktop environment — draggable/resizable windows, a taskbar, start menu, system tray, command palette, and an animated wallpaper — and fills it with a suite of apps built around the academic workflow: notes, tasks, files, a code editor, flashcards, a grade tracker, calendar, habits, a Pomodoro timer, an AI study hub, and an AI assistant ("Athena").
+Athena is a self-hosted, browser-based "operating system" for students. It recreates the feel of a real desktop environment — draggable/resizable windows, a taskbar, start menu, system tray, command palette, and an animated wallpaper — and fills it with a suite of apps built around the academic workflow: notes, tasks, files, a code editor, flashcards, a grade tracker, calendar, habits, a Pomodoro timer, an AI study hub, voice notes with Whisper transcription, and an AI assistant ("Athena").
 
 It also integrates with the services students actually use: **Spotify** (with a beat-reactive fullscreen "Chill" mode), **Microsoft Calendar** (Graph API sync), and **VUT Studis** (Brno University of Technology SSO — grades, timetable, subject updates).
 
@@ -92,6 +92,7 @@ Two windows snapped side-by-side: the File Manager (virtual FS, tree sidebar, gr
 | 13 | **Calendar / Planner** | Month/week/day views, ICS import/export, task drag-to-schedule, Microsoft Graph sync |
 | 14 | **Habits** | Streaks, heatmap, auto-complete from Pomodoro sessions |
 | 15 | **Athena assistant** | Streaming chat UI with tool-call chips (SSE), multi-llm-ts backend, system prompt + tool plugins, `Win+Y` quick panel |
+| 16 | **Voice Notes** | Microphone recorder (MediaRecorder + Web Audio level meter), Whisper transcription via the OpenAI-compatible API, LLM cleanup pass (punctuation, paragraphs, smart title), saves audio to the virtual FS and creates a linked Note. Also integrated into Quick Capture (`Ctrl+Shift+N` mic button). Degrades gracefully — audio + placeholder note saved even without transcription |
 
 ### Integrations
 
@@ -184,6 +185,7 @@ See [`.env.example`](.env.example) for the full list. Key ones:
 | `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` / `SPOTIFY_REFRESH_TOKEN` | Spotify integration |
 | `MS_CLIENT_ID` / `MS_CLIENT_SECRET` / `MS_TENANT_ID` / `MS_REFRESH_TOKEN` | Microsoft Calendar sync (Graph API) |
 | `OPENAI_PROVIDER` / `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL` | Athena LLM server-wide fallback (per-user DB config takes priority). Default provider `openai`, base URL `https://opencode.ai/zen/v1`, model `deepseek-v4-flash-free` |
+| `OPENAI_TRANSCRIPTION_MODEL` | Whisper model for Voice Notes transcription (default `whisper-1`). Reuses `OPENAI_API_KEY` / `OPENAI_BASE_URL`. Note: the default OpenCode Zen endpoint does not serve audio transcription — set an OpenAI-compatible key/base URL that does (e.g. OpenAI, Groq) |
 
 ---
 
@@ -201,7 +203,8 @@ Athena/
 │       ├── db/{client.ts, seed.ts}
 │       ├── routes/              # auth, notes, tasks, files, spotify, lyrics,
 │       │                        # flashcards, grades, vut, ai, athena, conversations,
-│       │                        # study, moodle, calendar, habits, capture, microsoft
+│       │                        # study, moodle, calendar, habits, capture, microsoft,
+│       │                        # whiteboards, ntfy, voice
 │       ├── services/            # spotify, lrclib, jwt, vut, crypto, moodle, microsoft
 │       │   ├── athena/          # multi-llm-ts client, system prompt, tool plugins
 │       │   └── study/           # source, llm-json, prompts, quiz-store, logSession
@@ -218,7 +221,7 @@ Athena/
         │   ├── registry.tsx     # app manifest
         │   ├── notes/ tasks/ files/ editor/ viewer/ pomodoro/
         │   ├── flashcards/ grades/ vut/ athena/ study/
-        │   ├── calendar/ habits/ settings/
+        │   ├── calendar/ habits/ settings/ voice/ whiteboard/ ntfy/
         ├── store/               # Zustand stores (auth, windows, settings, music, notifications)
         ├── services/            # API clients
         └── types/               # shared TS types
