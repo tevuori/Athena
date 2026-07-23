@@ -16,6 +16,7 @@ import type { VFile, VFolder, FolderTreeNode, StorageInfo } from "../../types";
 import type { WindowInstance } from "../../store/windows";
 import { useWindows } from "../../store/windows";
 import ContextMenu, { type MenuItem } from "../../shell/ContextMenu";
+import CollapsibleSidebar from "../../wm/CollapsibleSidebar";
 
 type ViewMode = "grid" | "list";
 type SortKey = "name" | "size" | "modified" | "type";
@@ -706,15 +707,22 @@ export default function FilesApp(_: { win: WindowInstance }) {
   const selectedFiles = sortedFiles.filter((f) => selected.has(f.id));
 
   return (
-    <div className="flex h-full"
+    <div className="relative flex h-full"
       onContextMenu={(e) => {
         // Only show empty context menu when clicking on empty space
         if ((e.target as HTMLElement).closest("[data-file-item]") || (e.target as HTMLElement).closest("[data-folder-item]")) return;
         showEmptyContextMenu(e);
       }}
     >
-      {/* Sidebar */}
-      <div className="flex w-52 shrink-0 flex-col border-r border-edge bg-surface-2">
+      {/* Sidebar — inline @3xl+, overlay when narrow */}
+      <CollapsibleSidebar
+        side="left"
+        width="w-52"
+        showAt="@3xl"
+        panelClassName="bg-surface-2"
+        toggleIcon={<Folder size={14} />}
+        toggleLabel="Folders"
+      >
         <div className="flex-1 overflow-y-auto p-2">
           {/* Smart collections */}
           <div className="mb-2">
@@ -765,7 +773,7 @@ export default function FilesApp(_: { win: WindowInstance }) {
             </div>
           </div>
         )}
-      </div>
+      </CollapsibleSidebar>
 
       {/* Main panel */}
       <div className="flex flex-1 flex-col">
@@ -1145,15 +1153,17 @@ export default function FilesApp(_: { win: WindowInstance }) {
         </div>
       </div>
 
-      {/* Preview panel */}
+      {/* Preview panel — inline @5xl+, auto-overlay when narrow */}
       {preview && (
-        <div className="flex w-72 shrink-0 flex-col border-l border-edge bg-surface-2">
-          <div className="flex items-center justify-between border-b border-edge px-3 py-2">
-            <span className="line-clamp-1 text-xs font-medium text-ink">{preview.name}</span>
-            <button onClick={() => setPreview(null)} className="text-ink-muted hover:text-ink">
-              <X size={16} />
-            </button>
-          </div>
+        <>
+          <div className="@5xl:hidden absolute inset-0 z-10 bg-black/40" onClick={() => setPreview(null)} />
+          <div className="absolute inset-y-0 right-0 z-20 shrink-0 flex w-72 flex-col border-l border-edge bg-surface-2 shadow-window @5xl:static @5xl:z-auto @5xl:shadow-none">
+            <div className="flex items-center justify-between border-b border-edge px-3 py-2">
+              <span className="line-clamp-1 text-xs font-medium text-ink">{preview.name}</span>
+              <button onClick={() => setPreview(null)} className="text-ink-muted hover:text-ink">
+                <X size={16} />
+              </button>
+            </div>
           <FilePreview file={preview} />
           <div className="border-t border-edge p-3 text-xs text-ink-muted">
             <div className="flex justify-between py-0.5">
@@ -1184,6 +1194,7 @@ export default function FilesApp(_: { win: WindowInstance }) {
             </div>
           </div>
         </div>
+        </>
       )}
 
       {/* Context menu */}

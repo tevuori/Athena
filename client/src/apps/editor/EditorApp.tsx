@@ -40,6 +40,12 @@ export default function EditorApp({ win }: { win: WindowInstance }) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadedRef = useRef(false);
 
+  // Auto-switch out of split view when the window is too narrow for two panes.
+  // @4xl (56rem = 896px) is the breakpoint where split is comfortable.
+  useEffect(() => {
+    if (mode === "split" && win.rect.width < 896) setMode("edit");
+  }, [win.rect.width, mode]);
+
   const isMarkdown = useMemo(
     () => isMarkdownFile({ name, mimeType: fileMeta?.mimeType ?? "text/plain" }),
     [name, fileMeta]
@@ -220,7 +226,7 @@ export default function EditorApp({ win }: { win: WindowInstance }) {
               <ToolToggle active={mode === "edit"} onClick={() => setMode("edit")} title="Editor only">
                 <Pencil size={13} />
               </ToolToggle>
-              <ToolToggle active={mode === "split"} onClick={() => setMode("split")} title="Split view">
+              <ToolToggle active={mode === "split"} onClick={() => setMode("split")} title="Split view" className="hidden @4xl:flex">
                 <Columns2 size={13} />
               </ToolToggle>
               <ToolToggle active={mode === "preview"} onClick={() => setMode("preview")} title="Preview only">
@@ -288,7 +294,7 @@ export default function EditorApp({ win }: { win: WindowInstance }) {
         )}
         {showPreview && (
           <div className={`${showEditor ? "w-1/2" : "w-full"} overflow-auto bg-surface p-4`}>
-            <div className="selectable markdown-body mx-auto max-w-2xl">
+            <div className="selectable markdown-body mx-auto max-w-none @5xl:max-w-2xl">
               <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{content || "*Nothing to preview yet*"}</ReactMarkdown>
             </div>
           </div>
@@ -315,18 +321,20 @@ function ToolToggle({
   active,
   onClick,
   title,
+  className = "",
   children,
 }: {
   active: boolean;
   onClick: () => void;
   title: string;
+  className?: string;
   children: React.ReactNode;
 }) {
   return (
     <button
       onClick={onClick}
       title={title}
-      className={`flex h-7 w-7 items-center justify-center ${
+      className={`flex h-7 w-7 items-center justify-center ${className} ${
         active ? "bg-surface-3 text-ink" : "text-ink-muted hover:text-ink"
       }`}
     >

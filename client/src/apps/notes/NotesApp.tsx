@@ -11,11 +11,12 @@ import rehypeKatex from "rehype-katex";
 import {
   Search, Plus, Pin, Trash2, FolderPlus, FileText, Tag,
   Download, Loader2, Folder, Pencil, Columns2, Eye, Check,
-  ImageIcon, Paperclip, MoreVertical,
+  ImageIcon, Paperclip, MoreVertical, GraduationCap, X,
 } from "lucide-react";
 import { notesApi } from "../../services/notes";
 import { filesApi } from "../../services/files";
 import { useSettings } from "../../store/settings";
+import { useWindows } from "../../store/windows";
 import type { Note, NoteFolder } from "../../types";
 import type { WindowInstance } from "../../store/windows";
 
@@ -23,8 +24,9 @@ type EditorMode = "edit" | "split" | "preview";
 
 const SAVE_DEBOUNCE_MS = 1500;
 
-export default function NotesApp(_: { win: WindowInstance }) {
+export default function NotesApp({ win }: { win: WindowInstance }) {
   const isDark = useSettings((s) => s.theme === "dark");
+  const openWindow = useWindows((s) => s.open);
 
   const [folders, setFolders] = useState<NoteFolder[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
@@ -35,8 +37,20 @@ export default function NotesApp(_: { win: WindowInstance }) {
   const [saving, setSaving] = useState(false);
   const [mode, setMode] = useState<EditorMode>("split");
 
+  // Overlay sidebars — shown as toggled overlays when the window is too narrow
+  // for them to sit inline (controlled by container queries).
+  const [overlayFolders, setOverlayFolders] = useState(false);
+  const [overlayNotes, setOverlayNotes] = useState(false);
+
+  // Auto-switch out of split view when the window is too narrow for two panes.
+  // @6xl (72rem = 1152px) is the breakpoint where split is comfortable.
+  useEffect(() => {
+    if (mode === "split" && win.rect.width < 1152) setMode("edit");
+  }, [win.rect.width, mode]);
+
   // Folder context menu + inline rename
   const [folderMenu, setFolderMenu] = useState<{ x: number; y: number; folderId: string } | null>(null);
+  const [noteMenu, setNoteMenu] = useState<{ x: number; y: number; noteId: string } | null>(null);
   const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -84,6 +98,14 @@ export default function NotesApp(_: { win: WindowInstance }) {
   useEffect(() => {
     loadNotes();
   }, [loadNotes]);
+
+  // Auto-select a note when opened with a noteId payload (e.g. from the
+  // Study Hub "Open note" button after generating a summary/explanation).
+  useEffect(() => {
+    const noteId = win.payload?.noteId;
+    if (typeof noteId !== "string" || notes.length === 0) return;
+    if (notes.some((n) => n.id === noteId)) setSelectedId(noteId);
+  }, [win.payload, notes]);
 
   // Debounced search
   useEffect(() => {
@@ -277,6 +299,17 @@ export default function NotesApp(_: { win: WindowInstance }) {
     updateNote(note.id, { pinned: !note.pinned });
   };
 
+  // Open Study Hub with this note as the source, in the given mode.
+  const studyFromNote = (noteId: string, mode: "flashcards" | "summarize" | "quiz" | "explain" | "study_guide") => {
+    openWindow({
+      appId: "study",
+      title: "Study Hub",
+      icon: "GraduationCap",
+      payload: { mode, sourceKind: "note", sourceId: noteId },
+    });
+    setNoteMenu(null);
+  };
+
   const exportMarkdown = (note: Note) => {
     const blob = new Blob([`# ${note.title}\n\n${note.content}`], { type: "text/markdown" });
     const url = URL.createObjectURL(blob);
@@ -319,9 +352,30 @@ export default function NotesApp(_: { win: WindowInstance }) {
   const markdownExtensions = useMemo(() => [EditorView.lineWrapping], []);
 
   return (
-    <div className="flex h-full">
-      {/* Sidebar: folders + search */}
-      <div className="flex w-56 shrink-0 flex-col border-r border-edge bg-surface-2">
+    <div className="relative flex h-full">
+      {/* Backdrop for overlay sidebars (narrow only) */}
+      {(overlayFolders || overlayNotes) && (
+        <div
+          className="@5xl:hidden absolute inset-0 z-10 bg-black/40"
+          onClick={() => { setOverlayFolders(false); setOverlayNotes(false); }}
+        />
+      )}
+
+      {/* Sidebar: folders + search — inline @5xl+, overlay when narrow */}
+      <div
+        className={[
+          "absolute inset-y-0 left-0 z-20 shrink-0 flex w-56 flex-col border-r border-edge bg-surface-2 shadow-window",
+          overlayFolders ? "flex" : "hidden",
+          "@5xl:static @5xl:z-auto @5xl:flex @5xl:shadow-none",
+        ].join(" ")}
+      >
+        {/* Close button — overlay mode only (narrow) */}
+        <div className="@5xl:hidden flex items-center justify-between border-b border-edge px-2 py-1.5">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">Folders</span>
+          <button onClick={() => setOverlayFolders(false)} className="rounded p-0.5 text-ink-muted hover:bg-surface-3 hover:text-ink" title="Hide">
+            <X size={14} />
+          </button>
+        </div>
         <div className="p-2.5">
           <div className="mb-2 flex items-center gap-2 rounded-lg border border-edge bg-surface px-2.5 py-1.5">
             <Search size={14} className="text-ink-muted" />
@@ -434,8 +488,71 @@ export default function NotesApp(_: { win: WindowInstance }) {
         </>
       )}
 
-      {/* Note list */}
-      <div className="flex w-60 shrink-0 flex-col border-r border-edge">
+      {/* Note context menu */}
+      {noteMenu && (
+        <>
+          <div className="fixed inset-0 z-50" onClick={() => setNoteMenu(null)} onContextMenu={(e) => { e.preventDefault(); setNoteMenu(null); }} />
+          <div
+            className="fixed z-50 min-w-[160px] rounded-lg border border-edge bg-surface py-1 shadow-window"
+            style={{ left: noteMenu.x, top: noteMenu.y }}
+          >
+            <div className="px-3 py-1 text-[9px] font-semibold uppercase tracking-wide text-ink-muted">
+              Study
+            </div>
+            <button onClick={() => studyFromNote(noteMenu.noteId, "summarize")} className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-ink hover:bg-surface-3">
+              <GraduationCap size={12} /> Summarize
+            </button>
+            <button onClick={() => studyFromNote(noteMenu.noteId, "explain")} className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-ink hover:bg-surface-3">
+              <GraduationCap size={12} /> Explain
+            </button>
+            <button onClick={() => studyFromNote(noteMenu.noteId, "flashcards")} className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-ink hover:bg-surface-3">
+              <GraduationCap size={12} /> Make Flashcards
+            </button>
+            <button onClick={() => studyFromNote(noteMenu.noteId, "quiz")} className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-ink hover:bg-surface-3">
+              <GraduationCap size={12} /> Quiz Me
+            </button>
+            <button onClick={() => studyFromNote(noteMenu.noteId, "study_guide")} className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-ink hover:bg-surface-3">
+              <GraduationCap size={12} /> Add to Study Guide
+            </button>
+            <div className="my-1 border-t border-edge" />
+            <button
+              onClick={() => {
+                const n = notes.find((x) => x.id === noteMenu.noteId);
+                if (n) togglePin(n);
+                setNoteMenu(null);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-ink hover:bg-surface-3"
+            >
+              <Pin size={12} /> {notes.find((x) => x.id === noteMenu.noteId)?.pinned ? "Unpin" : "Pin"}
+            </button>
+            <button
+              onClick={() => {
+                deleteNote(noteMenu.noteId);
+                setNoteMenu(null);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-red-400 hover:bg-surface-3"
+            >
+              <Trash2 size={12} /> Delete
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* Note list — inline @3xl+, overlay when narrow */}
+      <div
+        className={[
+          "absolute inset-y-0 left-0 z-20 shrink-0 flex w-60 flex-col border-r border-edge bg-surface shadow-window",
+          overlayNotes ? "flex" : "hidden",
+          "@3xl:static @3xl:z-auto @3xl:flex @3xl:shadow-none",
+        ].join(" ")}
+      >
+        {/* Close button — overlay mode only (narrow) */}
+        <div className="@3xl:hidden flex items-center justify-between border-b border-edge px-2 py-1.5">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">Notes</span>
+          <button onClick={() => setOverlayNotes(false)} className="rounded p-0.5 text-ink-muted hover:bg-surface-3 hover:text-ink" title="Hide">
+            <X size={14} />
+          </button>
+        </div>
         <div className="flex items-center justify-between border-b border-edge px-3 py-2">
           <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
             {notes.length} notes
@@ -458,6 +575,10 @@ export default function NotesApp(_: { win: WindowInstance }) {
               <button
                 key={note.id}
                 onClick={() => setSelectedId(note.id)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setNoteMenu({ x: e.clientX, y: e.clientY, noteId: note.id });
+                }}
                 className={`block w-full border-b border-edge/50 px-3 py-2.5 text-left transition ${
                   selectedId === note.id ? "bg-accent/10" : "hover:bg-surface-2"
                 }`}
@@ -467,7 +588,19 @@ export default function NotesApp(_: { win: WindowInstance }) {
                     {dirtyIds.has(note.id) && <span className="text-amber-400">● </span>}
                     {note.title || "Untitled"}
                   </span>
-                  {note.pinned && <Pin size={11} className="mt-0.5 shrink-0 text-accent" />}
+                  <div className="flex shrink-0 items-center gap-0.5">
+                    {note.pinned && <Pin size={11} className="mt-0.5 text-accent" />}
+                    <span
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setNoteMenu({ x: e.clientX, y: e.clientY, noteId: note.id });
+                      }}
+                      className="rounded p-0.5 text-ink-muted opacity-0 transition hover:bg-surface-3 hover:text-ink group-hover:opacity-100"
+                      title="More options"
+                    >
+                      <MoreVertical size={12} />
+                    </span>
+                  </div>
                 </div>
                 <p className="mt-0.5 line-clamp-2 text-[11px] text-ink-muted">
                   {note.content.replace(/[#*`>\-]/g, "").slice(0, 80) || "Empty note"}
@@ -492,6 +625,21 @@ export default function NotesApp(_: { win: WindowInstance }) {
         {selected ? (
           <>
             <div className="flex items-center gap-2 border-b border-edge px-3 py-2">
+              {/* Toggle buttons for collapsed sidebars (narrow only) */}
+              <button
+                onClick={() => setOverlayFolders(true)}
+                className="@5xl:hidden flex h-7 w-7 items-center justify-center rounded text-ink-muted hover:bg-surface-3"
+                title="Show folders"
+              >
+                <Folder size={14} />
+              </button>
+              <button
+                onClick={() => setOverlayNotes(true)}
+                className="@3xl:hidden flex h-7 w-7 items-center justify-center rounded text-ink-muted hover:bg-surface-3"
+                title="Show notes list"
+              >
+                <FileText size={14} />
+              </button>
               <input
                 value={selected.title}
                 onChange={(e) => updateNote(selected.id, { title: e.target.value })}
@@ -526,7 +674,7 @@ export default function NotesApp(_: { win: WindowInstance }) {
                 <ToolToggle active={mode === "edit"} onClick={() => setMode("edit")} title="Editor only">
                   <Pencil size={13} />
                 </ToolToggle>
-                <ToolToggle active={mode === "split"} onClick={() => setMode("split")} title="Split view">
+                <ToolToggle active={mode === "split"} onClick={() => setMode("split")} title="Split view" className="hidden @6xl:flex">
                   <Columns2 size={13} />
                 </ToolToggle>
                 <ToolToggle active={mode === "preview"} onClick={() => setMode("preview")} title="Preview only">
@@ -591,7 +739,24 @@ export default function NotesApp(_: { win: WindowInstance }) {
             />
           </>
         ) : (
-          <div className="flex flex-1 flex-col items-center justify-center text-ink-muted">
+          <div className="relative flex flex-1 flex-col items-center justify-center text-ink-muted">
+            {/* Toggle buttons for collapsed sidebars (narrow only) */}
+            <div className="absolute left-2 top-2 flex gap-1">
+              <button
+                onClick={() => setOverlayFolders(true)}
+                className="@5xl:hidden flex h-7 w-7 items-center justify-center rounded text-ink-muted hover:bg-surface-3"
+                title="Show folders"
+              >
+                <Folder size={14} />
+              </button>
+              <button
+                onClick={() => setOverlayNotes(true)}
+                className="@3xl:hidden flex h-7 w-7 items-center justify-center rounded text-ink-muted hover:bg-surface-3"
+                title="Show notes list"
+              >
+                <FileText size={14} />
+              </button>
+            </div>
             <FileText size={40} className="mb-3 opacity-30" />
             <p className="text-sm">Select a note or create a new one</p>
           </div>
@@ -607,18 +772,20 @@ function ToolToggle({
   active,
   onClick,
   title,
+  className = "",
   children,
 }: {
   active: boolean;
   onClick: () => void;
   title: string;
+  className?: string;
   children: React.ReactNode;
 }) {
   return (
     <button
       onClick={onClick}
       title={title}
-      className={`flex h-7 w-7 items-center justify-center ${
+      className={`flex h-7 w-7 items-center justify-center ${className} ${
         active ? "bg-surface-3 text-ink" : "text-ink-muted hover:text-ink"
       }`}
     >
@@ -678,7 +845,7 @@ function NoteEditor({
       )}
       {showPreview && (
         <div className={`${showEditor ? "w-1/2" : "w-full"} overflow-auto bg-surface p-5`}>
-          <div className="selectable markdown-body mx-auto max-w-2xl prose-sm">
+          <div className="selectable markdown-body mx-auto max-w-none @5xl:max-w-2xl prose-sm">
             <ReactMarkdown
               remarkPlugins={[remarkGfm, remarkMath]}
               rehypePlugins={[rehypeKatex]}

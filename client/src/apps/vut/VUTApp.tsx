@@ -285,7 +285,7 @@ export default function VUTApp() {
             </div>
 
             {/* Quick stats */}
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 gap-3 @2xl:grid-cols-3">
               <div className="rounded-xl border border-edge bg-surface-2 p-4 text-center">
                 <p className="text-2xl font-bold text-ink">{grades.length}</p>
                 <p className="text-xs text-ink-muted">Graded Courses</p>
@@ -323,7 +323,7 @@ export default function VUTApp() {
             {/* Quick links */}
             <div className="rounded-xl border border-edge bg-surface-2 p-4">
               <h3 className="mb-3 text-sm font-semibold text-ink">Quick Links</h3>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 @xl:grid-cols-2">
                 {[
                   { label: "id.vut.cz", url: "https://id.vut.cz", sn: "" },
                   { label: "Grades", url: "", sn: "el_index" },

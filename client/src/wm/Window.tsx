@@ -246,7 +246,7 @@ export default function Window({ win, children }: Props) {
       </div>
 
       {/* Content */}
-      <div className="relative flex-1 overflow-hidden bg-surface">{children}</div>
+      <div className="relative flex-1 overflow-hidden bg-surface @container">{children}</div>
 
       {/* Resize handles (hidden when maximized) */}
       {!isMax && (

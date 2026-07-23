@@ -1,7 +1,20 @@
+import containerQueries from "@tailwindcss/container-queries";
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   darkMode: "class",
+  safelist: [
+    // CollapsibleSidebar constructs container-query variant classes at runtime
+    // from a `showAt` prop (e.g. "@5xl:hidden"). Tailwind's scanner can't see
+    // dynamically built class names, and safelist regex patterns don't match
+    // container-query variant prefixes, so list them explicitly here.
+    "@3xl:hidden", "@3xl:flex", "@3xl:static", "@3xl:z-auto", "@3xl:shadow-none",
+    "@4xl:hidden", "@4xl:flex", "@4xl:static", "@4xl:z-auto", "@4xl:shadow-none",
+    "@5xl:hidden", "@5xl:flex", "@5xl:static", "@5xl:z-auto", "@5xl:shadow-none",
+    "@6xl:hidden", "@6xl:flex", "@6xl:static", "@6xl:z-auto", "@6xl:shadow-none",
+    "@7xl:hidden", "@7xl:flex", "@7xl:static", "@7xl:z-auto", "@7xl:shadow-none",
+  ],
   theme: {
     extend: {
       colors: {
@@ -43,5 +56,5 @@ export default {
       },
     },
   },
-  plugins: [],
+  plugins: [containerQueries],
 };

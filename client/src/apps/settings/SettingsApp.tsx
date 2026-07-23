@@ -1,9 +1,11 @@
-import { useState, useEffect, useCallback } from "react";
-import { useSettings, type ThemeMode, type WallpaperId } from "../../store/settings";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { useSettings, type ThemeMode, type WallpaperId, type AnimatedBgId } from "../../store/settings";
 import { useAuth } from "../../store/auth";
 import { aiApi, type AiKeyStatus } from "../../services/ai";
-import { Sun, Moon, Palette, Image, Bell, User, Sparkles, Loader2, Check, Trash2 } from "lucide-react";
+import { Sun, Moon, Palette, Image, Bell, User, Sparkles, Loader2, Check, Trash2, Search, Film, Settings as SettingsIcon } from "lucide-react";
+import { ANIMATED_BG_CATALOG, type AnimatedBgMeta } from "../../shell/AnimatedBackground";
 import type { WindowInstance } from "../../store/windows";
+import CollapsibleSidebar from "../../wm/CollapsibleSidebar";
 
 const ACCENT_PRESETS = [
   "#6366f1", "#8b5cf6", "#ec4899", "#ef4444",
@@ -25,15 +27,23 @@ export default function SettingsApp(_: { win: WindowInstance }) {
     theme, setTheme,
     accent, setAccent,
     wallpaper, setWallpaper,
+    animatedBg, setAnimatedBg,
     notificationsEnabled, setNotificationsEnabled,
     doNotDisturb, setDoNotDisturb,
   } = useSettings();
   const { user } = useAuth();
 
   return (
-    <div className="flex h-full overflow-hidden">
-      {/* Sidebar */}
-      <div className="w-44 shrink-0 border-r border-edge bg-surface-2 p-3">
+    <div className="relative flex h-full overflow-hidden">
+      {/* Sidebar — inline @3xl+, overlay when narrow */}
+      <CollapsibleSidebar
+        side="left"
+        width="w-44"
+        showAt="@3xl"
+        panelClassName="bg-surface-2 p-3"
+        toggleIcon={<SettingsIcon size={14} />}
+        toggleLabel="Settings"
+      >
         <h2 className="mb-3 px-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
           Settings
         </h2>
@@ -41,6 +51,7 @@ export default function SettingsApp(_: { win: WindowInstance }) {
           {[
             { id: "appearance", label: "Appearance", icon: <Palette size={15} /> },
             { id: "wallpaper", label: "Wallpaper", icon: <Image size={15} /> },
+            { id: "animated-bg", label: "Animated BG", icon: <Film size={15} /> },
             { id: "account", label: "Account", icon: <User size={15} /> },
             { id: "ai", label: "AI", icon: <Sparkles size={15} /> },
             { id: "notifications", label: "Notifications", icon: <Bell size={15} /> },
@@ -55,7 +66,7 @@ export default function SettingsApp(_: { win: WindowInstance }) {
             </a>
           ))}
         </nav>
-      </div>
+      </CollapsibleSidebar>
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
@@ -133,6 +144,9 @@ export default function SettingsApp(_: { win: WindowInstance }) {
           </div>
         </section>
 
+        {/* Animated Background */}
+        <AnimatedBgSection current={animatedBg} onSelect={setAnimatedBg} />
+
         {/* Account */}
         <section id="account" className="mb-8">
           <h3 className="mb-1 flex items-center gap-2 text-base font-semibold text-ink">
@@ -179,6 +193,134 @@ export default function SettingsApp(_: { win: WindowInstance }) {
         </section>
       </div>
     </div>
+  );
+}
+
+function AnimatedBgSection({
+  current,
+  onSelect,
+}: {
+  current: AnimatedBgId;
+  onSelect: (id: AnimatedBgId) => void;
+}) {
+  const [search, setSearch] = useState("");
+  const [category, setCategory] = useState<string>("All");
+
+  const categories = useMemo(() => {
+    const cats = new Set(ANIMATED_BG_CATALOG.map((b) => b.category));
+    return ["All", ...Array.from(cats).sort()];
+  }, []);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return ANIMATED_BG_CATALOG.filter((b) => {
+      if (category !== "All" && b.category !== category) return false;
+      if (!q) return true;
+      return (
+        b.name.toLowerCase().includes(q) ||
+        b.description.toLowerCase().includes(q) ||
+        b.tags.some((t) => t.includes(q)) ||
+        b.category.toLowerCase().includes(q)
+      );
+    });
+  }, [search, category]);
+
+  return (
+    <section id="animated-bg" className="mb-8">
+      <h3 className="mb-1 flex items-center gap-2 text-base font-semibold text-ink">
+        <Film size={18} /> Animated Background
+      </h3>
+      <p className="mb-4 text-sm text-ink-muted">
+        Canvas-based animated backgrounds. Runs on top of the static wallpaper.
+      </p>
+
+      {/* Search bar */}
+      <div className="relative mb-3">
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search backgrounds by name, tag, or category..."
+          className="w-full rounded-lg border border-edge bg-surface-2 py-2 pl-9 pr-3 text-sm text-ink outline-none focus:border-accent"
+        />
+      </div>
+
+      {/* Category tabs */}
+      <div className="mb-4 flex flex-wrap gap-1.5">
+        {categories.map((cat) => (
+          <button
+            key={cat}
+            onClick={() => setCategory(cat)}
+            className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+              category === cat
+                ? "bg-accent text-accent-fg"
+                : "bg-surface-2 text-ink-muted hover:bg-surface-3"
+            }`}
+          >
+            {cat}
+          </button>
+        ))}
+      </div>
+
+      {/* Grid of backgrounds */}
+      <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
+        {filtered.map((bg) => (
+          <AnimatedBgCard
+            key={bg.id}
+            bg={bg}
+            active={current === bg.id}
+            onClick={() => onSelect(bg.id)}
+          />
+        ))}
+      </div>
+      {filtered.length === 0 && (
+        <p className="py-6 text-center text-sm text-ink-muted">
+          No backgrounds match "{search}"
+        </p>
+      )}
+    </section>
+  );
+}
+
+function AnimatedBgCard({
+  bg,
+  active,
+  onClick,
+}: {
+  bg: AnimatedBgMeta;
+  active: boolean;
+  onClick: () => void;
+}) {
+  const gradient = `linear-gradient(135deg, ${bg.previewColors.join(", ")})`;
+  return (
+    <button
+      onClick={onClick}
+      className={`group overflow-hidden rounded-lg border-2 text-left transition ${
+        active ? "border-accent" : "border-edge hover:border-ink-muted"
+      }`}
+    >
+      {/* Preview */}
+      <div
+        className="relative h-16 w-full"
+        style={{ background: gradient }}
+      >
+        {active && (
+          <div className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-accent text-accent-fg">
+            <Check size={12} />
+          </div>
+        )}
+        {bg.id !== "none" && (
+          <div className="absolute bottom-1.5 left-1.5 flex items-center gap-1 rounded bg-black/40 px-1.5 py-0.5 text-[9px] text-white">
+            <Film size={8} /> animated
+          </div>
+        )}
+      </div>
+      {/* Label */}
+      <div className="bg-surface-2 px-2 py-1.5">
+        <div className="truncate text-xs font-medium text-ink">{bg.name}</div>
+        <div className="truncate text-[10px] text-ink-muted">{bg.category}</div>
+      </div>
+    </button>
   );
 }
 
