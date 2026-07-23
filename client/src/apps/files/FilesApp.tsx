@@ -68,6 +68,12 @@ export default function FilesApp(_: { win: WindowInstance }) {
   const rubberBandRef = useRef<{ startX: number; startY: number; endX: number; endY: number } | null>(null);
   const rubberBaseSelection = useRef<Set<string>>(new Set());
   const isRubberBanding = useRef(false);
+  // Whether the pointer actually moved beyond a small threshold during the
+  // current rubber-band interaction (vs. a simple click on empty space).
+  const rubberMoved = useRef(false);
+  // Suppresses the click that fires after a rubber-band drag ends, so the
+  // file-area click handler doesn't wipe the selection we just made.
+  const suppressNextClick = useRef(false);
 
   // ---- Data loading ----
   const loadTree = useCallback(async () => {
@@ -261,6 +267,7 @@ export default function FilesApp(_: { win: WindowInstance }) {
     const startX = e.clientX - rect.left + area.scrollLeft;
     const startY = e.clientY - rect.top + area.scrollTop;
     isRubberBanding.current = true;
+    rubberMoved.current = false;
     rubberBaseSelection.current = e.ctrlKey || e.metaKey ? new Set(selected) : new Set();
     const band = { startX, startY, endX: startX, endY: startY };
     rubberBandRef.current = band;
@@ -277,6 +284,10 @@ export default function FilesApp(_: { win: WindowInstance }) {
     const endY = e.clientY - rect.top + area.scrollTop;
     const band = rubberBandRef.current;
     if (!band) return;
+    // Mark that a real drag is happening (vs. a stationary click).
+    if (Math.abs(endX - band.startX) > 3 || Math.abs(endY - band.startY) > 3) {
+      rubberMoved.current = true;
+    }
     band.endX = endX;
     band.endY = endY;
     setRubberBand({ ...band });
@@ -304,7 +315,15 @@ export default function FilesApp(_: { win: WindowInstance }) {
   }, []);
 
   const onFileAreaMouseUp = useCallback(() => {
+    if (isRubberBanding.current && rubberMoved.current) {
+      // A real rubber-band drag just ended — the browser will fire a click
+      // event on the file area next. Suppress it so it doesn't clear the
+      // selection we just made. A stationary click (no movement) is allowed
+      // through so it still clears the selection as before.
+      suppressNextClick.current = true;
+    }
     isRubberBanding.current = false;
+    rubberMoved.current = false;
     rubberBandRef.current = null;
     setRubberBand(null);
   }, []);
@@ -869,7 +888,8 @@ export default function FilesApp(_: { win: WindowInstance }) {
           </div>
         </div>
 
-        {/* Breadcrumb */}
+        {/* Breadcrumb + inline selection actions (merged so selecting files
+            doesn't shift the file area down by inserting a new row) */}
         <div className="flex items-center gap-1 border-b border-edge px-3 py-1.5 text-xs text-ink-muted">
           {breadcrumb.map((b, i) => (
             <span key={i} className="flex items-center gap-1">
@@ -882,13 +902,10 @@ export default function FilesApp(_: { win: WindowInstance }) {
               </button>
             </span>
           ))}
-        </div>
 
-        {/* Selection bar */}
-        {selected.size > 0 && (
-          <div className="flex items-center gap-2 border-b border-accent/30 bg-accent/5 px-3 py-1.5 text-xs">
-            <span className="text-ink">{selected.size} selected</span>
+          {selected.size > 0 && (
             <div className="ml-auto flex items-center gap-1">
+              <span className="text-ink">{selected.size} selected</span>
               {selected.size > 1 ? (
                 <button onClick={() => downloadZip(Array.from(selected))} className="flex items-center gap-1 rounded px-2 py-1 text-ink-muted hover:bg-surface-2 hover:text-ink" title="Download as ZIP">
                   <Archive size={13} /> ZIP
@@ -911,8 +928,8 @@ export default function FilesApp(_: { win: WindowInstance }) {
                 <X size={13} />
               </button>
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* File area */}
         <div
@@ -925,7 +942,13 @@ export default function FilesApp(_: { win: WindowInstance }) {
           onMouseDown={onFileAreaMouseDown}
           onMouseMove={onFileAreaMouseMove}
           onMouseUp={onFileAreaMouseUp}
-          onClick={() => { if (!isRubberBanding.current) { clearSelection(); setPreview(null); } }}
+          onClick={() => {
+            if (suppressNextClick.current) {
+              suppressNextClick.current = false;
+              return;
+            }
+            if (!isRubberBanding.current) { clearSelection(); setPreview(null); }
+          }}
         >
           {/* Rubber band selection rectangle */}
           {rubberBand && (
