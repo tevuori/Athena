@@ -3,7 +3,7 @@
 // All animations use requestAnimationFrame and clean up on unmount.
 // When `bgId` is "none", nothing is rendered (static wallpaper shows through).
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AnimatedBgId } from "../store/settings";
 
 // ===== Animation registry =====
@@ -655,30 +655,61 @@ const ANIMATIONS: Record<Exclude<AnimatedBgId, "none">, AnimSetup> = {
 
 // ===== Component =====
 
+const BG_FADE_MS = 400;
+
 export default function AnimatedBackground({ bgId }: { bgId: AnimatedBgId }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // `renderId` is the background currently mounted on the canvas.
+  // It may lag behind `bgId` while a fade-out completes.
+  const [renderId, setRenderId] = useState<AnimatedBgId>(bgId);
+  const [fadingOut, setFadingOut] = useState(false);
 
+  // Drive fade transitions when bgId changes.
   useEffect(() => {
-    if (bgId === "none") return;
+    if (bgId === renderId) return;
+
+    if (bgId === "none") {
+      // Fade the current canvas out, then unmount it.
+      setFadingOut(true);
+      const t = setTimeout(() => {
+        setRenderId("none");
+        setFadingOut(false);
+      }, BG_FADE_MS);
+      return () => clearTimeout(t);
+    }
+
+    // Switching to a new animated background — swap immediately.
+    // The new canvas fades in via the `animate-fade-in` class.
+    setFadingOut(false);
+    setRenderId(bgId);
+  }, [bgId, renderId]);
+
+  // Canvas animation setup — runs whenever the rendered background changes.
+  useEffect(() => {
+    if (renderId === "none") return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const setup = ANIMATIONS[bgId];
+    const setup = ANIMATIONS[renderId as Exclude<AnimatedBgId, "none">];
     if (!setup) return;
 
     const cleanup = setup({ ctx, canvas, width: 0, height: 0 });
     return cleanup;
-  }, [bgId]);
+  }, [renderId]);
 
-  if (bgId === "none") return null;
+  if (renderId === "none") return null;
 
   return (
     <canvas
       ref={canvasRef}
-      className="fixed inset-0 -z-10"
-      style={{ pointerEvents: "none" }}
+      className={`fixed inset-0 -z-10 ${!fadingOut ? "animate-fade-in" : ""}`}
+      style={{
+        pointerEvents: "none",
+        opacity: fadingOut ? 0 : undefined,
+        transition: fadingOut ? `opacity ${BG_FADE_MS}ms ease-out` : undefined,
+      }}
     />
   );
 }

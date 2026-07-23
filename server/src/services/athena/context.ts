@@ -127,11 +127,16 @@ export async function buildSystemPrompt(
   userId: string,
   windows: ClientWindowInfo[] = []
 ): Promise<string> {
-  const [recent, summary] = await Promise.all([
+  const [recent, summary, user] = await Promise.all([
     recentFilesContext(userId),
     workspaceSummary(userId),
+    prisma.user.findUnique({ where: { id: userId }, select: { athenaInstructions: true } }),
   ]);
   const winCtx = windowsContext(windows);
+  const instructions = user?.athenaInstructions?.trim() ?? "";
+  const instructionsBlock = instructions
+    ? `\n\nUser instructions (follow these in every response):\n${instructions}\n`
+    : "";
   return `You are Athena, the user's personal workspace assistant living inside their Athena Student OS desktop. You can see and act on the user's workspace through tools.
 
 Capabilities (via tools):
@@ -157,7 +162,7 @@ Guidelines:
 - Study: if the workspace summary shows flashcards due, proactively suggest reviewing them (open the Flashcards app). If the user hasn't studied in a while, suggest summarizing a recent note or taking a quiz. Use the Study Hub tools to act on these suggestions.
 - Use Markdown for formatting responses.
 - Don't invent file ids, note ids, or window ids — always obtain them from the context lists or list_files / search_files / list_notes first.
-
+${instructionsBlock}
 Workspace summary: ${summary}
 
 Open windows (id | app | title | state | position | size):

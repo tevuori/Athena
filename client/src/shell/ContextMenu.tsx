@@ -7,6 +7,8 @@ export interface MenuItem {
   separator?: boolean;
   disabled?: boolean;
   danger?: boolean;
+  /** When true, the menu stays open after onClick (e.g. submenu navigation). */
+  keepOpen?: boolean;
 }
 
 interface Props {
@@ -41,6 +43,8 @@ export default function ContextMenu({ x, y, items, onClose }: Props) {
   return (
     <div
       ref={ref}
+      onClick={(e) => e.stopPropagation()}
+      onContextMenu={(e) => e.stopPropagation()}
       className="fixed z-[12000] min-w-[200px] rounded-lg border border-edge bg-surface-2 p-1.5 shadow-window animate-scale-in"
       style={{ left, top }}
     >
@@ -53,7 +57,7 @@ export default function ContextMenu({ x, y, items, onClose }: Props) {
             disabled={item.disabled}
             onClick={() => {
               item.onClick?.();
-              onClose();
+              if (!item.keepOpen) onClose();
             }}
             className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-sm transition ${
               item.disabled

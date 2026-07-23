@@ -42,7 +42,7 @@ export default function Desktop() {
 
   const items: MenuItem[] = wallpaperSubmenu
     ? [
-        { label: "← Back", onClick: () => setWallpaperSubmenu(false) },
+        { label: "← Back", keepOpen: true, onClick: () => setWallpaperSubmenu(false) },
         { separator: true },
         ...WALLPAPERS.map((w) => ({
           label: w.name,
@@ -51,7 +51,7 @@ export default function Desktop() {
       ]
     : animBgSubmenu
     ? [
-        { label: "← Back", onClick: () => setAnimBgSubmenu(false) },
+        { label: "← Back", keepOpen: true, onClick: () => setAnimBgSubmenu(false) },
         { separator: true },
         ...QUICK_ANIM_BGS.map((b) => ({
           label: b.name,
@@ -75,11 +75,13 @@ export default function Desktop() {
         {
           label: "Change Wallpaper",
           icon: <Image size={15} />,
+          keepOpen: true,
           onClick: () => setWallpaperSubmenu(true),
         },
         {
           label: "Animated Background",
           icon: <Film size={15} />,
+          keepOpen: true,
           onClick: () => setAnimBgSubmenu(true),
         },
         {

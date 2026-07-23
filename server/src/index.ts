@@ -19,6 +19,7 @@ import calendar from "./routes/calendar";
 import habits from "./routes/habits";
 import capture from "./routes/capture";
 import microsoft from "./routes/microsoft";
+import users from "./routes/users";
 import { isSpotifyConfigured } from "./services/spotify";
 
 const app = new Hono();
@@ -61,6 +62,7 @@ app.route("/api/calendar", calendar);
 app.route("/api/habits", habits);
 app.route("/api/capture", capture);
 app.route("/api/microsoft", microsoft);
+app.route("/api/users", users);
 
 const port = Number(process.env.SERVER_PORT ?? 3000);
 const hostname = process.env.SERVER_HOST ?? "0.0.0.0";

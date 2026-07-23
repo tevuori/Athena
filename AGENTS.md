@@ -111,9 +111,9 @@ Athena/
         │   ├── study/            # Study Hub (AI flashcards, summarize, quiz, explain, study guide, syllabus→tasks)
         │   ├── calendar/         # Calendar / Planner (month/week/day, ICS import/export, task drag-to-schedule)
         │   ├── habits/           # Habit Tracker (streaks, heatmap, auto-complete from Pomodoro)
-        │   └── settings/         # Settings (theme, wallpaper, animated backgrounds, account, AI provider)
+        │   └── settings/         # Settings (Appearance, Wallpaper, Animated BG, Account, Sound & Athena, Athena Assistant, Integrations, Notifications, Users [admin], Data & Storage, About). Split into apps/settings/sections/*.tsx + ui.tsx shared helpers; SettingsApp.tsx is the shell with section nav (Users gated behind role=ADMIN).
         ├── store/                # Zustand stores (auth, windows, settings, music, notifications)
-        ├── services/             # API clients (api, notes, tasks, files, spotify, lyrics, flashcards, grades, vut, athena, conversations, study, moodle, calendar, habits, microsoft)
+        ├── services/             # API clients (api, notes, tasks, files, spotify, lyrics, flashcards, grades, vut, athena, conversations, study, moodle, calendar, habits, microsoft, users)
         └── types/                # shared TS types
 ```
 
@@ -200,7 +200,19 @@ Athena/
    - **Updates tab**: subject announcements feed parsed from `aktuality_predmet`, sorted by date
    - **Web View tab**: embedded browser via backend reverse proxy (strips X-Frame-Options, rewrites URLs for seamless navigation), address bar, open-in-new-tab
    - HTML parsing with cheerio, resilient multi-strategy parsers (table-based + div-based)
-11. **Settings** — Theme, wallpaper, **animated backgrounds** (14 canvas animations with category tabs + search), accent, account, notifications, AI provider (key + provider/baseURL/model)
+11. **Settings** — Split into 11 sections (sidebar nav, `apps/settings/sections/*.tsx`):
+    - **Appearance** — theme (light/dark), accent color (presets + custom).
+    - **Wallpaper** — static gradient picker.
+    - **Animated Background** — 14 canvas animations with category tabs + search.
+    - **Account** — editable display name + avatar color, change password (current-password verification), shows role badge. Backend: `PATCH /api/auth/profile`, `POST /api/auth/password`.
+    - **Sound & Athena** — system volume slider, Athena quick-panel roll-in edge (bottom/top/left/right) + panel width/height. Exposes previously-hidden `settings.volume` / `athenaRollEdge` / `athenaQuickSize` store values.
+    - **Athena Assistant** — LLM provider config (key + provider/baseURL/model, AES-256-GCM encrypted) **+ custom instructions** textarea (stored on `User.athenaInstructions`, injected into the Athena system prompt via `services/athena/context.ts`). Backend: `GET/PUT /api/athena/instructions`.
+    - **Integrations** — consolidated connect/disconnect/status for Spotify (server-wide), VUT Studis (per-user encrypted creds), Microsoft Calendar (server-wide + sync), Moodle (reuses VUT creds). Reuses existing per-app client services.
+    - **Notifications** — enable + Do-Not-Disturb toggles.
+    - **Users** (admin-only, gated by `role=ADMIN`) — full user management: list, create (with role), edit (display name/avatar/role), reset password, delete. Blocks self-delete and self-demotion. Backend: `/api/users/*` guarded by `middleware/admin.ts`.
+    - **Data & Storage** — storage usage bar (reuses `/api/files/storage`), export all user data as JSON (`GET /api/auth/export`), clear local cache, danger-zone account deletion (password-confirmed `DELETE /api/auth/account`).
+    - **About** — client/server version, `/health` status, reset settings to defaults.
+    - **Roles:** `User.role` is `USER` | `ADMIN` (String, SQLite has no enums). Seed user + first registered user become ADMIN. Existing installs backfilled via migration (earliest user promoted). `api.delete` supports an optional body (used by account deletion).
 12. **Study Hub** — AI study workflows (one-click, structured) on top of the Athena LLM infra (`services/athena/llm.ts`):
     - **Generate Flashcards** — pick a note/file/pasted text → AI generates Q/A pairs → editable preview grid → save into a new Flashcards deck.
     - **Summarize** — TL;DR / outline / key-points modes → saves a new Note.

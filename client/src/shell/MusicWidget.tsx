@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useMusic } from "../store/music";
 import { findActiveLine } from "../services/lyrics";
+import { useAutoChillOnIdle } from "./useAutoChillOnIdle";
 import ChillView from "./ChillView";
 
 function fmt(ms: number): string {
@@ -36,6 +37,9 @@ export default function MusicWidget() {
   const track = state?.item;
   const isPlaying = state?.is_playing ?? false;
   const duration = track?.duration_ms ?? 0;
+
+  // Auto-enter fullscreen chill mode after 10 min of inactivity while music plays.
+  useAutoChillOnIdle();
 
   // Auto-init on mount
   useEffect(() => {

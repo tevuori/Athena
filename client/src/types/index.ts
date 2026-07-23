@@ -1,10 +1,23 @@
 // ===== Shared domain types (mirror server models) =====
 
+export type UserRole = "USER" | "ADMIN";
+
 export interface User {
   id: string;
   username: string;
   displayName: string;
   avatarColor: string;
+  role: UserRole;
+}
+
+/** User record as returned by the admin /api/users endpoints. */
+export interface AdminUser {
+  id: string;
+  username: string;
+  displayName: string;
+  avatarColor: string;
+  role: UserRole;
+  createdAt: string;
 }
 
 export interface NoteFolder {

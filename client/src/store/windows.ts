@@ -116,6 +116,30 @@ function clampToViewport(rect: WindowRect): WindowRect {
 
 const TASKBAR_H = 48;
 
+/** True when a rect covers (nearly) the entire usable viewport. */
+function isFullscreenRect(rect: WindowRect): boolean {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight - TASKBAR_H;
+  return rect.width >= vw - 4 && rect.height >= vh - 4;
+}
+
+/**
+ * Compute a sensible "restored" rect for a window that is currently full-screen.
+ * Prefers the saved prevRect (if it's not itself fullscreen), otherwise falls
+ * back to the app's default size. The result is centered + clamped.
+ */
+function computeRestoredRect(win: WindowInstance): WindowRect {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight - TASKBAR_H;
+  const prev = win.prevRect && !isFullscreenRect(win.prevRect) ? win.prevRect : null;
+  const base = prev ?? DEFAULT_SIZE[win.appId];
+  const width = Math.min(base.width, vw - 20);
+  const height = Math.min(base.height, vh - 20);
+  const x = Math.max(0, Math.floor((vw - width) / 2));
+  const y = Math.max(0, Math.floor((vh - height) / 2));
+  return { x, y, width, height };
+}
+
 /**
  * Compute a grid layout for the given windows.
  * Returns a map of windowId → rect.
@@ -254,14 +278,23 @@ export const useWindows = create<WindowsState>((set, get) => ({
     set((s) => ({
       windows: s.windows.map((w) => {
         if (w.id !== id) return w;
-        if (w.snap === "maximized") {
-          return { ...w, snap: "none", rect: w.prevRect ?? w.rect };
+        const vw = window.innerWidth;
+        const vh = window.innerHeight - TASKBAR_H;
+        // Restore when explicitly maximized OR when effectively fullscreen
+        // (e.g. auto-tiled single window has snap="none" but fills the screen).
+        if (w.snap === "maximized" || isFullscreenRect(w.rect)) {
+          return {
+            ...w,
+            snap: "none",
+            rect: computeRestoredRect(w),
+            prevRect: undefined,
+          };
         }
         return {
           ...w,
           snap: "maximized",
           prevRect: w.rect,
-          rect: { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight - 48 },
+          rect: { x: 0, y: 0, width: vw, height: vh },
         };
       }),
     })),
@@ -273,7 +306,18 @@ export const useWindows = create<WindowsState>((set, get) => ({
         const vw = window.innerWidth;
         const vh = window.innerHeight - 48;
         if (zone === "none") {
-          return { ...w, snap: "none", rect: w.prevRect ?? w.rect };
+          // If prevRect is missing or itself fullscreen, fall back to a
+          // sensible default size so the window doesn't stay stuck fullscreen.
+          const prev = w.prevRect;
+          if (!prev || isFullscreenRect(prev)) {
+            return {
+              ...w,
+              snap: "none",
+              rect: computeRestoredRect(w),
+              prevRect: undefined,
+            };
+          }
+          return { ...w, snap: "none", rect: prev, prevRect: undefined };
         }
         if (zone === "maximized") {
           return {

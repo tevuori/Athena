@@ -17,9 +17,10 @@ async function main() {
         passwordHash: await bcrypt.hash(password, 10),
         displayName: "Student",
         avatarColor: "#6366f1",
+        role: "ADMIN",
       },
     });
-    console.log(`Seeded user '${username}' (password: '${password}')`);
+    console.log(`Seeded user '${username}' (password: '${password}') [ADMIN]`);
   } else {
     console.log(`User '${username}' already exists — skipping user seed.`);
   }

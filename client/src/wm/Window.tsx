@@ -172,7 +172,10 @@ export default function Window({ win, children }: Props) {
     );
   }
 
-  const isMax = win.snap === "maximized";
+  const isMax =
+    win.snap === "maximized" ||
+    (win.rect.width >= window.innerWidth - 4 &&
+      win.rect.height >= window.innerHeight - TASKBAR_H - 4);
   // Enable smooth CSS transitions for position/size when auto-tiling.
   // Disable during drag/resize so the window follows the cursor instantly.
   const useTransition = win.tiling && !isInteracting;
