@@ -84,7 +84,7 @@ Athena/
 │   └── src/
 │       ├── index.ts              # Hono app entry
 │       ├── db/{client.ts, seed.ts}
-│       ├── routes/{auth, notes, tasks, files, spotify, lyrics, flashcards, grades, vut, ai, athena, conversations, study, moodle, calendar, habits, capture, microsoft, whiteboards, ntfy}.ts
+│       ├── routes/{auth, notes, tasks, files, spotify, lyrics, flashcards, grades, vut, ai, athena, conversations, study, moodle, calendar, habits, capture, microsoft, whiteboards, ntfy, voice}.ts
 │       ├── services/{spotify.ts, lrclib.ts, jwt.ts, vut.ts, crypto.ts, moodle.ts, microsoft.ts, ntfy/{client, config, scheduler, subscriber, athena-turn}.ts}
 │       ├── services/athena/{llm.ts, context.ts, tools/}  # multi-llm-ts client, system prompt, tool plugins
 │       ├── services/study/{source, llm-json, prompts, quiz-store, logSession}.ts  # AI Study Hub helpers
@@ -115,8 +115,9 @@ Athena/
         │   ├── settings/         # Settings (Appearance, Wallpaper, Animated BG, Account, Sound & Athena, Athena Assistant, Integrations, Notifications, Users [admin], Data & Storage, About). Split into apps/settings/sections/*.tsx + ui.tsx shared helpers; SettingsApp.tsx is the shell with section nav (Users gated behind role=ADMIN).
         │   └── whiteboard/      # Whiteboard (SVG vector canvas, pen/line/rect/ellipse/arrow/text/eraser, clipboard image paste, undo/redo, SVG/PNG export, multi-board)
         │   └── ntfy/            # Ntfy (bidirectional Athena push channel, message log, cron-job manager)
+        │   └── voice/           # Voice Notes (mic recorder, Whisper transcription, linked Note) — useRecorder.ts shared hook
         ├── store/                # Zustand stores (auth, windows, settings, music, notifications)
-        ├── services/             # API clients (api, notes, tasks, files, spotify, lyrics, flashcards, grades, vut, athena, conversations, study, moodle, calendar, habits, microsoft, users, whiteboards, ntfy)
+        ├── services/             # API clients (api, notes, tasks, files, spotify, lyrics, flashcards, grades, vut, athena, conversations, study, moodle, calendar, habits, microsoft, users, whiteboards, ntfy, voice)
         └── types/                # shared TS types
 ```
 
@@ -281,6 +282,7 @@ Athena/
     - On Enter, `POST /api/capture` uses the per-user LLM (via `services/study/llm-json.ts`) to classify the input as `task | note | flashcard | athena`, performs the action (creates the item), and returns a `clientAction` that opens the relevant app.
     - Falls back to creating a plain Task with the raw text if no LLM is configured or the LLM call fails.
     - Flashcard captures go into a "Quick Capture" deck (auto-created). Athena captures open Athena with the text prefilled as a prompt.
+    - **Voice input**: a mic button toggles a compact recorder mode (reuses `apps/voice/useRecorder.ts`). On stop, `POST /api/voice` transcribes + cleans up the recording and opens the resulting linked Note. A "Text" button switches back to typed input.
     - Discoverable via the Command Palette ("Quick Capture" action).
 17. **Whiteboard** — Interactive vector drawing canvas for learning/sketching:
     - SVG-based vector graphics (true vector, scalable, lossless). Fixed 2000×1400 canvas scaled to fit the window.
@@ -299,6 +301,13 @@ Athena/
     - **Athena tools**: `send_notification`, `list_cron_jobs`, `get_cron_job`, `create_cron_job`, `update_cron_job`, `delete_cron_job` — Athena can fully manage cron jobs from chat.
     - **App UI** (`apps/ntfy/NtfyApp.tsx`): three tabs — Setup (config + test notification + topic URLs to subscribe to), Messages (in/out/cron log + manual send), Cron Jobs (list/create/edit/delete/run-now with cron presets + live next-run preview). Status card in Settings → Integrations with "Open Ntfy" button.
     - Backend: `routes/ntfy.ts` (`GET /status`, `PUT/DELETE /config`, `POST /test`, `POST /send`, `GET /messages`, `GET /inbox-poll`, `GET/POST /cron`, `GET/PUT/DELETE /cron/:id`, `POST /cron/:id/run`, `POST /cron/preview`); `services/ntfy/{client,config,scheduler,subscriber,athena-turn}.ts`; `NtfyConfig` + `NtfyCronJob` + `NtfyMessage` Prisma models. Non-streaming Athena turns reuse `buildSystemPrompt`/`buildModel`/`AthenaToolsPlugin`/`ALL_TOOLS` from `services/athena/`.
+19. **Voice Notes** — Microphone recorder → transcribed linked Note:
+    - Records from the mic via `MediaRecorder` (Web Audio `AnalyserNode` for a live level/waveform meter). Picks the best supported container (`audio/webm;codecs=opus` → `audio/ogg` → `audio/mp4`). Pause/resume, elapsed timer, in-app playback of the recording.
+    - On stop, `POST /api/voice` (multipart `audio` + optional `title`/`folderId`/`cleanup`): saves the audio to the virtual FS (`VFile`), transcribes via the OpenAI-compatible `/audio/transcriptions` endpoint (Whisper; model from `OPENAI_TRANSCRIPTION_MODEL`, default `whisper-1`), runs an LLM cleanup pass (`services/study/llm-json.ts` `generateJson` → `{title, content}`: punctuate, paragraph, remove filler, smart title), creates a `Note` tagged `voice,audio`, and links note↔file via `ItemLink` (`db/links.ts`). Returns `{ file, note, transcript, transcribed, cleaned }`.
+    - `POST /api/voice/transcribe/:fileId` re-transcribes an existing audio file and updates (or creates) its linked note.
+    - **Graceful degradation**: if no AI key is configured or the provider doesn't serve audio transcription (the default OpenCode Zen endpoint doesn't), the audio is still saved and a placeholder note is created — no data loss. The UI points the user to Settings → AI.
+    - **Quick Capture integration**: the `Ctrl+Shift+N` overlay has a mic button that switches to a compact recorder mode; on stop it runs the same `POST /api/voice` pipeline and opens the resulting note.
+    - No DB migration — reuses `VFile` + `Note` + `ItemLink`. Client: `apps/voice/{VoiceApp,useRecorder}.tsx` + `services/voice.ts`. The `useRecorder` hook is shared between the app and Quick Capture.
 
 ### Command Palette (Spotlight)
 - Triggered with `Ctrl+Space` (or `Cmd+Space` on Mac)
@@ -331,6 +340,7 @@ Athena/
 - Calendar: `GET /api/calendar/feed?from=&to=`, `GET/POST /api/calendar`, `PATCH/DELETE /api/calendar/:id`, `POST /api/calendar/ics/import` (parses ICS + expands simple recurrence), `GET /api/calendar/ics/export` (generates `.ics`); `CalendarEvent` model with `source` (manual|task|vut|assignment|ics|microsoft) + `sourceRef` linking
 - Habits: `GET/POST /api/habits`, `PATCH/DELETE /api/habits/:id`, `GET /api/habits/:id/logs?from=&to=`, `POST /api/habits/:id/log` (upsert by date), `DELETE /api/habits/:id/log?date=`, `GET /api/habits/stats` (current/longest streak + last-30-day completion per habit); `Habit` + `HabitLog` models
 - Quick Capture: `POST /api/capture` `{ text }` → uses per-user LLM (`services/study/llm-json.ts`) to classify as task/note/flashcard/athena → creates the item → returns `{ target, created, clientAction }`; falls back to a plain Task if no LLM configured
+- Voice Notes: `POST /api/voice` (multipart `audio` + optional `title`/`folderId`/`cleanup`) → saves audio to `VFile`, transcribes via OpenAI-compatible `/audio/transcriptions` (model `OPENAI_TRANSCRIPTION_MODEL`, default `whisper-1`), LLM-cleans the transcript (`generateJson` → `{title, content}`), creates a `Note` tagged `voice,audio`, links note↔file via `ItemLink`, returns `{ file, note, transcript, transcribed, cleaned }`; `POST /api/voice/transcribe/:fileId` re-transcribes an existing audio file. Reuses per-user/server LLM config; degrades gracefully (audio + placeholder note saved) when transcription is unavailable. No DB migration.
 - Whiteboard: `GET/POST /api/whiteboards` (list summaries / create), `GET/PUT/DELETE /api/whiteboards/:id`; `Whiteboard` model stores `content` as a JSON string of vector elements
 - Microsoft Calendar: `GET /api/microsoft/status`, `POST /api/microsoft/sync` (pull Graph events → upsert as `CalendarEvent` with `source="microsoft"`, delete stale), `POST /api/microsoft/push` (push local event to Outlook), `DELETE /api/microsoft/event/:msId`; `services/microsoft.ts` handles OAuth2 token refresh with rotation persistence in `Setting` table
 - Athena file attachments: `POST /api/athena/attach` (multipart upload → extract text from PDF/txt/code → store temp → return text + tempPath), `POST /api/athena/save-attached` (copy temp file to permanent storage + create `VFile` + set `lastOpenedAt`), `POST /api/athena/suggest-folder` (LLM analyzes file name + content + folder tree + courses → returns `{ folderId, folderPath, reason, confidence }`); uses `pdf-parse` v2 for PDF text extraction
