@@ -15,10 +15,13 @@ import {
 } from "lucide-react";
 import { notesApi } from "../../services/notes";
 import { filesApi } from "../../services/files";
+import { linksApi } from "../../services/links";
 import { useSettings } from "../../store/settings";
 import { useWindows } from "../../store/windows";
 import type { Note, NoteFolder } from "../../types";
 import type { WindowInstance } from "../../store/windows";
+import { setLinkPayload, readLinkPayload, allowLinkDrop } from "../links/linkDnd";
+import LinkBadge from "../links/LinkBadge";
 
 type EditorMode = "edit" | "split" | "preview";
 
@@ -36,6 +39,7 @@ export default function NotesApp({ win }: { win: WindowInstance }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [mode, setMode] = useState<EditorMode>("split");
+  const [noteLinkSignal, setNoteLinkSignal] = useState(0);
 
   // Overlay sidebars — shown as toggled overlays when the window is too narrow
   // for them to sit inline (controlled by container queries).
@@ -250,24 +254,40 @@ export default function NotesApp({ win }: { win: WindowInstance }) {
     }
   };
 
-  // Handle file drag-drop onto the editor — inserts a markdown link/image.
+  // Handle drag-drop onto the editor. File drops insert a markdown link/image
+  // (existing behavior) AND create an ItemLink. Other linkable items
+  // (task/deck/event) just create an ItemLink.
   const onEditorDrop = async (e: React.DragEvent) => {
-    const fileId = e.dataTransfer.getData("text/file-id");
-    if (!fileId || !selected) return;
+    if (!selected) return;
+    const payload = readLinkPayload(e);
+    if (!payload) return;
     e.preventDefault();
-    try {
-      const { files } = await filesApi.all();
-      const file = files.find((f) => f.id === fileId);
-      if (!file) return;
-      const url = filesApi.downloadUrl(file.id);
-      const isImage = file.mimeType.startsWith("image/");
-      if (isImage) {
-        insertAtCursor(`![${file.name.replace(/\.[^.]+$/, "")}](${url})`);
-      } else {
-        insertAtCursor(`[${file.name}](${url})`);
+    // Create the link relation (skip self-link).
+    if (!(payload.type === "note" && payload.id === selected.id)) {
+      try {
+        await linksApi.create(payload.type, payload.id, "note", selected.id);
+        setNoteLinkSignal((n) => n + 1);
+      } catch (err) {
+        console.error("Link failed", err);
       }
-    } catch (err) {
-      console.error("File reference insert failed", err);
+    }
+    // For file drops, also insert a markdown reference (existing behavior).
+    if (payload.type === "file") {
+      try {
+        const { files } = await filesApi.all();
+        const file = files.find((f) => f.id === payload.id);
+        if (file) {
+          const url = filesApi.downloadUrl(file.id);
+          const isImage = file.mimeType.startsWith("image/");
+          if (isImage) {
+            insertAtCursor(`![${file.name.replace(/\.[^.]+$/, "")}](${url})`);
+          } else {
+            insertAtCursor(`[${file.name}](${url})`);
+          }
+        }
+      } catch (err) {
+        console.error("File reference insert failed", err);
+      }
     }
   };
 
@@ -574,6 +594,11 @@ export default function NotesApp({ win }: { win: WindowInstance }) {
             notes.map((note) => (
               <button
                 key={note.id}
+                draggable
+                onDragStart={(e) => {
+                  e.stopPropagation();
+                  setLinkPayload(e, { type: "note", id: note.id, title: note.title || "Untitled" });
+                }}
                 onClick={() => setSelectedId(note.id)}
                 onContextMenu={(e) => {
                   e.preventDefault();
@@ -647,6 +672,7 @@ export default function NotesApp({ win }: { win: WindowInstance }) {
                 placeholder="Note title"
                 className="flex-1 bg-transparent text-sm font-semibold text-ink outline-none"
               />
+              <LinkBadge type="note" id={selected.id} refreshSignal={noteLinkSignal} />
               <input
                 ref={imageInputRef}
                 type="file"
@@ -817,7 +843,7 @@ function NoteEditor({
   return (
     <div
       className="flex flex-1 overflow-hidden"
-      onDragOver={(e) => { if (e.dataTransfer.types.includes("text/file-id")) e.preventDefault(); }}
+      onDragOver={allowLinkDrop}
       onDrop={onDrop}
     >
       {showEditor && (

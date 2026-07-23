@@ -3,6 +3,7 @@ import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
 import prisma from "../db/client";
 import { authMiddleware } from "../middleware/auth";
+import { cleanupOrphanLinks } from "../db/links";
 
 const tasks = new Hono();
 tasks.use("*", authMiddleware);
@@ -54,7 +55,9 @@ tasks.patch("/:id", zValidator("json", taskSchema.partial()), async (c) => {
 
 tasks.delete("/:id", async (c) => {
   const { userId } = c.get("auth");
-  await prisma.task.delete({ where: { id: c.req.param("id"), userId } });
+  const id = c.req.param("id");
+  await prisma.task.delete({ where: { id, userId } });
+  await cleanupOrphanLinks(userId, "task", id);
   return c.json({ ok: true });
 });
 

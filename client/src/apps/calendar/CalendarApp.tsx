@@ -16,6 +16,10 @@ import { microsoftApi } from "../../services/microsoft";
 import { useWindows } from "../../store/windows";
 import type { WindowInstance } from "../../store/windows";
 import type { CalendarEvent, Task, VutTimetableSlot, Course } from "../../types";
+import { linksApi } from "../../services/links";
+import { setLinkPayload } from "../links/linkDnd";
+import LinkBadge from "../links/LinkBadge";
+import { useLinkDrop } from "../links/useLinkDrop";
 
 type ViewMode = "month" | "week" | "day";
 
@@ -544,7 +548,74 @@ export default function CalendarApp({ win }: { win: WindowInstance }) {
   );
 }
 
-// ===== Month view =====
+// ===== Event chip with drag-to-link support =====
+// Only real stored CalendarEvent rows (not pseudo task/vut/assignment
+// display events) are linkable. Pseudo ids are prefixed with task-/vut-/assignment-.
+function isLinkableEvent(ev: DisplayEvent): boolean {
+  return !/^(task|vut|assignment)-/.test(ev.id);
+}
+
+/**
+ * Wraps a calendar event block with: drag-source (set link payload), drop
+ * target (create a link to this event), and a LinkBadge. Falls back to a
+ * plain div (no link behavior) for pseudo/non-linkable events.
+ */
+function EventChip({
+  ev,
+  onEventClick,
+  className,
+  style,
+  children,
+}: {
+  ev: DisplayEvent;
+  onEventClick: (ev: DisplayEvent) => void;
+  className: string;
+  style?: React.CSSProperties;
+  children: React.ReactNode;
+}) {
+  const linkable = isLinkableEvent(ev);
+  const [refreshSignal, setRefreshSignal] = useState(0);
+  const drop = useLinkDrop(
+    "calendarEvent",
+    linkable ? ev.id : undefined,
+    async (payload) => {
+      try {
+        await linksApi.create(payload.type, payload.id, "calendarEvent", ev.id);
+        setRefreshSignal((n) => n + 1);
+      } catch (e) {
+        console.error("Link failed", e);
+      }
+    }
+  );
+  return (
+    <div
+      draggable={linkable}
+      onDragStart={linkable ? (e) => {
+        e.stopPropagation();
+        setLinkPayload(e, { type: "calendarEvent", id: ev.id, title: ev.title });
+      } : undefined}
+      onDragOver={linkable ? drop.onDragOver : undefined}
+      onDragEnter={linkable ? drop.onDragEnter : undefined}
+      onDragLeave={linkable ? drop.onDragLeave : undefined}
+      onDrop={linkable ? drop.onDrop : undefined}
+      onClick={(e) => { e.stopPropagation(); onEventClick(ev); }}
+      className={`${className} ${linkable && drop.isOver ? "ring-2 ring-white/70" : ""}`}
+      style={style}
+      title={ev.title}
+    >
+      {children}
+      {linkable && (
+        <LinkBadge
+          type="calendarEvent"
+          id={ev.id}
+          refreshSignal={refreshSignal}
+          className="absolute right-0 top-0"
+        />
+      )}
+    </div>
+  );
+}
+
 function MonthView({
   cursor, events, onDrop, onEventClick, onSlotClick,
 }: {
@@ -593,16 +664,16 @@ function MonthView({
               </div>
               <div className="space-y-0.5">
                 {dayEvents.slice(0, 4).map((ev) => (
-                  <div
+                  <EventChip
                     key={ev.id}
-                    onClick={(e) => { e.stopPropagation(); onEventClick(ev); }}
-                    className="truncate rounded px-1 py-0.5 text-[10px] font-medium text-white"
+                    ev={ev}
+                    onEventClick={onEventClick}
+                    className="relative truncate rounded px-1 py-0.5 text-[10px] font-medium text-white"
                     style={{ background: ev.color }}
-                    title={ev.title}
                   >
                     {ev.allDay ? "" : `${ev.start.getHours().toString().padStart(2, "0")}:${ev.start.getMinutes().toString().padStart(2, "0")} `}
                     {ev.title}
-                  </div>
+                  </EventChip>
                 ))}
                 {dayEvents.length > 4 && (
                   <div className="text-[10px] text-ink-muted">+{dayEvents.length - 4} more</div>
@@ -678,16 +749,16 @@ function WeekView({
                   const heightMins = Math.max(15, (ev.end.getTime() - ev.start.getTime()) / 60000);
                   const height = heightMins * (HOUR_PX / 60);
                   return (
-                    <div
+                    <EventChip
                       key={ev.id}
-                      onClick={(e) => { e.stopPropagation(); onEventClick(ev); }}
+                      ev={ev}
+                      onEventClick={onEventClick}
                       className="absolute left-0.5 right-0.5 overflow-hidden rounded px-1 py-0.5 text-[10px] text-white"
                       style={{ top, height, background: ev.color }}
-                      title={ev.title}
                     >
                       <div className="font-semibold truncate">{ev.title}</div>
                       <div className="truncate opacity-80">{ev.start.getHours().toString().padStart(2, "0")}:{ev.start.getMinutes().toString().padStart(2, "0")}</div>
-                    </div>
+                    </EventChip>
                   );
                 })}
               </div>
@@ -751,9 +822,10 @@ function DayView({
               const heightMins = Math.max(15, (ev.end.getTime() - ev.start.getTime()) / 60000);
               const height = heightMins * (HOUR_PX / 60);
               return (
-                <div
+                <EventChip
                   key={ev.id}
-                  onClick={(e) => { e.stopPropagation(); onEventClick(ev); }}
+                  ev={ev}
+                  onEventClick={onEventClick}
                   className="absolute left-1 right-1 overflow-hidden rounded px-2 py-1 text-xs text-white"
                   style={{ top, height, background: ev.color }}
                 >
@@ -762,7 +834,7 @@ function DayView({
                     {ev.start.getHours().toString().padStart(2, "0")}:{ev.start.getMinutes().toString().padStart(2, "0")} – {ev.end.getHours().toString().padStart(2, "0")}:{ev.end.getMinutes().toString().padStart(2, "0")}
                     {ev.location && <span className="ml-1.5 inline-flex items-center gap-0.5"><MapPin size={9} />{ev.location}</span>}
                   </div>
-                </div>
+                </EventChip>
               );
             })}
           </div>

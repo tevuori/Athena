@@ -1,0 +1,198 @@
+// ===== Athena notetaking tools =====
+// create_notes_from_url: fetch a web page → AI generates structured notes → save Note.
+// create_notes_from_pdf: extract text from an uploaded PDF file → AI notes → save Note.
+
+import path from "node:path";
+import { readFile } from "node:fs/promises";
+import type { ToolDef } from "./plugin";
+import prisma from "../../../db/client";
+import { getUserConfig, buildModel } from "../llm";
+import { fetchUrl } from "../../../services/fetcher";
+import { generateText } from "../../study/llm-json";
+import { notetakingPrompt, type NoteStyle } from "../../study/prompts";
+import { logSessionSafe } from "../../study/logSession";
+
+const UPLOAD_DIR = path.resolve(process.cwd(), "uploads");
+
+/** Extract text from a PDF file on disk using pdf-parse. */
+async function extractPdfText(storageKey: string): Promise<string> {
+  const abs = path.join(UPLOAD_DIR, storageKey);
+  const buf = await readFile(abs);
+  const { PDFParse } = await import("pdf-parse");
+  const parser = new PDFParse({ data: new Uint8Array(buf) });
+  const result = await parser.getText();
+  await parser.destroy();
+  return result.text || "";
+}
+
+function parseStyle(s: unknown): NoteStyle {
+  const v = String(s ?? "outline");
+  return (["cornell", "outline", "summary", "bullets"] as const).includes(v as NoteStyle)
+    ? (v as NoteStyle)
+    : "outline";
+}
+
+export const notetakeTools: ToolDef[] = [
+  {
+    name: "create_notes_from_url",
+    description:
+      "Fetch a web page, generate structured notes from its content, save them as a new Note, and open it in the Notes app. Use when the user pastes a URL and asks to 'take notes on this', 'summarize this page', or 'make notes from this link'.",
+    destructive: true,
+    clientAction: true,
+    parameters: [
+      { name: "url", type: "string", description: "Full http(s) URL of the page to take notes from", required: true },
+      {
+        name: "style",
+        type: "string",
+        description: "Note style",
+        enum: ["cornell", "outline", "summary", "bullets"],
+      },
+      { name: "title", type: "string", description: "Optional title for the new note" },
+      { name: "tags", type: "string", description: "Comma-separated tags (defaults to 'notes,ai,web')" },
+    ],
+    handler: async (args, { userId }) => {
+      const cfg = await getUserConfig(userId);
+      if (!cfg.apiKey) return { error: "No AI provider configured." };
+
+      const url = String(args.url ?? "").trim();
+      if (!url) return { error: "url is required" };
+
+      let page;
+      try {
+        page = await fetchUrl(url, 20_000);
+      } catch (e) {
+        return { error: `Failed to fetch URL: ${e instanceof Error ? e.message : "unknown"}` };
+      }
+      if (!page.content.trim()) {
+        return { error: "The page had no extractable text content." };
+      }
+
+      const style = parseStyle(args.style);
+      let notes: string;
+      try {
+        notes = await generateText(
+          buildModel(cfg),
+          notetakingPrompt(page.content, style, page.title || page.finalUrl),
+          "You are a study assistant. Take accurate, well-organized notes in Markdown. Do not invent information."
+        );
+      } catch (e) {
+        return { error: e instanceof Error ? e.message : "Note generation failed" };
+      }
+
+      const title = (String(args.title ?? "").trim() || `Notes: ${page.title || "Web Page"}`).slice(0, 200);
+      const tags = String(args.tags ?? "notes,ai,web");
+      const note = await prisma.note.create({
+        data: { userId, title, content: notes, tags },
+      });
+
+      // Include source URL as a footer in the note for traceability.
+      const withSource = `${notes}\n\n---\n_Source: [${page.title || page.finalUrl}](${page.finalUrl})_`;
+      await prisma.note.update({ where: { id: note.id }, data: { content: withSource } });
+
+      await logSessionSafe(userId, "notes", title, page.finalUrl, {
+        noteId: note.id,
+        style,
+        sourceUrl: page.finalUrl,
+      });
+
+      return {
+        action: "open_app",
+        appId: "notes",
+        title,
+        noteId: note.id,
+        note: { id: note.id, title: note.title },
+        sourceUrl: page.finalUrl,
+        created: true,
+      };
+    },
+  },
+  {
+    name: "create_notes_from_pdf",
+    description:
+      "Extract text from an uploaded PDF file, generate structured notes, save them as a new Note, and open it in the Notes app. Use search_files / list_files first to get the file id. The file must be a PDF in the user's virtual file system.",
+    destructive: true,
+    clientAction: true,
+    parameters: [
+      { name: "fileId", type: "string", description: "PDF file id from list_files / search_files", required: true },
+      {
+        name: "style",
+        type: "string",
+        description: "Note style",
+        enum: ["cornell", "outline", "summary", "bullets"],
+      },
+      { name: "title", type: "string", description: "Optional title for the new note" },
+      { name: "tags", type: "string", description: "Comma-separated tags (defaults to 'notes,ai,pdf')" },
+    ],
+    handler: async (args, { userId }) => {
+      const cfg = await getUserConfig(userId);
+      if (!cfg.apiKey) return { error: "No AI provider configured." };
+
+      const fileId = String(args.fileId ?? "").trim();
+      if (!fileId) return { error: "fileId is required" };
+
+      const file = await prisma.vFile.findFirst({ where: { id: fileId, userId } });
+      if (!file) return { error: "File not found" };
+
+      const isPdf =
+        file.mimeType === "application/pdf" ||
+        file.name.toLowerCase().endsWith(".pdf");
+      if (!isPdf) {
+        return { error: `File '${file.name}' is not a PDF.` };
+      }
+
+      let text: string;
+      try {
+        text = await extractPdfText(file.storageKey);
+      } catch (e) {
+        return { error: `PDF text extraction failed: ${e instanceof Error ? e.message : "unknown"}` };
+      }
+      if (!text.trim()) {
+        return { error: "The PDF had no extractable text (it may be a scanned image PDF)." };
+      }
+
+      // Truncate to a reasonable size for the LLM.
+      const MAX = 20_000;
+      let truncated = false;
+      if (text.length > MAX) {
+        text = text.slice(0, MAX);
+        truncated = true;
+      }
+
+      const style = parseStyle(args.style);
+      let notes: string;
+      try {
+        notes = await generateText(
+          buildModel(cfg),
+          notetakingPrompt(text, style, file.name),
+          "You are a study assistant. Take accurate, well-organized notes in Markdown. Do not invent information."
+        );
+      } catch (e) {
+        return { error: e instanceof Error ? e.message : "Note generation failed" };
+      }
+
+      const title = (String(args.title ?? "").trim() || `Notes: ${file.name}`).slice(0, 200);
+      const tags = String(args.tags ?? "notes,ai,pdf");
+      const note = await prisma.note.create({
+        data: { userId, title, content: notes, tags },
+      });
+
+      await logSessionSafe(userId, "notes", title, file.id, {
+        noteId: note.id,
+        style,
+        fileId: file.id,
+        fileName: file.name,
+        truncated,
+      });
+
+      return {
+        action: "open_app",
+        appId: "notes",
+        title,
+        noteId: note.id,
+        note: { id: note.id, title: note.title },
+        sourceFile: file.name,
+        created: true,
+      };
+    },
+  },
+];

@@ -38,6 +38,48 @@ model User {
   ntfyConfig    NtfyConfig?
   ntfyCronJobs  NtfyCronJob[]
   ntfyMessages  NtfyMessage[]
+  memories      AthenaMemory[]
+  itemLinks     ItemLink[]
+}
+
+// ===== Generic symmetric item links (drag-to-link between apps) =====
+// Polymorphic relation between any two workspace items (note, task,
+// flashcardDeck, calendarEvent, file). Symmetric: querying an item unions
+// both src and dst rows. src/dst are canonicalized on write (lexicographic
+// by type then id) so the unique constraint prevents A-B / B-A duplicates.
+// No DB-level FK to the referenced entities (polymorphic); orphan rows are
+// cleaned up via cleanupOrphanLinks() in the respective delete routes.
+
+model ItemLink {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  srcType   String   // "note" | "task" | "flashcardDeck" | "calendarEvent" | "file"
+  srcId     String
+  dstType   String
+  dstId     String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, srcType, srcId, dstType, dstId])
+  @@index([userId, srcType, srcId])
+  @@index([userId, dstType, dstId])
+}
+
+// ===== Athena persistent memory =====
+// Key facts/preferences the user asks Athena to remember, recalled in future
+// turns via the system prompt (recent 5) or the recall_memory tool.
+
+model AthenaMemory {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  content   String
+  category  String   @default("general") // general|preference|fact|goal|person
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, category])
+  @@index([userId, updatedAt])
 }
 
 // ===== Ntfy (bidirectional Athena communication channel + cron) =====

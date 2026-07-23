@@ -1,5 +1,6 @@
 import type { ToolDef } from "./plugin";
 import prisma from "../../../db/client";
+import { countLinksBatch } from "../../../db/links";
 
 export const taskTools: ToolDef[] = [
   {
@@ -50,6 +51,7 @@ export const taskTools: ToolDef[] = [
         orderBy: [{ status: "asc" }, { order: "asc" }, { createdAt: "desc" }],
         take: 50,
       });
+      const linkCounts = await countLinksBatch(userId, "task", tasks.map((t) => t.id));
       return {
         count: tasks.length,
         tasks: tasks.map((t) => ({
@@ -59,6 +61,7 @@ export const taskTools: ToolDef[] = [
           priority: t.priority,
           dueDate: t.dueDate?.toISOString() ?? null,
           description: t.description,
+          linkCount: linkCounts.get(t.id) ?? 0,
         })),
       };
     },

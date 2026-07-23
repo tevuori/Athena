@@ -30,6 +30,8 @@ export interface ToolDef {
   parameters: PluginParameter[];
   /** Whether this tool mutates data (gated by confirmation on the client). */
   destructive?: boolean;
+  /** If true, the client asks for confirmation before executing (e.g. run_code). */
+  requiresConfirmation?: boolean;
   /** If true, result is forwarded to the client as a `client_action` chunk. */
   clientAction?: boolean;
   handler: (args: any, ctx: ToolContext) => Promise<any>;

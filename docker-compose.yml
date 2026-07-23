@@ -17,9 +17,16 @@ services:
       SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET}
       SPOTIFY_REFRESH_TOKEN: ${SPOTIFY_REFRESH_TOKEN}
       SPOTIFY_REDIRECT_URI: ${SPOTIFY_REDIRECT_URI:-http://localhost:5173/auth/spotify/callback}
+      # Athena code execution sandbox (run_code tool). Requires Docker socket
+      # mounted below. Set to "false" to disable code execution.
+      SANDBOX_ENABLED: ${SANDBOX_ENABLED:-true}
     volumes:
       - athena-data:/app/data
       - athena-uploads:/app/uploads
+      # Docker socket for the Athena code execution sandbox (run_code tool).
+      # Mount only on trusted single-user deployments. Set SANDBOX_ENABLED=false
+      # to disable code execution without removing this mount.
+      - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
 
   client:

@@ -5,9 +5,14 @@ import {
   Check, X, AlertCircle, Layers, Sparkles,
 } from "lucide-react";
 import { flashcardsApi } from "../../services/flashcards";
+import { linksApi } from "../../services/links";
 import type { Flashcard, FlashcardDeck } from "../../types";
 import { useWindows } from "../../store/windows";
 import type { WindowInstance } from "../../store/windows";
+import { setLinkPayload } from "../links/linkDnd";
+import LinkDragHandle from "../links/LinkDragHandle";
+import LinkBadge from "../links/LinkBadge";
+import { useLinkDrop } from "../links/useLinkDrop";
 
 type View = "decks" | "cards" | "review";
 
@@ -178,26 +183,7 @@ export default function FlashcardsApp({ win }: { win: WindowInstance }) {
           ) : (
             <div className="grid grid-cols-1 gap-3 @2xl:grid-cols-2 @4xl:grid-cols-3">
               {decks.map((deck) => (
-                <motion.button
-                  key={deck.id}
-                  layout
-                  onClick={() => openDeck(deck)}
-                  className="group relative overflow-hidden rounded-xl border border-edge bg-surface-2 p-4 text-left transition hover:border-accent/50"
-                >
-                  <div
-                    className="absolute right-0 top-0 h-20 w-20 rounded-bl-full opacity-20"
-                    style={{ backgroundColor: deck.color }}
-                  />
-                  <div className="relative">
-                    <div className="mb-2 h-1.5 w-10 rounded-full" style={{ backgroundColor: deck.color }} />
-                    <h3 className="mb-1 font-semibold text-ink">{deck.name}</h3>
-                    <p className="mb-3 line-clamp-2 text-xs text-ink-muted">{deck.description || "No description"}</p>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-ink-muted">{deck._count.cards} cards</span>
-                      <ChevronRight size={16} className="text-ink-muted transition group-hover:translate-x-0.5" />
-                    </div>
-                  </div>
-                </motion.button>
+                <DeckCard key={deck.id} deck={deck} onOpen={() => openDeck(deck)} />
               ))}
             </div>
           )}
@@ -503,4 +489,59 @@ export default function FlashcardsApp({ win }: { win: WindowInstance }) {
   }
 
   return null;
+}
+
+function DeckCard({ deck, onOpen }: { deck: FlashcardDeck & { _count: { cards: number } }; onOpen: () => void }) {
+  const [refreshSignal, setRefreshSignal] = useState(0);
+  const { onDragOver, onDragEnter, onDragLeave, onDrop, isOver } = useLinkDrop(
+    "flashcardDeck",
+    deck.id,
+    async (payload) => {
+      try {
+        await linksApi.create(payload.type, payload.id, "flashcardDeck", deck.id);
+        setRefreshSignal((n) => n + 1);
+      } catch (e) {
+        console.error("Link failed", e);
+      }
+    }
+  );
+  return (
+    <div
+      onDragOver={onDragOver}
+      onDragEnter={onDragEnter}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      className={`relative rounded-xl border bg-surface-2 p-4 transition hover:border-accent/50 ${
+        isOver ? "border-accent ring-2 ring-accent/30" : "border-edge"
+      }`}
+    >
+      <button
+        draggable
+        onDragStart={(e) => {
+          e.stopPropagation();
+          setLinkPayload(e, { type: "flashcardDeck", id: deck.id, title: deck.name });
+        }}
+        onClick={onOpen}
+        className="group relative w-full overflow-hidden rounded-lg text-left"
+      >
+        <div
+          className="absolute right-0 top-0 h-20 w-20 rounded-bl-full opacity-20"
+          style={{ backgroundColor: deck.color }}
+        />
+        <div className="relative">
+          <div className="mb-2 h-1.5 w-10 rounded-full" style={{ backgroundColor: deck.color }} />
+          <h3 className="mb-1 font-semibold text-ink">{deck.name}</h3>
+          <p className="mb-3 line-clamp-2 text-xs text-ink-muted">{deck.description || "No description"}</p>
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-ink-muted">{deck._count.cards} cards</span>
+            <ChevronRight size={16} className="text-ink-muted transition group-hover:translate-x-0.5" />
+          </div>
+        </div>
+      </button>
+      <div className="relative mt-2 flex items-center justify-between">
+        <LinkDragHandle type="flashcardDeck" id={deck.id} title={deck.name} className="opacity-60" />
+        <LinkBadge type="flashcardDeck" id={deck.id} refreshSignal={refreshSignal} />
+      </div>
+    </div>
+  );
 }

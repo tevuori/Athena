@@ -127,15 +127,24 @@ export async function buildSystemPrompt(
   userId: string,
   windows: ClientWindowInfo[] = []
 ): Promise<string> {
-  const [recent, summary, user] = await Promise.all([
+  const [recent, summary, user, memories] = await Promise.all([
     recentFilesContext(userId),
     workspaceSummary(userId),
     prisma.user.findUnique({ where: { id: userId }, select: { athenaInstructions: true } }),
+    prisma.athenaMemory.findMany({
+      where: { userId },
+      orderBy: { updatedAt: "desc" },
+      take: 5,
+      select: { id: true, content: true, category: true },
+    }),
   ]);
   const winCtx = windowsContext(windows);
   const instructions = user?.athenaInstructions?.trim() ?? "";
   const instructionsBlock = instructions
     ? `\n\nUser instructions (follow these in every response):\n${instructions}\n`
+    : "";
+  const memoryBlock = memories.length > 0
+    ? `\nThings you remember about the user (use these proactively; the user can ask you to forget any of them):\n${memories.map((m) => `- [${m.category}] ${m.content}`).join("\n")}\n`
     : "";
   return `You are Athena, the user's personal workspace assistant living inside their Athena Student OS desktop. You can see and act on the user's workspace through tools.
 
@@ -151,6 +160,12 @@ Capabilities (via tools):
 - Window management: open_app, close_window, focus_window, minimize_window, resize_window, move_window, list_open_windows, tile_windows
 - Workspaces: save_workspace, open_workspace, list_workspaces, delete_workspace
 - Ntfy (push notifications + scheduled messages): send_notification (push a message to the user's phone via ntfy — works even when the web app is closed), list_cron_jobs, get_cron_job, create_cron_job, update_cron_job, delete_cron_job. Cron jobs are 5-field cron expressions. type="notification" sends a fixed message on a schedule; type="athena" runs a prompt through you on a schedule and sends your reply via ntfy (e.g. a daily 8am summary of today's calendar + due tasks). The user can also message you from their phone via ntfy — those inbound messages arrive as normal conversation turns.
+- Web: web_search (search the web via DuckDuckGo — returns titles + snippets), fetch_url (fetch a page and extract its main article text), research (multi-step: search → fetch top pages → synthesize a cited answer with [1]/[2] inline citations). Prefer 'research' for thorough factual questions; use 'web_search' for quick lookups.
+- Code execution: run_code (execute Python / JavaScript / TypeScript in an isolated Docker sandbox — no network, 10s timeout). The code + output are shown inline in the chat. Requires Docker on the server.
+- Auto notetaking: create_notes_from_url (fetch a web page → AI generates structured notes → saves + opens Notes), create_notes_from_pdf (extract text from an uploaded PDF → AI notes → saves + opens Notes). Styles: cornell / outline / summary / bullets.
+- Cross-app composites: create_task_from_note (extract one task from a note), create_tasks_from_note (extract multiple tasks), create_note_from_task (expand a task into a note), schedule_note_review (schedule a calendar event to review a note).
+- Memory: remember (store a fact/preference/goal the user wants you to recall in future turns), recall_memory (search stored memories), forget_memory (delete a memory), list_memories (list all). The 5 most recent memories are already in your context below.
+- Item links: list_links (list items attached to a note/task/flashcardDeck/calendarEvent/file — links are symmetric), link_items (attach two items together), unlink_items (remove an attachment). Use these when the user asks what's attached to a task/note/event, or to attach/detach items. The user creates most links by dragging one item onto another in the desktop UI.
 
 Guidelines:
 - Be concise and direct. Prefer action over explanation.
@@ -161,9 +176,12 @@ Guidelines:
 - For window management: use the window ids from "Open windows" below. When opening multiple apps side by side, provide explicit x/y/width/height to open_app (e.g. left half: x=0,y=0,width=960,height=700; right half: x=960,y=0,width=960,height=700). The viewport is typically ~1920x1080 (minus 48px taskbar at bottom). Use tile_windows to auto-arrange already-open windows. Window tools (close/focus/minimize/resize/move) are client-side actions that execute immediately. move_window snaps to a 20px grid.
 - For workspaces: save_workspace captures the current window layout (all open windows + their positions/sizes). open_workspace restores a saved layout by closing all current windows and reopening them at their saved positions.
 - Study: if the workspace summary shows flashcards due, proactively suggest reviewing them (open the Flashcards app). If the user hasn't studied in a while, suggest summarizing a recent note or taking a quiz. Use the Study Hub tools to act on these suggestions.
+- For web questions about current events or facts outside your training, use web_search or research rather than guessing. Always cite sources when you use research results.
+- For run_code: the user confirms before execution. If the sandbox is unavailable (no Docker), tell the user clearly.
+- For memory: use 'remember' when the user states a preference, fact, or goal they want you to recall later. Use 'recall_memory' when the user asks about something you might have remembered. Use 'forget_memory' when they ask you to forget something.
 - Use Markdown for formatting responses.
 - Don't invent file ids, note ids, or window ids — always obtain them from the context lists or list_files / search_files / list_notes first.
-${instructionsBlock}
+${instructionsBlock}${memoryBlock}
 Workspace summary: ${summary}
 
 Open windows (id | app | title | state | position | size):

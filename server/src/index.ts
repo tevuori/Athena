@@ -22,6 +22,7 @@ import capture from "./routes/capture";
 import microsoft from "./routes/microsoft";
 import users from "./routes/users";
 import ntfy from "./routes/ntfy";
+import links from "./routes/links";
 import { isSpotifyConfigured } from "./services/spotify";
 import { startScheduler } from "./services/ntfy/scheduler";
 import { startAllSubscribers } from "./services/ntfy/subscriber";
@@ -69,6 +70,7 @@ app.route("/api/capture", capture);
 app.route("/api/microsoft", microsoft);
 app.route("/api/users", users);
 app.route("/api/ntfy", ntfy);
+app.route("/api/links", links);
 
 // Start ntfy background workers (cron scheduler + per-user inbox subscribers).
 startScheduler();

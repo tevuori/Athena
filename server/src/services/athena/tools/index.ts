@@ -10,7 +10,14 @@ import { studyTools } from "./study";
 import { moodleTools } from "./moodle";
 import { calendarTools } from "./calendar";
 import { habitsTools } from "./habits";
-import { ntfyTools } from "./ntfy";
+import { searchTools } from "./search";
+import { fetchTools } from "./fetch";
+import { sandboxTools } from "./sandbox";
+import { notetakeTools } from "./notetake";
+import { crossAppTools } from "./crossapp";
+import { researchTools } from "./research";
+import { memoryTools } from "./memory";
+import { linkTools } from "./links";
 
 export { AthenaToolsPlugin, type ToolDef, type ToolContext, type ClientWindowInfo } from "./plugin";
 
@@ -27,7 +34,14 @@ export const ALL_TOOLS: ToolDef[] = [
   ...moodleTools,
   ...calendarTools,
   ...habitsTools,
-  ...ntfyTools,
+  ...searchTools,
+  ...fetchTools,
+  ...researchTools,
+  ...sandboxTools,
+  ...notetakeTools,
+  ...crossAppTools,
+  ...memoryTools,
+  ...linkTools,
 ];
 
 /** Tool metadata safe to expose to the client (no handlers). */
@@ -37,6 +51,7 @@ export function toolManifest() {
     description: t.description,
     parameters: t.parameters,
     destructive: Boolean(t.destructive),
+    requiresConfirmation: Boolean(t.requiresConfirmation),
     clientAction: Boolean(t.clientAction),
   }));
 }

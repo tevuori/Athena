@@ -1,5 +1,6 @@
 import type { ToolDef } from "./plugin";
 import prisma from "../../../db/client";
+import { countLinksBatch } from "../../../db/links";
 
 export const noteTools: ToolDef[] = [
   {
@@ -24,6 +25,7 @@ export const noteTools: ToolDef[] = [
           updatedAt: true,
         },
       });
+      const linkCounts = await countLinksBatch(userId, "note", notes.map((n) => n.id));
       return {
         count: notes.length,
         notes: notes.map((n) => ({
@@ -32,6 +34,7 @@ export const noteTools: ToolDef[] = [
           tags: n.tags,
           pinned: n.pinned,
           updatedAt: n.updatedAt.toISOString(),
+          linkCount: linkCounts.get(n.id) ?? 0,
         })),
       };
     },

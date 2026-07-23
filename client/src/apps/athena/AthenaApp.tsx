@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, Square, Sparkles, Loader2, Wrench, AlertCircle, Save, FolderOpen, LayoutGrid, Maximize2, X, ChevronDown, Paperclip, FileText, FileCode, FileType, Trash2, Cloud, Lightbulb, Check, Folder as FolderIcon, Plus, History, MessageSquare, Trash } from "lucide-react";
+import { Send, Square, Sparkles, Loader2, Wrench, AlertCircle, Save, FolderOpen, LayoutGrid, Maximize2, X, ChevronDown, Paperclip, FileText, FileCode, FileType, Trash2, Cloud, Lightbulb, Check, Folder as FolderIcon, Plus, History, MessageSquare, Trash, Terminal, ExternalLink, Globe } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -347,6 +347,7 @@ export default function AthenaApp({
         const appPayload: Record<string, any> = {};
         if (payload.deckId) appPayload.deckId = payload.deckId;
         if (payload.noteId) appPayload.noteId = payload.noteId;
+        if (payload.taskId) appPayload.taskId = payload.taskId;
         openWindow({
           appId: payload.appId as AppId,
           title: payload.title ?? payload.appId,
@@ -447,6 +448,11 @@ export default function AthenaApp({
         if (payload.prompt) {
           sendRef.current?.(String(payload.prompt));
         }
+        break;
+      }
+      case "show_code_result": {
+        // run_code results are rendered inline from the tool event's `result`
+        // field in ToolResultBlock. No window action needed here.
         break;
       }
       default: {
@@ -966,6 +972,15 @@ function TurnBubble({ turn }: { turn: ChatTurn }) {
             ))}
           </div>
         )}
+        {!isUser && turn.tools && turn.tools.length > 0 && (
+          <div className="mb-1.5 space-y-1.5">
+            {turn.tools
+              .filter((t) => t.state === "completed" && t.result)
+              .map((t) => (
+                <ToolResultBlock key={`tr-${t.id}`} tool={t} />
+              ))}
+          </div>
+        )}
         <div
           className={`rounded-2xl px-3.5 py-2 text-sm ${
             isUser
@@ -1017,6 +1032,131 @@ function ToolChip({ tool }: { tool: AthenaToolEvent }) {
       ) : null}
       <span className="opacity-70">· {tool.state}</span>
     </span>
+  );
+}
+
+// ===== Inline tool result renderers =====
+// Rich rendering for tools whose result is best shown inline in the chat
+// (code execution output, web search sources, research citations).
+
+function ToolResultBlock({ tool }: { tool: AthenaToolEvent }) {
+  const r = tool.result as Record<string, any> | undefined;
+  if (!r || (r as any).error) return null;
+  if (tool.name === "run_code") return <CodeResultBlock result={r} />;
+  if (tool.name === "web_search") return <SearchSourcesBlock result={r} />;
+  if (tool.name === "research") return <ResearchSourcesBlock result={r} />;
+  return null;
+}
+
+function CodeResultBlock({ result }: { result: Record<string, any> }) {
+  const [expanded, setExpanded] = useState(true);
+  const language = result.language ?? "code";
+  const code = result.code ?? "";
+  const stdout = result.stdout ?? "";
+  const stderr = result.stderr ?? "";
+  const exitCode = result.exitCode;
+  const durationMs = result.durationMs;
+  const timedOut = result.timedOut;
+  const unavailable = result.unavailable;
+
+  if (unavailable) {
+    return (
+      <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+        <AlertCircle size={12} className="mr-1 inline" />
+        {stderr || "Code sandbox unavailable."}
+      </div>
+    );
+  }
+
+  const ok = exitCode === 0 && !timedOut;
+  return (
+    <div className="overflow-hidden rounded-lg border border-edge bg-surface-3 text-xs">
+      <button
+        onClick={() => setExpanded((e) => !e)}
+        className="flex w-full items-center gap-1.5 border-b border-edge px-2.5 py-1.5 text-ink-muted hover:bg-surface-2"
+      >
+        <Terminal size={11} />
+        <span className="font-mono">{language}</span>
+        <span className={`ml-1 rounded px-1.5 py-0.5 text-[10px] ${ok ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-400"}`}>
+          {timedOut ? "TIMEOUT" : `exit ${exitCode}`}
+        </span>
+        {durationMs != null && (
+          <span className="text-[10px] opacity-60">{Math.round(durationMs)}ms</span>
+        )}
+        <ChevronDown size={11} className={`ml-auto transition-transform ${expanded ? "rotate-180" : ""}`} />
+      </button>
+      {expanded && (
+        <div className="space-y-0">
+          {code && (
+            <pre className="max-h-40 overflow-auto border-b border-edge px-3 py-2 font-mono text-[11px] text-ink">
+              {code.length > 2000 ? code.slice(0, 2000) + "\n…" : code}
+            </pre>
+          )}
+          {stdout && (
+            <pre className="max-h-48 overflow-auto px-3 py-2 font-mono text-[11px] text-emerald-300">
+              {stdout.length > 5000 ? stdout.slice(0, 5000) + "\n…" : stdout}
+            </pre>
+          )}
+          {stderr && (
+            <pre className="max-h-32 overflow-auto px-3 py-2 font-mono text-[11px] text-red-300">
+              {stderr.length > 5000 ? stderr.slice(0, 5000) + "\n…" : stderr}
+            </pre>
+          )}
+          {!stdout && !stderr && (
+            <div className="px-3 py-2 text-ink-muted italic">No output.</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SearchSourcesBlock({ result }: { result: Record<string, any> }) {
+  const results: Array<{ title: string; url: string; snippet?: string }> = result.results ?? [];
+  if (results.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {results.slice(0, 6).map((r, i) => (
+        <a
+          key={i}
+          href={r.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 rounded-md border border-edge bg-surface-2 px-2 py-0.5 text-[10px] text-ink-muted hover:border-accent hover:text-accent"
+          title={r.url}
+        >
+          <Globe size={9} />
+          <span className="max-w-[180px] truncate">{r.title}</span>
+          <ExternalLink size={8} className="opacity-50" />
+        </a>
+      ))}
+    </div>
+  );
+}
+
+function ResearchSourcesBlock({ result }: { result: Record<string, any> }) {
+  const sources: Array<{ index: number; title: string; url: string }> = result.sources ?? [];
+  if (sources.length === 0) return null;
+  return (
+    <div className="rounded-lg border border-edge bg-surface-2 px-2.5 py-1.5">
+      <div className="mb-1 text-[10px] font-medium text-ink-muted">Sources</div>
+      <div className="flex flex-wrap gap-1">
+        {sources.map((s) => (
+          <a
+            key={s.index}
+            href={s.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 rounded-md border border-edge bg-surface-3 px-2 py-0.5 text-[10px] text-ink-muted hover:border-accent hover:text-accent"
+            title={s.url}
+          >
+            <span className="font-mono text-accent">[{s.index}]</span>
+            <span className="max-w-[200px] truncate">{s.title}</span>
+            <ExternalLink size={8} className="opacity-50" />
+          </a>
+        ))}
+      </div>
+    </div>
   );
 }
 
