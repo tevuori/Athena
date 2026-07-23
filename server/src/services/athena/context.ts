@@ -118,9 +118,18 @@ function windowsContext(windows: ClientWindowInfo[]): string {
   if (windows.length === 0) return "No windows open.";
   const lines = windows.map((w) => {
     const state = w.minimized ? "minimized" : w.focused ? "focused" : "open";
-    return `- id=${w.id} | ${w.appId} "${w.title}" | ${state} | pos=(${w.rect.x},${w.rect.y}) size=${w.rect.width}x${w.rect.height}`;
+    const url = w.appId === "browser" && w.browserUrl ? ` | url=${w.browserUrl}` : "";
+    return `- id=${w.id} | ${w.appId} "${w.title}" | ${state} | pos=(${w.rect.x},${w.rect.y}) size=${w.rect.width}x${w.rect.height}${url}`;
   });
   return lines.join("\n");
+}
+
+function browserTabsContext(windows: ClientWindowInfo[]): string {
+  const tabs = windows.filter((w) => w.appId === "browser" && w.browserUrl);
+  if (tabs.length === 0) return "No browser tabs open.";
+  return tabs
+    .map((w) => `- id=${w.id} | ${w.browserUrl}${w.focused ? " (focused)" : w.minimized ? " (minimized)" : ""}`)
+    .join("\n");
 }
 
 export async function buildSystemPrompt(
@@ -139,6 +148,7 @@ export async function buildSystemPrompt(
     }),
   ]);
   const winCtx = windowsContext(windows);
+  const browserCtx = browserTabsContext(windows);
   const instructions = user?.athenaInstructions?.trim() ?? "";
   const instructionsBlock = instructions
     ? `\n\nUser instructions (follow these in every response):\n${instructions}\n`
@@ -161,6 +171,7 @@ Capabilities (via tools):
 - Workspaces: save_workspace, open_workspace, list_workspaces, delete_workspace
 - Ntfy (push notifications + scheduled messages): send_notification (push a message to the user's phone via ntfy — works even when the web app is closed), list_cron_jobs, get_cron_job, create_cron_job, update_cron_job, delete_cron_job. Cron jobs are 5-field cron expressions. type="notification" sends a fixed message on a schedule; type="athena" runs a prompt through you on a schedule and sends your reply via ntfy (e.g. a daily 8am summary of today's calendar + due tasks). The user can also message you from their phone via ntfy — those inbound messages arrive as normal conversation turns.
 - Web: web_search (search the web via DuckDuckGo — returns titles + snippets), fetch_url (fetch a page and extract its main article text), research (multi-step: search → fetch top pages → synthesize a cited answer with [1]/[2] inline citations). Prefer 'research' for thorough factual questions; use 'web_search' for quick lookups.
+- Browser: open_browser (open the Browser app on the desktop and navigate to a URL or search query — the user sees the page), navigate_browser (navigate an open browser window to a new URL), browser_back / browser_forward / browser_reload (control an open browser window), get_browser_content (read the main text of the page currently shown in a browser window, using the user's cookie jar so logged-in pages work). Use open_browser when the user asks to open/visit/show a website, or for web questions where seeing the actual page would help. Use get_browser_content to read what the user is currently viewing.
 - Code execution: run_code (execute Python / JavaScript / TypeScript in an isolated Docker sandbox — no network, 10s timeout). The code + output are shown inline in the chat. Requires Docker on the server.
 - Auto notetaking: create_notes_from_url (fetch a web page → AI generates structured notes → saves + opens Notes), create_notes_from_pdf (extract text from an uploaded PDF → AI notes → saves + opens Notes). Styles: cornell / outline / summary / bullets.
 - Cross-app composites: create_task_from_note (extract one task from a note), create_tasks_from_note (extract multiple tasks), create_note_from_task (expand a task into a note), schedule_note_review (schedule a calendar event to review a note).
@@ -179,6 +190,7 @@ Guidelines:
 - For web questions about current events or facts outside your training, use web_search or research rather than guessing. Always cite sources when you use research results.
 - For run_code: the user confirms before execution. If the sandbox is unavailable (no Docker), tell the user clearly.
 - For memory: use 'remember' when the user states a preference, fact, or goal they want you to recall later. Use 'recall_memory' when the user asks about something you might have remembered. Use 'forget_memory' when they ask you to forget something.
+- For the Browser: use open_browser when the user asks to open/visit/show a website or when a web question would benefit from the user seeing the actual page. If the user asks "what's on this page" or about the page they're viewing, use get_browser_content (it reads the current browser tab via the cookie jar). The Browser maintains login sessions across navigations (per-user cookie jar). Note that some sites (SPAs with heavy runtime JS) may not render perfectly through the proxy — for pure text extraction, fetch_url/research are more reliable.
 - Use Markdown for formatting responses.
 - Don't invent file ids, note ids, or window ids — always obtain them from the context lists or list_files / search_files / list_notes first.
 ${instructionsBlock}${memoryBlock}
@@ -186,6 +198,9 @@ Workspace summary: ${summary}
 
 Open windows (id | app | title | state | position | size):
 ${winCtx}
+
+Open browser tabs (id | url):
+${browserCtx}
 
 Recently opened files (id | path | type | size | preview):
 ${recent}`;

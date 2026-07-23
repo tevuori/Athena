@@ -18,6 +18,7 @@ import HabitsApp from "./habits/HabitsApp";
 import WhiteboardApp from "./whiteboard/WhiteboardApp";
 import NtfyApp from "./ntfy/NtfyApp";
 import VoiceApp from "./voice/VoiceApp";
+import BrowserApp from "./browser/BrowserApp";
 
 export interface AppDefinition {
   id: AppId;
@@ -46,6 +47,7 @@ export const APPS: AppDefinition[] = [
   { id: "whiteboard", name: "Whiteboard", icon: "PenTool", component: WhiteboardApp, pinnedToDesktop: true },
   { id: "ntfy", name: "Ntfy", icon: "Bell", component: NtfyApp, pinnedToDesktop: false },
   { id: "voice", name: "Voice Notes", icon: "Mic", component: VoiceApp, pinnedToDesktop: true },
+  { id: "browser", name: "Browser", icon: "Globe", component: BrowserApp, pinnedToDesktop: true },
 ];
 
 export const APP_MAP: Record<AppId, AppDefinition> = Object.fromEntries(

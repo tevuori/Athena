@@ -9,6 +9,7 @@ import type { ToolDef, ClientWindowInfo } from "./plugin";
 const VALID_APPS = [
   "notes", "tasks", "files", "music", "settings", "terminal",
   "pomodoro", "flashcards", "grades", "vut", "editor", "viewer", "athena",
+  "browser",
 ];
 
 /** Human-readable app names for the model. */
@@ -17,6 +18,7 @@ const APP_NAMES: Record<string, string> = {
   settings: "Settings", terminal: "Terminal", pomodoro: "Pomodoro",
   flashcards: "Flashcards", grades: "Grades", vut: "VUT Studis",
   editor: "Code Editor", viewer: "File Viewer", athena: "Athena",
+  browser: "Browser",
 };
 
 export const windowTools: ToolDef[] = [

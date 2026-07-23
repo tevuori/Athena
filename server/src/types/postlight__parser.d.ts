@@ -15,9 +15,9 @@ declare module "@postlight/parser" {
     contentType?: string;
     headers?: Record<string, string>;
   }
-  export class Parser {
-    static parse(html: string, opts?: ParseOptions): Promise<ParseResult | null>;
-    static parseUrl(url: string, opts?: ParseOptions): Promise<ParseResult | null>;
-  }
-  export const Mercury: typeof Parser;
+  export function parse(html: string, opts?: ParseOptions): Promise<ParseResult | null>;
+  export function parseUrl(url: string, opts?: ParseOptions): Promise<ParseResult | null>;
+  export function fetchResource(url: string, opts?: ParseOptions): Promise<any>;
+  export function addExtractor(extractor: any): void;
+  export const Mercury: { parse: typeof parse; parseUrl: typeof parseUrl };
 }

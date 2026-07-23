@@ -25,6 +25,7 @@ import ntfy from "./routes/ntfy";
 import voice from "./routes/voice";
 import links from "./routes/links";
 import proactiveAlerts from "./routes/proactive-alerts";
+import browser from "./routes/browser";
 import { isSpotifyConfigured } from "./services/spotify";
 import { startScheduler } from "./services/ntfy/scheduler";
 import { startAllSubscribers } from "./services/ntfy/subscriber";
@@ -76,6 +77,7 @@ app.route("/api/ntfy", ntfy);
 app.route("/api/voice", voice);
 app.route("/api/links", links);
 app.route("/api/proactive-alerts", proactiveAlerts);
+app.route("/api/browser", browser);
 
 // Start ntfy background workers (cron scheduler + per-user inbox subscribers).
 startScheduler();
