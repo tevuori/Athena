@@ -178,7 +178,7 @@ athena.post("/chat", zValidator("json", chatSchema, (result, c) => {
       if (client && typeof client.fetch === "function") {
         const origFetch = client.fetch.bind(client);
         client.fetch = async (url: string, init?: any) => {
-          const maxRetries = 3;
+          const maxRetries = 5;
           for (let attempt = 0; attempt <= maxRetries; attempt++) {
             const res = await origFetch(url, init);
             if (res.status !== 400 || attempt === maxRetries) return res;
@@ -191,12 +191,21 @@ athena.post("/chat", zValidator("json", chatSchema, (result, c) => {
               isTransient = /upstream request failed/i.test(msg);
             } catch { /* not JSON */ }
             if (!isTransient) return res;
-            console.warn(`[athena] transient upstream error, retrying (${attempt + 1}/${maxRetries})…`);
-            await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+            // Exponential backoff with jitter: ~2s, ~4s, ~8s, ~16s, ~32s
+            const base = Math.min(2000 * 2 ** attempt, 32000);
+            const jitter = Math.floor(Math.random() * 500);
+            console.warn(`[athena] transient upstream error, retrying (${attempt + 1}/${maxRetries}) in ${base + jitter}ms…`);
+            await new Promise((r) => setTimeout(r, base + jitter));
           }
           return origFetch(url, init);
         };
       }
+
+      // Track successfully completed tool calls so we can produce a graceful
+      // fallback message if the final text generation fails with a transient
+      // upstream error *after* the requested actions were already performed.
+      let completedTools = 0;
+      let failedTools = 0;
 
       try {
         for await (const chunk of model.generate(thread, {
@@ -224,19 +233,26 @@ athena.post("/chat", zValidator("json", chatSchema, (result, c) => {
                 result: chunk.state === "completed" ? chunk.call?.result : undefined,
               }),
             });
-            if (
-              chunk.state === "completed" &&
-              CLIENT_ACTION_TOOLS.has(chunk.name) &&
-              chunk.call?.result &&
-              !(chunk.call.result as any)?.error
-            ) {
-              await stream.writeSSE({
-                event: "client_action",
-                data: JSON.stringify({
-                  tool: chunk.name,
-                  payload: chunk.call.result,
-                }),
-              });
+            if (chunk.state === "completed") {
+              const result = chunk.call?.result as any;
+              if (result && typeof result === "object" && "error" in result) {
+                failedTools++;
+              } else {
+                completedTools++;
+              }
+              if (
+                CLIENT_ACTION_TOOLS.has(chunk.name) &&
+                result &&
+                !result?.error
+              ) {
+                await stream.writeSSE({
+                  event: "client_action",
+                  data: JSON.stringify({
+                    tool: chunk.name,
+                    payload: result,
+                  }),
+                });
+              }
             }
           } else if (chunk.type === "usage") {
             await stream.writeSSE({
@@ -260,10 +276,40 @@ athena.post("/chat", zValidator("json", chatSchema, (result, c) => {
             requestID: err.requestID,
           });
         }
-        await stream.writeSSE({
-          event: "error",
-          data: JSON.stringify({ error: msg, status }),
-        });
+
+        // Graceful fallback: if the model already completed tool calls
+        // successfully (e.g. created tasks/notes) but the final text
+        // generation failed with a transient upstream error, tell the user
+        // their actions were performed instead of showing a raw error.
+        const isUpstreamError = /upstream request failed/i.test(msg);
+        if (isUpstreamError && completedTools > 0 && failedTools === 0) {
+          const fallbackText =
+            `I completed ${completedTools} action${completedTools > 1 ? "s" : ""} ` +
+            `you requested, but my connection to the AI provider dropped while ` +
+            `generating this final response (transient upstream error). ` +
+            `Everything was saved successfully — no need to resend.`;
+          await stream.writeSSE({
+            event: "content",
+            data: JSON.stringify({ text: fallbackText, done: true }),
+          });
+          await stream.writeSSE({ event: "done", data: "{}" });
+        } else if (isUpstreamError && completedTools > 0) {
+          const fallbackText =
+            `I completed ${completedTools} action${completedTools > 1 ? "s" : ""} ` +
+            `(${failedTools} reported an error), but my connection to the AI ` +
+            `provider dropped while generating this final response ` +
+            `(transient upstream error). Please verify the results.`;
+          await stream.writeSSE({
+            event: "content",
+            data: JSON.stringify({ text: fallbackText, done: true }),
+          });
+          await stream.writeSSE({ event: "done", data: "{}" });
+        } else {
+          await stream.writeSSE({
+            event: "error",
+            data: JSON.stringify({ error: msg, status }),
+          });
+        }
       }
     },
     (err, stream) =>
