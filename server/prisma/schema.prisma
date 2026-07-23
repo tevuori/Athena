@@ -34,6 +34,82 @@ model User {
   calendarEvents CalendarEvent[]
   habits      Habit[]
   chatConversations ChatConversation[]
+  whiteboards Whiteboard[]
+  ntfyConfig    NtfyConfig?
+  ntfyCronJobs  NtfyCronJob[]
+  ntfyMessages  NtfyMessage[]
+}
+
+// ===== Ntfy (bidirectional Athena communication channel + cron) =====
+
+model NtfyConfig {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  serverUrl String   @default("https://ntfy.sh")
+  tokenEnc  String   @default("") // AES-256-GCM encrypted bearer token (optional)
+  notifyTopic String // Athena → user (user subscribes to this on their phone)
+  inboxTopic  String // user → Athena (server subscribes to this)
+  enabled   Boolean  @default(true)
+  defaultPriority Int @default(3) // 1-5
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model NtfyCronJob {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  cron      String   // 5-field cron expression (e.g. "0 8 * * *")
+  type      String   @default("notification") // "notification" | "athena"
+  // For type="notification": the fixed message body sent at each fire.
+  message   String   @default("")
+  // For type="athena": the prompt run through the LLM at each fire; the
+  // generated reply is published to the notify topic.
+  prompt    String   @default("")
+  title     String   @default("")
+  priority  Int      @default(3) // 1-5
+  tags      String   @default("")
+  enabled   Boolean  @default(true)
+  lastRunAt DateTime?
+  nextRunAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, enabled, nextRunAt])
+  @@index([userId])
+}
+
+model NtfyMessage {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  direction String   @default("out") // "in" | "out" | "cron"
+  topic     String   @default("")
+  title     String   @default("")
+  body      String   @default("")
+  priority  Int      @default(3)
+  tags      String   @default("")
+  cronJobId String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+// ===== Whiteboard (vector drawing canvas) =====
+
+model Whiteboard {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String   @default("Untitled")
+  content   String   @default("[]") // JSON array of vector elements
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([userId, updatedAt])
 }
 
 model ChatConversation {

@@ -15,6 +15,8 @@ import StudyApp from "./study/StudyApp";
 import TodayApp from "./today/TodayApp";
 import CalendarApp from "./calendar/CalendarApp";
 import HabitsApp from "./habits/HabitsApp";
+import WhiteboardApp from "./whiteboard/WhiteboardApp";
+import NtfyApp from "./ntfy/NtfyApp";
 
 export interface AppDefinition {
   id: AppId;
@@ -40,6 +42,8 @@ export const APPS: AppDefinition[] = [
   { id: "today", name: "Today", icon: "CalendarCheck", component: TodayApp, pinnedToDesktop: true },
   { id: "calendar", name: "Calendar", icon: "Calendar", component: CalendarApp, pinnedToDesktop: true },
   { id: "habits", name: "Habits", icon: "Flame", component: HabitsApp, pinnedToDesktop: true },
+  { id: "whiteboard", name: "Whiteboard", icon: "PenTool", component: WhiteboardApp, pinnedToDesktop: true },
+  { id: "ntfy", name: "Ntfy", icon: "Bell", component: NtfyApp, pinnedToDesktop: false },
 ];
 
 export const APP_MAP: Record<AppId, AppDefinition> = Object.fromEntries(

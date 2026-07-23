@@ -17,10 +17,14 @@ import study from "./routes/study";
 import moodle from "./routes/moodle";
 import calendar from "./routes/calendar";
 import habits from "./routes/habits";
+import whiteboards from "./routes/whiteboards";
 import capture from "./routes/capture";
 import microsoft from "./routes/microsoft";
 import users from "./routes/users";
+import ntfy from "./routes/ntfy";
 import { isSpotifyConfigured } from "./services/spotify";
+import { startScheduler } from "./services/ntfy/scheduler";
+import { startAllSubscribers } from "./services/ntfy/subscriber";
 
 const app = new Hono();
 
@@ -60,9 +64,17 @@ app.route("/api/study", study);
 app.route("/api/moodle", moodle);
 app.route("/api/calendar", calendar);
 app.route("/api/habits", habits);
+app.route("/api/whiteboards", whiteboards);
 app.route("/api/capture", capture);
 app.route("/api/microsoft", microsoft);
 app.route("/api/users", users);
+app.route("/api/ntfy", ntfy);
+
+// Start ntfy background workers (cron scheduler + per-user inbox subscribers).
+startScheduler();
+startAllSubscribers().catch((e) =>
+  console.error("[athena-server] ntfy subscriber startup error:", e)
+);
 
 const port = Number(process.env.SERVER_PORT ?? 3000);
 const hostname = process.env.SERVER_HOST ?? "0.0.0.0";

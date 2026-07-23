@@ -10,6 +10,7 @@ import { studyTools } from "./study";
 import { moodleTools } from "./moodle";
 import { calendarTools } from "./calendar";
 import { habitsTools } from "./habits";
+import { ntfyTools } from "./ntfy";
 
 export { AthenaToolsPlugin, type ToolDef, type ToolContext, type ClientWindowInfo } from "./plugin";
 
@@ -26,6 +27,7 @@ export const ALL_TOOLS: ToolDef[] = [
   ...moodleTools,
   ...calendarTools,
   ...habitsTools,
+  ...ntfyTools,
 ];
 
 /** Tool metadata safe to expose to the client (no handlers). */
