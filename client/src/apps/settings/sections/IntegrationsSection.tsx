@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
-import { Plug, Music, GraduationCap, Calendar, BookOpen, Loader2, LogOut, RefreshCw, ExternalLink } from "lucide-react";
+import { Plug, Music, GraduationCap, Calendar, BookOpen, Loader2, LogOut, RefreshCw, ExternalLink, Bell } from "lucide-react";
 import { spotifyApi } from "../../../services/spotify";
 import { vutApi } from "../../../services/vut";
 import { microsoftApi } from "../../../services/microsoft";
 import { moodleApi } from "../../../services/moodle";
+import { ntfyApi } from "../../../services/ntfy";
+import { useWindows } from "../../../store/windows";
 import { SectionHeader, Card, StatusPill, MsgBox, inputClass } from "../ui";
 
 export default function IntegrationsSection() {
@@ -18,7 +20,49 @@ export default function IntegrationsSection() {
       <VutCard />
       <MicrosoftCard />
       <MoodleCard />
+      <NtfyCard />
     </section>
+  );
+}
+
+function NtfyCard() {
+  const [status, setStatus] = useState<{ configured: boolean; enabled: boolean } | null>(null);
+  const openWindow = useWindows((s) => s.open);
+
+  const refresh = useCallback(async () => {
+    try {
+      const s = await ntfyApi.getStatus();
+      setStatus({ configured: s.configured, enabled: s.enabled });
+    } catch {
+      setStatus({ configured: false, enabled: false });
+    }
+  }, []);
+
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  return (
+    <Card className="mt-3">
+      <IntegrationRow
+        icon={<Bell size={18} />}
+        name="Ntfy"
+        description="Bidirectional push channel — Athena notifies your phone and you can message Athena from anywhere. Manage cron jobs in the Ntfy app."
+        pill={
+          <StatusPill
+            on={!!status?.configured}
+            onLabel={status?.enabled ? "Connected" : "Disabled"}
+            offLabel="Not configured"
+          />
+        }
+        action={
+          <button
+            onClick={() => openWindow({ appId: "ntfy", title: "Ntfy", icon: "Bell" })}
+            className="flex items-center gap-1.5 rounded-lg border border-edge px-2.5 py-1.5 text-xs text-ink hover:bg-surface-3"
+          >
+            <ExternalLink size={12} /> Open Ntfy
+          </button>
+        }
+      />
+    </Card>
   );
 }
 

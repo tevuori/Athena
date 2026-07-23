@@ -70,6 +70,7 @@ See `.env.example`. Key ones:
 - `VITE_API_URL` — backend URL for client (used by Vite proxy)
 - `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` / `SPOTIFY_REFRESH_TOKEN` — Spotify integration
 - `MS_CLIENT_ID` / `MS_CLIENT_SECRET` / `MS_TENANT_ID` / `MS_REFRESH_TOKEN` — Microsoft Calendar sync (Graph API, requires `Calendar.ReadWrite` + `offline_access` scopes)
+- `NTFY_SERVER_URL` / `NTFY_TOKEN` / `NTFY_DEFAULT_PRIORITY` — Ntfy server-wide fallback (per-user config in DB takes priority)
 - `OPENAI_PROVIDER` / `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL` — Athena LLM server-wide fallback (per-user config in DB takes priority). Default provider `openai`, base URL `https://opencode.ai/zen/v1`, model `deepseek-v4-flash-free`.
 
 ## Project structure
@@ -83,8 +84,8 @@ Athena/
 │   └── src/
 │       ├── index.ts              # Hono app entry
 │       ├── db/{client.ts, seed.ts}
-│       ├── routes/{auth, notes, tasks, files, spotify, lyrics, flashcards, grades, vut, ai, athena, conversations, study, moodle, calendar, habits, capture, microsoft}.ts
-│       ├── services/{spotify.ts, lrclib.ts, jwt.ts, vut.ts, crypto.ts, moodle.ts, microsoft.ts}
+│       ├── routes/{auth, notes, tasks, files, spotify, lyrics, flashcards, grades, vut, ai, athena, conversations, study, moodle, calendar, habits, capture, microsoft, whiteboards, ntfy}.ts
+│       ├── services/{spotify.ts, lrclib.ts, jwt.ts, vut.ts, crypto.ts, moodle.ts, microsoft.ts, ntfy/{client, config, scheduler, subscriber, athena-turn}.ts}
 │       ├── services/athena/{llm.ts, context.ts, tools/}  # multi-llm-ts client, system prompt, tool plugins
 │       ├── services/study/{source, llm-json, prompts, quiz-store, logSession}.ts  # AI Study Hub helpers
 │       └── middleware/auth.ts
@@ -111,9 +112,11 @@ Athena/
         │   ├── study/            # Study Hub (AI flashcards, summarize, quiz, explain, study guide, syllabus→tasks)
         │   ├── calendar/         # Calendar / Planner (month/week/day, ICS import/export, task drag-to-schedule)
         │   ├── habits/           # Habit Tracker (streaks, heatmap, auto-complete from Pomodoro)
-        │   └── settings/         # Settings (Appearance, Wallpaper, Animated BG, Account, Sound & Athena, Athena Assistant, Integrations, Notifications, Users [admin], Data & Storage, About). Split into apps/settings/sections/*.tsx + ui.tsx shared helpers; SettingsApp.tsx is the shell with section nav (Users gated behind role=ADMIN).
+        │   ├── settings/         # Settings (Appearance, Wallpaper, Animated BG, Account, Sound & Athena, Athena Assistant, Integrations, Notifications, Users [admin], Data & Storage, About). Split into apps/settings/sections/*.tsx + ui.tsx shared helpers; SettingsApp.tsx is the shell with section nav (Users gated behind role=ADMIN).
+        │   └── whiteboard/      # Whiteboard (SVG vector canvas, pen/line/rect/ellipse/arrow/text/eraser, clipboard image paste, undo/redo, SVG/PNG export, multi-board)
+        │   └── ntfy/            # Ntfy (bidirectional Athena push channel, message log, cron-job manager)
         ├── store/                # Zustand stores (auth, windows, settings, music, notifications)
-        ├── services/             # API clients (api, notes, tasks, files, spotify, lyrics, flashcards, grades, vut, athena, conversations, study, moodle, calendar, habits, microsoft, users)
+        ├── services/             # API clients (api, notes, tasks, files, spotify, lyrics, flashcards, grades, vut, athena, conversations, study, moodle, calendar, habits, microsoft, users, whiteboards, ntfy)
         └── types/                # shared TS types
 ```
 
@@ -270,6 +273,23 @@ Athena/
     - Falls back to creating a plain Task with the raw text if no LLM is configured or the LLM call fails.
     - Flashcard captures go into a "Quick Capture" deck (auto-created). Athena captures open Athena with the text prefilled as a prompt.
     - Discoverable via the Command Palette ("Quick Capture" action).
+17. **Whiteboard** — Interactive vector drawing canvas for learning/sketching:
+    - SVG-based vector graphics (true vector, scalable, lossless). Fixed 2000×1400 canvas scaled to fit the window.
+    - Tools: Select (move + 8-handle resize + Delete/Backspace to remove), Pen (freehand), Line, Rectangle, Ellipse, Arrow, Text, Eraser (click-to-delete).
+    - Style controls: color swatches + custom color picker, stroke width (2/4/8px), fill toggle (shapes), font size (text).
+    - **Images**: paste from clipboard (`Ctrl/Cmd+V` reads `image/*` clipboard items) or drag-drop image files onto the canvas. Pasted/dropped images are downscaled to max 1600px before storage to avoid DB bloat.
+    - **Undo/redo** stacks (`Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z` or `Ctrl/Cmd+Y`); Clear canvas.
+    - **Export**: download as `.svg` (serialized SVG) or `.png` (rasterized via canvas).
+    - **Persistence**: `Whiteboard` Prisma model (`content` = JSON array of vector elements). Multi-board list view (create/open/rename/delete). Debounced 1.5s auto-save + `Ctrl/Cmd+S` manual save + dirty indicator (● in window title). Backend: `routes/whiteboards.ts` (`GET/POST /api/whiteboards`, `GET/PUT/DELETE /api/whiteboards/:id`).
+    - Client: `apps/whiteboard/{WhiteboardApp,Canvas,Toolbar,elements}.tsx` + `services/whiteboards.ts`.
+18. **Ntfy** — Bidirectional push-notification channel for Athena + scheduled cron jobs:
+    - Ntfy (ntfy.sh or self-hosted) as a **two-way communication channel**: Athena pushes notifications to the user's phone, and the user can message Athena from their phone — inbound messages trigger a full Athena LLM turn (with tools) and the reply is pushed back via ntfy. Works even when the web app is closed.
+    - **Per-user config** (server URL + bearer token + topic names, AES-256-GCM encrypted in DB). Two topics per user: `notify` (Athena → user) and `inbox` (user → Athena). Topics auto-generated as unguessable random strings. Server-wide fallback via `NTFY_*` env vars.
+    - **Background workers** (started on server boot): a 60s **cron scheduler** (`services/ntfy/scheduler.ts`) that fires due `NtfyCronJob` rows, and per-user **inbox subscribers** (`services/ntfy/subscriber.ts`) — persistent long-poll connections kept in sync with config changes (start/stop/restart per user).
+    - **Cron jobs** (5-field cron expressions via `croner`): two types — `notification` (fires a fixed message) and `athena` (runs a prompt through the LLM at fire time and sends the generated reply via ntfy, e.g. "daily 8am: summarize my schedule + due tasks"). `nextRunAt` persisted; recomputed after each fire. Min interval enforced implicitly by cron expression validation.
+    - **Athena tools**: `send_notification`, `list_cron_jobs`, `get_cron_job`, `create_cron_job`, `update_cron_job`, `delete_cron_job` — Athena can fully manage cron jobs from chat.
+    - **App UI** (`apps/ntfy/NtfyApp.tsx`): three tabs — Setup (config + test notification + topic URLs to subscribe to), Messages (in/out/cron log + manual send), Cron Jobs (list/create/edit/delete/run-now with cron presets + live next-run preview). Status card in Settings → Integrations with "Open Ntfy" button.
+    - Backend: `routes/ntfy.ts` (`GET /status`, `PUT/DELETE /config`, `POST /test`, `POST /send`, `GET /messages`, `GET /inbox-poll`, `GET/POST /cron`, `GET/PUT/DELETE /cron/:id`, `POST /cron/:id/run`, `POST /cron/preview`); `services/ntfy/{client,config,scheduler,subscriber,athena-turn}.ts`; `NtfyConfig` + `NtfyCronJob` + `NtfyMessage` Prisma models. Non-streaming Athena turns reuse `buildSystemPrompt`/`buildModel`/`AthenaToolsPlugin`/`ALL_TOOLS` from `services/athena/`.
 
 ### Command Palette (Spotlight)
 - Triggered with `Ctrl+Space` (or `Cmd+Space` on Mac)
@@ -302,6 +322,7 @@ Athena/
 - Calendar: `GET /api/calendar/feed?from=&to=`, `GET/POST /api/calendar`, `PATCH/DELETE /api/calendar/:id`, `POST /api/calendar/ics/import` (parses ICS + expands simple recurrence), `GET /api/calendar/ics/export` (generates `.ics`); `CalendarEvent` model with `source` (manual|task|vut|assignment|ics|microsoft) + `sourceRef` linking
 - Habits: `GET/POST /api/habits`, `PATCH/DELETE /api/habits/:id`, `GET /api/habits/:id/logs?from=&to=`, `POST /api/habits/:id/log` (upsert by date), `DELETE /api/habits/:id/log?date=`, `GET /api/habits/stats` (current/longest streak + last-30-day completion per habit); `Habit` + `HabitLog` models
 - Quick Capture: `POST /api/capture` `{ text }` → uses per-user LLM (`services/study/llm-json.ts`) to classify as task/note/flashcard/athena → creates the item → returns `{ target, created, clientAction }`; falls back to a plain Task if no LLM configured
+- Whiteboard: `GET/POST /api/whiteboards` (list summaries / create), `GET/PUT/DELETE /api/whiteboards/:id`; `Whiteboard` model stores `content` as a JSON string of vector elements
 - Microsoft Calendar: `GET /api/microsoft/status`, `POST /api/microsoft/sync` (pull Graph events → upsert as `CalendarEvent` with `source="microsoft"`, delete stale), `POST /api/microsoft/push` (push local event to Outlook), `DELETE /api/microsoft/event/:msId`; `services/microsoft.ts` handles OAuth2 token refresh with rotation persistence in `Setting` table
 - Athena file attachments: `POST /api/athena/attach` (multipart upload → extract text from PDF/txt/code → store temp → return text + tempPath), `POST /api/athena/save-attached` (copy temp file to permanent storage + create `VFile` + set `lastOpenedAt`), `POST /api/athena/suggest-folder` (LLM analyzes file name + content + folder tree + courses → returns `{ folderId, folderPath, reason, confidence }`); uses `pdf-parse` v2 for PDF text extraction
 - Athena conversation history: `GET /api/conversations` (list all, auto-archives active convs inactive >30min), `GET /api/conversations/:id` (full conv with messages), `POST /api/conversations` (create new active, archives previous), `PUT /api/conversations/:id` (save messages), `POST /api/conversations/:id/generate-title` (LLM generates short title from first messages), `DELETE /api/conversations/:id`, `POST /api/conversations/archive-all`; `ChatConversation` model stores messages as JSON array

@@ -150,6 +150,7 @@ Capabilities (via tools):
 - Moodle: list_moodle_courses (lists enrolled VUT Moodle courses), get_moodle_course_contents (lists sections + activities in a course), read_moodle_resource (fetches text content of a Moodle page/file). Requires VUT credentials. Use these to find study materials on Moodle, then generate_flashcards or summarize from them.
 - Window management: open_app, close_window, focus_window, minimize_window, resize_window, move_window, list_open_windows, tile_windows
 - Workspaces: save_workspace, open_workspace, list_workspaces, delete_workspace
+- Ntfy (push notifications + scheduled messages): send_notification (push a message to the user's phone via ntfy — works even when the web app is closed), list_cron_jobs, get_cron_job, create_cron_job, update_cron_job, delete_cron_job. Cron jobs are 5-field cron expressions. type="notification" sends a fixed message on a schedule; type="athena" runs a prompt through you on a schedule and sends your reply via ntfy (e.g. a daily 8am summary of today's calendar + due tasks). The user can also message you from their phone via ntfy — those inbound messages arrive as normal conversation turns.
 
 Guidelines:
 - Be concise and direct. Prefer action over explanation.
