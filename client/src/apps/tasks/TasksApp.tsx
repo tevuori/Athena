@@ -8,8 +8,12 @@ import { useSortable, SortableContext, verticalListSortingStrategy } from "@dnd-
 import { CSS } from "@dnd-kit/utilities";
 import { Plus, Trash2, Flag, Calendar, Loader2, GripVertical } from "lucide-react";
 import { tasksApi, STATUS_LABELS, STATUS_ORDER, PRIORITY_LABELS, PRIORITY_COLORS } from "../../services/tasks";
+import { linksApi } from "../../services/links";
 import type { Task, TaskStatus, TaskPriority } from "../../types";
 import type { WindowInstance } from "../../store/windows";
+import LinkDragHandle from "../links/LinkDragHandle";
+import LinkBadge from "../links/LinkBadge";
+import { useLinkDrop } from "../links/useLinkDrop";
 
 export default function TasksApp(_: { win: WindowInstance }) {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -256,35 +260,55 @@ function TaskCard({
   onDelete?: (id: string) => void;
   dragging?: boolean;
 }) {
+  const [refreshSignal, setRefreshSignal] = useState(0);
+  const { onDragOver, onDragEnter, onDragLeave, onDrop, isOver } = useLinkDrop(
+    "task",
+    task.id,
+    async (payload) => {
+      try {
+        await linksApi.create(payload.type, payload.id, "task", task.id);
+        setRefreshSignal((n) => n + 1);
+      } catch (e) {
+        console.error("Link failed", e);
+      }
+    }
+  );
   return (
     <div
-      className={`group rounded-lg border border-edge bg-surface p-2.5 shadow-sm transition hover:border-ink-muted/30 ${
-        dragging ? "shadow-window rotate-1" : ""
-      }`}
+      onDragOver={onDragOver}
+      onDragEnter={onDragEnter}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      className={`group rounded-lg border bg-surface p-2.5 shadow-sm transition hover:border-ink-muted/30 ${
+        isOver ? "border-accent ring-2 ring-accent/30" : "border-edge"
+      } ${dragging ? "shadow-window rotate-1" : ""}`}
     >
       <div className="flex items-start justify-between gap-2">
         <p className="flex-1 text-sm text-ink">{task.title}</p>
-        {onUpdate && (
-          <div className="flex shrink-0 items-center opacity-0 transition group-hover:opacity-100">
-            <select
-              value={task.priority}
-              onChange={(e) => onUpdate(task.id, { priority: e.target.value as TaskPriority })}
-              className="bg-transparent text-[10px] text-ink-muted outline-none"
-              onPointerDown={(e) => e.stopPropagation()}
-            >
-              {Object.entries(PRIORITY_LABELS).map(([v, l]) => (
-                <option key={v} value={v}>{l}</option>
-              ))}
-            </select>
-            <button
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={() => onDelete?.(task.id)}
-              className="text-ink-muted hover:text-red-400"
-            >
-              <Trash2 size={12} />
-            </button>
-          </div>
-        )}
+        <div className="flex shrink-0 items-center gap-1 opacity-0 transition group-hover:opacity-100">
+          <LinkDragHandle type="task" id={task.id} title={task.title} />
+          {onUpdate && (
+            <>
+              <select
+                value={task.priority}
+                onChange={(e) => onUpdate(task.id, { priority: e.target.value as TaskPriority })}
+                className="bg-transparent text-[10px] text-ink-muted outline-none"
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                {Object.entries(PRIORITY_LABELS).map(([v, l]) => (
+                  <option key={v} value={v}>{l}</option>
+                ))}
+              </select>
+              <button
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={() => onDelete?.(task.id)}
+                className="text-ink-muted hover:text-red-400"
+              >
+                <Trash2 size={12} />
+              </button>
+            </>
+          )}
+        </div>
       </div>
       {task.description && (
         <p className="mt-1 line-clamp-2 text-[11px] text-ink-muted">{task.description}</p>
@@ -305,6 +329,9 @@ function TaskCard({
             ↻ {task.recurring}
           </span>
         )}
+        <span className="ml-auto">
+          <LinkBadge type="task" id={task.id} refreshSignal={refreshSignal} />
+        </span>
       </div>
     </div>
   );

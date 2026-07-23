@@ -3,6 +3,7 @@ import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
 import prisma from "../db/client";
 import { authMiddleware } from "../middleware/auth";
+import { cleanupOrphanLinks } from "../db/links";
 
 const flashcards = new Hono();
 flashcards.use("*", authMiddleware);
@@ -42,7 +43,9 @@ flashcards.patch("/decks/:id", zValidator("json", deckSchema.partial()), async (
 
 flashcards.delete("/decks/:id", async (c) => {
   const { userId } = c.get("auth");
-  await prisma.flashcardDeck.delete({ where: { id: c.req.param("id"), userId } });
+  const id = c.req.param("id");
+  await prisma.flashcardDeck.delete({ where: { id, userId } });
+  await cleanupOrphanLinks(userId, "flashcardDeck", id);
   return c.json({ ok: true });
 });
 

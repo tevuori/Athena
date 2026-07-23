@@ -7,6 +7,7 @@ import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
 import prisma from "../db/client";
 import { authMiddleware } from "../middleware/auth";
+import { cleanupOrphanLinks } from "../db/links";
 
 const calendar = new Hono();
 calendar.use("*", authMiddleware);
@@ -85,7 +86,9 @@ calendar.patch("/:id", zValidator("json", eventSchema.partial()), async (c) => {
 
 calendar.delete("/:id", async (c) => {
   const { userId } = c.get("auth");
-  await prisma.calendarEvent.delete({ where: { id: c.req.param("id"), userId } });
+  const id = c.req.param("id");
+  await prisma.calendarEvent.delete({ where: { id, userId } });
+  await cleanupOrphanLinks(userId, "calendarEvent", id);
   return c.json({ ok: true });
 });
 

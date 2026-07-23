@@ -236,3 +236,32 @@ export interface HabitStats {
   last30: string[]; // YYYY-MM-DD dates completed in last 30 days
   totalLogs: number;
 }
+
+// ===== Whiteboard =====
+
+export interface Whiteboard {
+  id: string;
+  name: string;
+  content: string; // JSON array of WhiteboardElement
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WhiteboardSummary {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ===== Item links (drag-to-link between apps) =====
+
+export type LinkType = "note" | "task" | "flashcardDeck" | "calendarEvent" | "file";
+
+/** A resolved link returned by GET /api/links — the "other" side of a link. */
+export interface LinkedItem {
+  id: string; // ItemLink row id (for deletion)
+  type: LinkType;
+  refId: string; // the linked entity's id
+  title: string;
+}

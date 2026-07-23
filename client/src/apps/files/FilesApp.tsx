@@ -17,6 +17,7 @@ import type { WindowInstance } from "../../store/windows";
 import { useWindows } from "../../store/windows";
 import ContextMenu, { type MenuItem } from "../../shell/ContextMenu";
 import CollapsibleSidebar from "../../wm/CollapsibleSidebar";
+import { setLinkPayload } from "../links/linkDnd";
 
 type ViewMode = "grid" | "list";
 type SortKey = "name" | "size" | "modified" | "type";
@@ -1013,7 +1014,7 @@ export default function FilesApp(_: { win: WindowInstance }) {
                   onClick={(e) => { e.stopPropagation(); selectFile(file.id, e); setPreview(file); }}
                   onContextMenu={(e) => showFileContextMenu(e, file)}
                   draggable
-                  onDragStart={(e) => e.dataTransfer.setData("text/file-id", file.id)}
+                  onDragStart={(e) => setLinkPayload(e, { type: "file", id: file.id, title: file.name })}
                   className={`group relative flex cursor-pointer flex-col items-center gap-1.5 rounded-lg p-3 hover:bg-surface-2 ${
                     selected.has(file.id) ? "bg-accent/10 ring-1 ring-accent/40" : ""
                   }`}
@@ -1117,7 +1118,7 @@ export default function FilesApp(_: { win: WindowInstance }) {
                     onClick={(e) => { e.stopPropagation(); selectFile(file.id, e); setPreview(file); }}
                     onContextMenu={(e) => showFileContextMenu(e, file)}
                     draggable
-                    onDragStart={(e) => e.dataTransfer.setData("text/file-id", file.id)}
+                    onDragStart={(e) => setLinkPayload(e, { type: "file", id: file.id, title: file.name })}
                     className={`cursor-pointer border-b border-edge/50 hover:bg-surface-2 ${
                       selected.has(file.id) ? "bg-accent/10" : ""
                     }`}

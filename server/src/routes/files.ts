@@ -3,6 +3,7 @@ import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
 import prisma from "../db/client";
 import { authMiddleware } from "../middleware/auth";
+import { cleanupOrphanLinks } from "../db/links";
 import path from "node:path";
 import { mkdir, writeFile, unlink, stat, readFile, copyFile } from "node:fs/promises";
 import { zipSync, strToU8 } from "fflate";
@@ -545,6 +546,7 @@ files.delete("/:id", async (c) => {
   const absPath = path.join(UPLOAD_DIR, record.storageKey);
   await unlink(absPath).catch(() => {});
   await prisma.vFile.delete({ where: { id: record.id } });
+  await cleanupOrphanLinks(userId, "file", record.id);
   return c.json({ ok: true });
 });
 

@@ -143,3 +143,49 @@ Return JSON: { "correct": boolean, "explanation": "brief explanation of why it i
 export function quizGradeSchemaHint(): string {
   return 'Schema: { "correct": boolean, "explanation": string, "modelAnswer": string }';
 }
+
+// ===== Notetaking (from URL / PDF) =====
+
+export type NoteStyle = "cornell" | "outline" | "summary" | "bullets";
+
+export function notetakingPrompt(sourceText: string, style: NoteStyle, sourceLabel: string): string {
+  const styleInstr =
+    style === "cornell"
+      ? "Cornell notes format: organize into 'Cues / Questions' (left), 'Notes' (right, main body with bullet points), and a 'Summary' at the bottom (2-3 sentences). Use a Markdown structure with these sections clearly labeled."
+      : style === "outline"
+      ? "A structured outline with hierarchical headings (##, ###) and bullet points under each section."
+      : style === "summary"
+      ? "A concise summary: a 2-3 sentence overview followed by the key points as bullets."
+      : "Clear bullet-point notes organized by topic with ## headings.";
+  return `Take structured notes from the source material below. Use ${styleInstr}. Be accurate — do not invent information not present in the source. Use Markdown formatting.
+
+Source: ${sourceLabel}
+
+Material:
+"""
+${sourceText}
+"""`;
+}
+
+// ===== Research (multi-step web research with citations) =====
+
+export function researchSynthesizePrompt(
+  query: string,
+  sources: { index: number; title: string; url: string; content: string }[]
+): string {
+  const sourcesBlock = sources
+    .map(
+      (s) =>
+        `--- SOURCE [${s.index}] ---\nTitle: ${s.title}\nURL: ${s.url}\n\n${s.content}\n`
+    )
+    .join("\n");
+  return `You are a research assistant. Using ONLY the sources provided below, write a clear, well-organized answer to the user's question. Cite sources inline using [1], [2], etc. matching the SOURCE labels. If the sources don't contain enough information to answer fully, say so explicitly. Do not invent facts. Use Markdown formatting with headings where helpful. Include a "## Sources" section at the end listing each cited source as \`[n] Title — URL\`.
+
+User's question: ${query}
+
+${sourcesBlock}`;
+}
+
+export function researchRefinePrompt(originalQuery: string): string {
+  return `The user wants to research: "${originalQuery}". Generate ONE alternative search query that would find complementary or more specific information (e.g. a different phrasing, a sub-topic, or a recent-development angle). Return ONLY the query text, no quotes, no explanation.`;
+}
