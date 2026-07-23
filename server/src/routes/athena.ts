@@ -40,6 +40,32 @@ athena.use("*", authMiddleware);
 /** GET /api/athena/tools — list available tools (for client UI). */
 athena.get("/tools", (c) => c.json({ tools: toolManifest() }));
 
+// ---------- Custom instructions (injected into the system prompt) ----------
+
+/** GET /api/athena/instructions — fetch the user's custom Athena instructions. */
+athena.get("/instructions", async (c) => {
+  const { userId } = c.get("auth");
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { athenaInstructions: true },
+  });
+  return c.json({ instructions: user?.athenaInstructions ?? "" });
+});
+
+const instructionsSchema = z.object({
+  instructions: z.string().max(4000),
+});
+
+/** PUT /api/athena/instructions — save the user's custom Athena instructions. */
+athena.put("/instructions", zValidator("json", instructionsSchema), async (c) => {
+  const { userId } = c.get("auth");
+  await prisma.user.update({
+    where: { id: userId },
+    data: { athenaInstructions: c.req.valid("json").instructions },
+  });
+  return c.json({ ok: true });
+});
+
 const windowSchema = z.object({
   id: z.string(),
   appId: z.string(),

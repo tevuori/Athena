@@ -2,7 +2,7 @@
 // Streams a /api/athena/chat turn via fetch + ReadableStream (EventSource can't
 // POST with an Authorization header). Parses SSE events and invokes callbacks.
 
-import { getToken } from "./api";
+import { getToken, api } from "./api";
 
 export interface AthenaMessage {
   role: "user" | "assistant";
@@ -261,4 +261,15 @@ export async function suggestFolder(
     throw new Error(body?.error || `Suggestion failed (${res.status})`);
   }
   return await res.json();
+}
+
+// ---------- Custom instructions (injected into the system prompt) ----------
+
+export async function getAthenaInstructions(): Promise<string> {
+  const data = await api.get<{ instructions: string }>("/api/athena/instructions");
+  return data.instructions ?? "";
+}
+
+export async function setAthenaInstructions(instructions: string): Promise<void> {
+  await api.put("/api/athena/instructions", { instructions });
 }

@@ -10,9 +10,12 @@ interface AuthState {
   register: (username: string, password: string, displayName?: string) => Promise<void>;
   logout: () => void;
   refresh: () => Promise<void>;
+  updateProfile: (patch: { displayName?: string; avatarColor?: string }) => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
+  deleteAccount: (password: string) => Promise<void>;
 }
 
-export const useAuth = create<AuthState>((set) => ({
+export const useAuth = create<AuthState>((set, get) => ({
   user: null,
   token: getToken(),
   status: "loading",
@@ -54,5 +57,20 @@ export const useAuth = create<AuthState>((set) => ({
       setToken(null);
       set({ status: "unauthenticated", user: null, token: null });
     }
+  },
+
+  updateProfile: async (patch) => {
+    const user = await api.patch<User>("/api/auth/profile", patch);
+    set({ user: { ...get().user, ...user } });
+  },
+
+  changePassword: async (currentPassword, newPassword) => {
+    await api.post("/api/auth/password", { currentPassword, newPassword });
+  },
+
+  deleteAccount: async (password) => {
+    await api.delete("/api/auth/account", { password });
+    setToken(null);
+    set({ user: null, token: null, status: "unauthenticated" });
   },
 }));

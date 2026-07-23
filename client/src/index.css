@@ -148,3 +148,9 @@ body {
 .cursor-s-resize { cursor: s-resize; }
 .cursor-e-resize { cursor: e-resize; }
 .cursor-w-resize { cursor: w-resize; }
+
+/* Background crossfade */
+@keyframes bgFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
