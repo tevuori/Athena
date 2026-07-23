@@ -23,9 +23,11 @@ import microsoft from "./routes/microsoft";
 import users from "./routes/users";
 import ntfy from "./routes/ntfy";
 import links from "./routes/links";
+import proactiveAlerts from "./routes/proactive-alerts";
 import { isSpotifyConfigured } from "./services/spotify";
 import { startScheduler } from "./services/ntfy/scheduler";
 import { startAllSubscribers } from "./services/ntfy/subscriber";
+import { startProactiveScheduler } from "./services/ntfy/proactive-scheduler";
 
 const app = new Hono();
 
@@ -71,12 +73,15 @@ app.route("/api/microsoft", microsoft);
 app.route("/api/users", users);
 app.route("/api/ntfy", ntfy);
 app.route("/api/links", links);
+app.route("/api/proactive-alerts", proactiveAlerts);
 
 // Start ntfy background workers (cron scheduler + per-user inbox subscribers).
 startScheduler();
 startAllSubscribers().catch((e) =>
   console.error("[athena-server] ntfy subscriber startup error:", e)
 );
+// Start the proactive daily-briefing scheduler.
+startProactiveScheduler();
 
 const port = Number(process.env.SERVER_PORT ?? 3000);
 const hostname = process.env.SERVER_HOST ?? "0.0.0.0";
