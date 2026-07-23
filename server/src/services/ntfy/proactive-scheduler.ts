@@ -8,16 +8,157 @@
 // Requires both ntfy (publish channel) and an LLM provider to be configured;
 // otherwise the tick skips the user and reschedules without firing.
 
+import { Message } from "multi-llm-ts";
 import prisma from "../../db/client";
 import { decryptNtfyConfig, isNtfyEnabled } from "./config";
 import { publish, type NtfyUsableConfig } from "./client";
-import { runAthenaTurn, isAthenaReady } from "./athena-turn";
+import { isAthenaReady } from "./athena-turn";
+import { buildModel, getUserConfig } from "../athena/llm";
+import { buildSystemPrompt } from "../athena/context";
+import { AthenaToolsPlugin, ALL_TOOLS } from "../athena/tools";
 
 const TICK_MS = 60_000;
 const MAX_BODY_LEN = 4000;
+// Proactive alerts are non-interactive, so we can afford aggressive retries.
+const TURN_RETRIES = 3; // retry the entire generation this many times
+const FETCH_RETRIES = 8; // per-fetch retries within a turn
+const RETRY_BASE_MS = 3000; // base backoff for fetch retries
 
 let timer: ReturnType<typeof setInterval> | null = null;
 let running = false;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * Run a proactive Athena turn with aggressive retry logic. Unlike
+ * runAthenaTurn (designed for interactive chat, gives up fast), this is
+ * non-interactive and can afford to retry heavily — the free OpenCode Zen
+ * endpoint frequently drops connections mid-generation.
+ *
+ * Handles:
+ *   - Network-level errors (fetch throws TypeError on connection drop)
+ *   - HTTP 5xx server errors
+ *   - HTTP 400 "upstream request failed" (transient provider errors)
+ *   - Top-level turn retries (re-run the entire generation if it fails)
+ */
+async function runProactiveTurn(userId: string, userText: string): Promise<string | null> {
+  const cfg = await getUserConfig(userId);
+  if (!cfg.apiKey) return null;
+
+  const systemPrompt = await buildSystemPrompt(userId, []);
+
+  for (let turnAttempt = 0; turnAttempt < TURN_RETRIES; turnAttempt++) {
+    const thread: Message[] = [
+      new Message("system", systemPrompt),
+      new Message("user", userText),
+    ];
+
+    const model = buildModel(cfg);
+    const plugin = new AthenaToolsPlugin(ALL_TOOLS, { userId, windows: [] });
+    model.addPlugin(plugin);
+
+    // Patch fetch with aggressive retry: catches network throws + 5xx + 400.
+    const engine = (model as any).engine;
+    const client = engine?.client;
+    if (client && typeof client.fetch === "function") {
+      const origFetch = client.fetch.bind(client);
+      client.fetch = async (url: string, init?: any) => {
+        for (let attempt = 0; attempt <= FETCH_RETRIES; attempt++) {
+          try {
+            const res = await origFetch(url, init);
+            // Retry on 5xx or 400 "upstream request failed"
+            if (res.status >= 500 || res.status === 400) {
+              const shouldRetry = await shouldRetryResponse(res, attempt, FETCH_RETRIES);
+              if (shouldRetry) continue;
+            }
+            return res;
+          } catch (e) {
+            // Network-level error (connection drop, DNS, timeout) — retry
+            if (attempt < FETCH_RETRIES) {
+              const base = Math.min(RETRY_BASE_MS * 2 ** attempt, 30000);
+              const jitter = Math.floor(Math.random() * 1000);
+              await sleep(base + jitter);
+              continue;
+            }
+            throw e;
+          }
+        }
+        return origFetch(url, init);
+      };
+    }
+
+    let text = "";
+    let completedTools = 0;
+    let failedTools = 0;
+
+    try {
+      for await (const chunk of model.generate(thread, { tools: true })) {
+        if (chunk.type === "content") {
+          text += chunk.text ?? "";
+        } else if (chunk.type === "tool" && chunk.state === "completed") {
+          const result = chunk.call?.result as any;
+          if (result && typeof result === "object" && "error" in result) {
+            failedTools++;
+          } else {
+            completedTools++;
+          }
+        }
+      }
+      const result = text.trim();
+      if (result) return result;
+      // Empty text but no error — if tools ran, try once more to get a summary.
+      if (turnAttempt < TURN_RETRIES - 1) {
+        await sleep(5000);
+        continue;
+      }
+      return "(no response)";
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "unknown";
+      const isTransient = /upstream|timeout|fetch|network|connection|ECONN/i.test(msg);
+      if (isTransient && turnAttempt < TURN_RETRIES - 1) {
+        console.error(
+          `[proactive] turn ${turnAttempt + 1}/${TURN_RETRIES} failed (${msg}), retrying...`
+        );
+        await sleep(8000 * (turnAttempt + 1));
+        continue;
+      }
+      // Last attempt failed — return a honest error rather than a canned "I completed" message.
+      if (completedTools > 0) {
+        return (
+          `I gathered your workspace context (${completedTools} tool call${completedTools > 1 ? "s" : ""} ` +
+          `succeeded) but couldn't generate the final briefing — the AI provider was unavailable. ` +
+          `Try again later or configure a more reliable provider in Settings → Athena Assistant.`
+        );
+      }
+      throw e;
+    }
+  }
+  return "(no response)";
+}
+
+/** Check if an HTTP error response is transient and should be retried. */
+async function shouldRetryResponse(
+  res: Response,
+  attempt: number,
+  maxRetries: number
+): Promise<boolean> {
+  if (attempt >= maxRetries) return false;
+  if (res.status >= 500) return true; // 5xx always retry
+  // 400: only retry if "upstream request failed"
+  if (res.status === 400) {
+    try {
+      const cloned = res.clone();
+      const body = await cloned.json();
+      const msg = (body as any)?.error?.message ?? (body as any)?.message ?? "";
+      return /upstream request failed/i.test(msg);
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
 
 /** Compute the next occurrence of hour:minute after `from` (defaults to now). */
 export function computeNextRunAt(hour: number, minute: number, from: Date = new Date()): Date {
@@ -98,7 +239,7 @@ async function fireAlert(cfg: {
 
   let body = "";
   try {
-    const reply = await runAthenaTurn(cfg.userId, prompt);
+    const reply = await runProactiveTurn(cfg.userId, prompt);
     body = reply ?? "[Athena is not configured with an AI provider — cannot generate a briefing.]";
   } catch (e) {
     body = `[Proactive alert error: ${e instanceof Error ? e.message : "unknown"}]`;
