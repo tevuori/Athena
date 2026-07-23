@@ -174,3 +174,52 @@ export interface VutSubjectUpdate {
   content: string;
   author: string;
 }
+
+// ===== Calendar / Planner =====
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  description: string;
+  start: string;
+  end: string;
+  allDay: boolean;
+  color: string;
+  location: string;
+  source: string; // manual|task|vut|assignment|ics
+  sourceRef: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ===== Habit Tracker =====
+
+export interface Habit {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+  cadence: string; // daily|weekly
+  target: number;
+  linkedApp: string | null;
+  linkedMetric: string | null;
+  createdAt: string;
+  updatedAt: string;
+  logs?: HabitLog[];
+  _count?: { logs: number };
+}
+
+export interface HabitLog {
+  id: string;
+  habitId: string;
+  date: string; // YYYY-MM-DD
+  value: number;
+}
+
+export interface HabitStats {
+  habitId: string;
+  currentStreak: number;
+  longestStreak: number;
+  last30: string[]; // YYYY-MM-DD dates completed in last 30 days
+  totalLogs: number;
+}

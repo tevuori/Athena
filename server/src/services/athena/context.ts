@@ -84,14 +84,34 @@ export async function recentFilesContext(userId: string): Promise<string> {
 
 /** Lightweight workspace summary (counts) for the system prompt. */
 export async function workspaceSummary(userId: string): Promise<string> {
-  const [taskCount, noteCount, courseCount, fileCount] = await Promise.all([
+  const [taskCount, noteCount, courseCount, fileCount, openTasks, dueFlashcards, lastStudySession] = await Promise.all([
     prisma.task.count({ where: { userId } }),
     prisma.note.count({ where: { userId } }),
     prisma.course.count({ where: { userId } }),
     prisma.vFile.count({ where: { userId } }),
+    prisma.task.count({ where: { userId, status: "TODO" } }),
+    prisma.flashcard.count({ where: { dueDate: { lte: new Date() } } }),
+    prisma.studySession.findFirst({ where: { userId }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
   ]);
-  const openTasks = await prisma.task.count({ where: { userId, status: "TODO" } });
-  return `Tasks: ${taskCount} (${openTasks} open) | Notes: ${noteCount} | Courses: ${courseCount} | Files: ${fileCount}`;
+
+  const parts = [
+    `Tasks: ${taskCount} (${openTasks} open)`,
+    `Notes: ${noteCount}`,
+    `Courses: ${courseCount}`,
+    `Files: ${fileCount}`,
+  ];
+  if (dueFlashcards > 0) {
+    parts.push(`Flashcards due: ${dueFlashcards}`);
+  }
+  if (lastStudySession) {
+    const daysAgo = Math.floor((Date.now() - lastStudySession.createdAt.getTime()) / 86400000);
+    if (daysAgo === 0) parts.push("Last studied: today");
+    else if (daysAgo === 1) parts.push("Last studied: 1 day ago");
+    else parts.push(`Last studied: ${daysAgo} days ago`);
+  } else {
+    parts.push("Last studied: never");
+  }
+  return parts.join(" | ");
 }
 
 function windowsContext(windows: ClientWindowInfo[]): string {
@@ -115,11 +135,14 @@ export async function buildSystemPrompt(
   return `You are Athena, the user's personal workspace assistant living inside their Athena Student OS desktop. You can see and act on the user's workspace through tools.
 
 Capabilities (via tools):
-- Tasks: create_task, list_tasks, update_task_status
+- Tasks: create_task, list_tasks, update_task_status, delete_task
 - Grades: list_courses, get_course_grades
 - Notes: list_notes, read_note, create_note
 - Files: list_files, search_files, read_file, edit_file, create_file
+- Habits: list_habits, create_habit, log_habit, delete_habit
 - Focus: start_pomodoro (opens the Pomodoro timer on the user's desktop)
+- Study Hub: generate_flashcards (creates a deck + opens the Flashcards app), summarize_note (saves a summary note), explain_note (saves an explanation note), generate_study_guide (consolidates notes into a study guide), start_quiz (generates quiz questions + opens Study Hub in quiz mode), create_tasks_from_text (extracts tasks from a note/file/text), open_study_hub (opens the Study Hub app with an optional preselected mode)
+- Moodle: list_moodle_courses (lists enrolled VUT Moodle courses), get_moodle_course_contents (lists sections + activities in a course), read_moodle_resource (fetches text content of a Moodle page/file). Requires VUT credentials. Use these to find study materials on Moodle, then generate_flashcards or summarize from them.
 - Window management: open_app, close_window, focus_window, minimize_window, resize_window, move_window, list_open_windows, tile_windows
 - Workspaces: save_workspace, open_workspace, list_workspaces, delete_workspace
 
@@ -131,6 +154,7 @@ Guidelines:
 - For start_pomodoro, just call the tool — the timer opens automatically on the user's desktop.
 - For window management: use the window ids from "Open windows" below. When opening multiple apps side by side, provide explicit x/y/width/height to open_app (e.g. left half: x=0,y=0,width=960,height=700; right half: x=960,y=0,width=960,height=700). The viewport is typically ~1920x1080 (minus 48px taskbar at bottom). Use tile_windows to auto-arrange already-open windows. Window tools (close/focus/minimize/resize/move) are client-side actions that execute immediately. move_window snaps to a 20px grid.
 - For workspaces: save_workspace captures the current window layout (all open windows + their positions/sizes). open_workspace restores a saved layout by closing all current windows and reopening them at their saved positions.
+- Study: if the workspace summary shows flashcards due, proactively suggest reviewing them (open the Flashcards app). If the user hasn't studied in a while, suggest summarizing a recent note or taking a quiz. Use the Study Hub tools to act on these suggestions.
 - Use Markdown for formatting responses.
 - Don't invent file ids, note ids, or window ids — always obtain them from the context lists or list_files / search_files / list_notes first.
 

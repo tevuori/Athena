@@ -4,6 +4,7 @@ import {
   Search, CornerDownLeft, AppWindow, StickyNote, CheckSquare,
   Calculator, Play, Brain, GraduationCap, Timer, Folder, Settings as SettingsIcon,
   FileText, Image as ImageIcon, FileCode, Eye, Code2, Music as MusicIcon, Video as VideoIcon,
+  Calendar, Flame, Zap,
 } from "lucide-react";
 import { useWindows, type AppId } from "../store/windows";
 import { APPS } from "../apps/registry";
@@ -48,7 +49,6 @@ const APP_ICONS: Record<string, React.ReactNode> = {
   notes: <StickyNote size={18} />,
   tasks: <CheckSquare size={18} />,
   files: <Folder size={18} />,
-  music: <Play size={18} />,
   settings: <SettingsIcon size={18} />,
   pomodoro: <Timer size={18} />,
   flashcards: <Brain size={18} />,
@@ -194,6 +194,93 @@ export default function CommandPalette() {
           setOpen(false);
         },
         keywords: ["flashcard", "review", "study", "quiz"],
+      },
+      {
+        title: "Study Hub: Summarize from clipboard",
+        subtitle: "Paste text and get an AI summary",
+        icon: <GraduationCap size={18} className="text-sky-400" />,
+        action: async () => {
+          const text = await navigator.clipboard.readText().catch(() => "");
+          openWindow({
+            appId: "study",
+            title: "Study Hub",
+            icon: "GraduationCap",
+            payload: text.trim()
+              ? { mode: "summarize", sourceKind: "paste", text: text.trim() }
+              : { mode: "summarize" },
+          });
+          setOpen(false);
+        },
+        keywords: ["study", "summarize", "summary", "tldr", "clipboard", "paste"],
+      },
+      {
+        title: "Study Hub: Quiz me on clipboard",
+        subtitle: "Paste text and take an AI quiz",
+        icon: <GraduationCap size={18} className="text-amber-400" />,
+        action: async () => {
+          const text = await navigator.clipboard.readText().catch(() => "");
+          openWindow({
+            appId: "study",
+            title: "Study Hub",
+            icon: "GraduationCap",
+            payload: text.trim()
+              ? { mode: "quiz", sourceKind: "paste", text: text.trim() }
+              : { mode: "quiz" },
+          });
+          setOpen(false);
+        },
+        keywords: ["study", "quiz", "test", "clipboard", "paste"],
+      },
+      {
+        title: "Study Hub: Flashcards from clipboard",
+        subtitle: "Paste text and generate AI flashcards",
+        icon: <GraduationCap size={18} className="text-indigo-400" />,
+        action: async () => {
+          const text = await navigator.clipboard.readText().catch(() => "");
+          openWindow({
+            appId: "study",
+            title: "Study Hub",
+            icon: "GraduationCap",
+            payload: text.trim()
+              ? { mode: "flashcards", sourceKind: "paste", text: text.trim() }
+              : { mode: "flashcards" },
+          });
+          setOpen(false);
+        },
+        keywords: ["study", "flashcard", "generate", "clipboard", "paste"],
+      },
+      {
+        title: "Open Calendar",
+        subtitle: "View schedule",
+        icon: <Calendar size={18} className="text-indigo-400" />,
+        action: () => {
+          openWindow({ appId: "calendar", title: "Calendar", icon: "Calendar" });
+          setOpen(false);
+        },
+        keywords: ["calendar", "schedule", "event", "planner"],
+      },
+      {
+        title: "Open Habits",
+        subtitle: "Track streaks",
+        icon: <Flame size={18} className="text-orange-400" />,
+        action: () => {
+          openWindow({ appId: "habits", title: "Habits", icon: "Flame" });
+          setOpen(false);
+        },
+        keywords: ["habit", "streak", "tracker", "daily"],
+      },
+      {
+        title: "Quick Capture",
+        subtitle: "Capture anything (Ctrl+Shift+N)",
+        icon: <Zap size={18} className="text-yellow-400" />,
+        action: () => {
+          // Trigger the Quick Capture overlay via its hotkey.
+          window.dispatchEvent(new KeyboardEvent("keydown", {
+            key: "N", code: "KeyN", shiftKey: true, ctrlKey: true, bubbles: true,
+          }));
+          setOpen(false);
+        },
+        keywords: ["capture", "quick", "inbox", "idea", "note", "task"],
       },
     ];
     for (const qa of quickActions) {

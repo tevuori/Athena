@@ -77,7 +77,19 @@ export function streamAthenaChat(
       let msg = `Request failed (${res.status})`;
       try {
         const body = await res.json();
-        if (body?.error) msg = String(body.error);
+        if (body?.error != null) {
+          const err = body.error;
+          // Some error sources (e.g. ZodError from zValidator) return an
+          // object rather than a string — stringify it readably instead of
+          // rendering "[object Object]".
+          msg = typeof err === "string"
+            ? err
+            : typeof err?.message === "string"
+              ? err.message
+              : typeof err?.issues?.[0]?.message === "string"
+                ? `Invalid request: ${err.issues[0].message}`
+                : JSON.stringify(err);
+        }
       } catch { /* ignore */ }
       cb.onError?.(msg, res.status);
       return;
@@ -172,4 +184,81 @@ export async function fetchAthenaTools(): Promise<AthenaToolManifestEntry[]> {
   if (!res.ok) return [];
   const body = await res.json();
   return (body?.tools ?? []) as AthenaToolManifestEntry[];
+}
+
+// ===== File attachment =====
+
+export interface AthenaAttachment {
+  tempPath: string;
+  fileName: string;
+  fileType: string;
+  fileSize: number;
+  mimeType: string;
+  text: string;
+  truncated: boolean;
+}
+
+/** Upload a file to Athena for text extraction. Returns extracted text + temp path. */
+export async function attachFile(file: File): Promise<AthenaAttachment> {
+  const token = getToken();
+  const fd = new FormData();
+  fd.append("file", file);
+  const res = await fetch("/api/athena/attach", {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: fd,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error || `Upload failed (${res.status})`);
+  }
+  return (await res.json()) as AthenaAttachment;
+}
+
+/** Save an attached file to permanent storage in a specific folder. */
+export async function saveAttachedFile(
+  tempPath: string,
+  folderId: string | null,
+  name?: string
+): Promise<{ file: { id: string; name: string } }> {
+  const token = getToken();
+  const res = await fetch("/api/athena/save-attached", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ tempPath, folderId, name }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error || `Save failed (${res.status})`);
+  }
+  return await res.json();
+}
+
+/** Ask Athena to suggest the best folder for a file. */
+export async function suggestFolder(
+  fileName: string,
+  contentPreview: string
+): Promise<{
+  folderId: string | null;
+  folderPath: string;
+  reason: string;
+  confidence: number;
+}> {
+  const token = getToken();
+  const res = await fetch("/api/athena/suggest-folder", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ fileName, contentPreview }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error || `Suggestion failed (${res.status})`);
+  }
+  return await res.json();
 }

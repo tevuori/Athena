@@ -28,6 +28,25 @@ model User {
   vutCreds    VutCredentials?
   aiCred      AiCredential?
   workspaces  Workspace[]
+  studySessions StudySession[]
+  calendarEvents CalendarEvent[]
+  habits      Habit[]
+  chatConversations ChatConversation[]
+}
+
+model ChatConversation {
+  id        String   @id @default(cuid())
+  title     String   @default("New Chat")
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status    String   @default("active") // "active" | "archived"
+  messages  Json     @default("[]") // array of { role, content, tools?, timestamp }
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lastMessageAt DateTime @default(now())
+
+  @@index([userId, status])
+  @@index([userId, updatedAt])
 }
 
 model NoteFolder {
@@ -259,4 +278,73 @@ model Workspace {
   updatedAt DateTime @updatedAt
 
   @@unique([userId, name])
+}
+
+// ===== AI Study Hub (activity log for study workflows) =====
+
+model StudySession {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String   // "flashcards" | "summary" | "quiz" | "explain" | "study_guide" | "syllabus"
+  title     String
+  sourceRef String   @default("") // note id / file id / "paste"
+  meta      String   @default("") // JSON: card count, score, etc.
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+// ===== Calendar / Planner =====
+
+model CalendarEvent {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  description String   @default("")
+  start       DateTime
+  end         DateTime
+  allDay      Boolean  @default(false)
+  color       String   @default("#6366f1")
+  location    String   @default("")
+  source      String   @default("manual") // manual|task|vut|assignment|ics
+  sourceRef   String   @default("")       // taskId / ics uid / etc.
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId, start])
+}
+
+// ===== Habit Tracker =====
+
+model Habit {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  icon         String   @default("✅")
+  color        String   @default("#6366f1")
+  cadence      String   @default("daily") // daily|weekly
+  target       Int      @default(1)
+  linkedApp    String?  // pomodoro|flashcards|null
+  linkedMetric String?  // focusSessions|focusMinutes|reviews
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  logs         HabitLog[]
+
+  @@index([userId])
+}
+
+model HabitLog {
+  id        String   @id @default(cuid())
+  habitId   String
+  habit     Habit    @relation(fields: [habitId], references: [id], onDelete: Cascade)
+  userId    String
+  date      String   // YYYY-MM-DD
+  value     Int      @default(1)
+  createdAt DateTime @default(now())
+
+  @@unique([habitId, date])
+  @@index([userId, date])
 }

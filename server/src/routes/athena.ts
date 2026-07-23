@@ -3,6 +3,8 @@ import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
 import { streamSSE } from "hono/streaming";
 import { Message } from "multi-llm-ts";
+import path from "node:path";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { authMiddleware } from "../middleware/auth";
 import { buildModel, getUserConfig, LlmError } from "../services/athena/llm";
 import { buildSystemPrompt } from "../services/athena/context";
@@ -13,6 +15,24 @@ import {
   toolManifest,
   type ClientWindowInfo,
 } from "../services/athena/tools";
+import { generateJson } from "../services/study/llm-json";
+import prisma from "../db/client";
+
+const UPLOAD_DIR = path.resolve(process.cwd(), "uploads");
+const TEMP_DIR = path.join(UPLOAD_DIR, "temp");
+
+// Accepted file types for Athena attachment
+const ACCEPTED_EXT = new Set(["pdf", "txt", "c", "h", "cpp", "cc", "cxx", "hpp", "java", "ts", "tsx", "js", "jsx", "py", "md"]);
+
+function isAcceptedFile(name: string): boolean {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  return ACCEPTED_EXT.has(ext);
+}
+
+function isTextFile(name: string): boolean {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  return ext !== "pdf";
+}
 
 const athena = new Hono();
 athena.use("*", authMiddleware);
@@ -39,7 +59,11 @@ const chatSchema = z.object({
     .array(
       z.object({
         role: z.enum(["user", "assistant"]),
-        content: z.string().min(1).max(20000),
+        // The attach endpoint truncates file/PDF text to 50k chars, and the
+        // client injects that text into a user message (plus wrapper text).
+        // Keep this comfortably above the attach limit so large attachments
+        // don't trip validation (which previously caused a 400 + "[object Object]").
+        content: z.string().min(1).max(100000),
       })
     )
     .min(1)
@@ -48,12 +72,25 @@ const chatSchema = z.object({
   windows: z.array(windowSchema).default([]),
 });
 
+/** Format a zValidator failure into a human-readable string for the client. */
+function formatZodError(result: { success: false; error: z.ZodError }): string {
+  const issues = result.error.issues;
+  if (!issues.length) return "Invalid request body";
+  const first = issues[0];
+  const path = first.path.length ? first.path.join(".") : "(root)";
+  return `Invalid request: ${first.message} (at ${path})`;
+}
+
 /**
  * POST /api/athena/chat — streaming agent turn.
  * Emits SSE events: content | tool | client_action | usage | error | done.
  * The client reads this with fetch + ReadableStream (EventSource can't POST).
  */
-athena.post("/chat", zValidator("json", chatSchema), async (c) => {
+athena.post("/chat", zValidator("json", chatSchema, (result, c) => {
+  if (!result.success) {
+    return c.json({ error: formatZodError(result as any) }, 400);
+  }
+}), async (c) => {
   const { userId } = c.get("auth");
   const body = c.req.valid("json");
 
@@ -164,7 +201,8 @@ athena.post("/chat", zValidator("json", chatSchema), async (c) => {
             if (
               chunk.state === "completed" &&
               CLIENT_ACTION_TOOLS.has(chunk.name) &&
-              chunk.call?.result
+              chunk.call?.result &&
+              !(chunk.call.result as any)?.error
             ) {
               await stream.writeSSE({
                 event: "client_action",
@@ -208,6 +246,243 @@ athena.post("/chat", zValidator("json", chatSchema), async (c) => {
         data: JSON.stringify({ error: err.message }),
       })
   );
+});
+
+// ===== File attachment endpoints =====
+
+/**
+ * POST /api/athena/attach — upload a file, extract text, return it for chat context.
+ * Accepts multipart: file field "file".
+ * Stores the file temporarily so it can be saved to permanent storage later.
+ * Returns: { tempId, fileName, fileType, fileSize, text, truncated }
+ */
+athena.post("/attach", async (c) => {
+  const { userId } = c.get("auth");
+  const formData = await c.req.formData();
+  const file = formData.get("file");
+  if (!(file instanceof File)) {
+    return c.json({ error: "No file provided" }, 400);
+  }
+  if (!isAcceptedFile(file.name)) {
+    return c.json({ error: `File type not supported. Accepted: ${[...ACCEPTED_EXT].join(", ")}` }, 400);
+  }
+  if (file.size > 20 * 1024 * 1024) {
+    return c.json({ error: "File too large (max 20 MB)" }, 400);
+  }
+
+  // Store temporarily.
+  const tempId = `${userId}/${Date.now()}-${path.basename(file.name).replace(/[^\w.\- ]+/g, "_")}`;
+  const tempPath = path.join(TEMP_DIR, tempId);
+  await mkdir(path.dirname(tempPath), { recursive: true });
+  const buf = Buffer.from(await file.arrayBuffer());
+  await writeFile(tempPath, buf);
+
+  // Extract text.
+  let text = "";
+  let truncated = false;
+  const MAX_CHARS = 50_000; // ~50k chars max for chat context
+
+  if (isTextFile(file.name)) {
+    text = buf.toString("utf-8");
+  } else {
+    // PDF extraction using pdf-parse v2 API
+    try {
+      const { PDFParse } = await import("pdf-parse");
+      const parser = new PDFParse({ data: new Uint8Array(buf) });
+      const result = await parser.getText();
+      text = result.text || "";
+      await parser.destroy();
+    } catch (e) {
+      // If PDF parsing fails, return a placeholder so the user knows.
+      text = `[PDF text extraction failed: ${e instanceof Error ? e.message : "unknown error"}]`;
+    }
+  }
+
+  if (text.length > MAX_CHARS) {
+    text = text.slice(0, MAX_CHARS);
+    truncated = true;
+  }
+
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  return c.json({
+    tempId,
+    fileName: file.name,
+    fileType: ext,
+    fileSize: file.size,
+    mimeType: file.type || "application/octet-stream",
+    text,
+    truncated,
+    tempPath: tempId, // relative path for later save
+  }, 201);
+});
+
+/**
+ * POST /api/athena/save-attached — save a temporarily uploaded file to permanent
+ * storage in a specific folder. Also marks it as opened (recent files).
+ * Body: { tempPath, folderId?, name? }
+ */
+const saveAttachedSchema = z.object({
+  tempPath: z.string().min(1),
+  folderId: z.string().nullable().optional(),
+  name: z.string().optional(),
+});
+
+athena.post("/save-attached", zValidator("json", saveAttachedSchema), async (c) => {
+  const { userId } = c.get("auth");
+  const body = c.req.valid("json");
+
+  const srcPath = path.join(TEMP_DIR, body.tempPath);
+  try {
+    await readFile(srcPath);
+  } catch {
+    return c.json({ error: "Temporary file not found — it may have expired." }, 404);
+  }
+
+  const name = body.name || path.basename(body.tempPath).replace(/^\d+-/, "");
+  const safeName = path.basename(name).replace(/[^\w.\- ]+/g, "_");
+  const storageKey = `${userId}/${Date.now()}-${safeName}`;
+  const destPath = path.join(UPLOAD_DIR, storageKey);
+  await mkdir(path.dirname(destPath), { recursive: true });
+
+  // Copy from temp to permanent location.
+  const content = await readFile(srcPath);
+  await writeFile(destPath, content);
+
+  const ext = path.extname(name).slice(1).toLowerCase();
+  const mimeType = ext === "pdf" ? "application/pdf"
+    : ext === "md" || ext === "markdown" ? "text/markdown"
+    : ext === "json" ? "application/json"
+    : ext === "html" || ext === "htm" ? "text/html"
+    : ext === "css" ? "text/css"
+    : ext === "js" || ext === "jsx" ? "text/javascript"
+    : ext === "ts" || ext === "tsx" ? "text/typescript"
+    : "text/plain";
+
+  const record = await prisma.vFile.create({
+    data: {
+      name,
+      mimeType,
+      size: content.length,
+      storageKey,
+      folderId: body.folderId ?? null,
+      userId,
+      lastOpenedAt: new Date(), // Mark as recent
+    },
+  });
+
+  // Clean up temp file.
+  try { await import("node:fs/promises").then(fs => fs.unlink(srcPath)); } catch { /* ok */ }
+
+  return c.json({ file: record }, 201);
+});
+
+/**
+ * POST /api/athena/suggest-folder — use the LLM to suggest the best folder
+ * for saving a file based on its name, content preview, and the user's folder tree.
+ * Body: { fileName, contentPreview }
+ * Returns: { folderId: string | null, folderPath: string, reason: string, confidence: number }
+ */
+const suggestFolderSchema = z.object({
+  fileName: z.string().min(1),
+  contentPreview: z.string().max(5000).default(""),
+});
+
+athena.post("/suggest-folder", zValidator("json", suggestFolderSchema), async (c) => {
+  const { userId } = c.get("auth");
+  const body = c.req.valid("json");
+
+  // Get the user's folder tree.
+  const folders = await prisma.vFolder.findMany({ where: { userId }, orderBy: { name: "asc" } });
+
+  if (folders.length === 0) {
+    return c.json({
+      folderId: null,
+      folderPath: "Root",
+      reason: "You have no folders yet. The file will be saved at the root level.",
+      confidence: 1.0,
+    });
+  }
+
+  // Build folder paths for the LLM.
+  const byId = new Map(folders.map((f) => [f.id, f]));
+  function folderPath(id: string): string {
+    const parts: string[] = [];
+    let curId: string | null = id;
+    let guard = 0;
+    while (curId && guard++ < 50) {
+      const f = byId.get(curId);
+      if (!f) break;
+      parts.unshift(f.name);
+      curId = f.parentId;
+    }
+    return parts.join("/") || "Root";
+  }
+
+  const folderList = folders.map((f) => ({
+    id: f.id,
+    path: folderPath(f.id),
+    name: f.name,
+  }));
+
+  // Also get course names for context (Athena might suggest a course-related folder).
+  const courses = await prisma.course.findMany({ where: { userId }, select: { name: true } });
+  const courseNames = courses.map((c) => c.name);
+
+  const cfg = await getUserConfig(userId);
+  if (!cfg.apiKey) {
+    // No LLM configured — return root as fallback.
+    return c.json({
+      folderId: null,
+      folderPath: "Root",
+      reason: "AI not configured — saving to root. Configure an API key in Settings for smart suggestions.",
+      confidence: 0.0,
+    });
+  }
+
+  const model = buildModel(cfg);
+  const prompt = `You are helping organize a student's files. Given a file and the user's folder structure, suggest the BEST folder to save it in.
+
+File name: ${body.fileName}
+Content preview (first ~500 chars): ${body.contentPreview.slice(0, 500)}
+User's courses: ${courseNames.join(", ") || "none"}
+
+Available folders (id | path):
+${folderList.map((f) => `- id=${f.id} | ${f.path}`).join("\n")}
+
+Respond with JSON: { "folderId": "<folder id or null for root>", "reason": "<short explanation>", "confidence": <0-1> }`;
+
+  try {
+    const result = await generateJson<{ folderId: string | null; reason: string; confidence: number }>(
+      model,
+      prompt,
+      'Respond with: { "folderId": "string or null", "reason": "string", "confidence": number }'
+    );
+
+    // Validate the suggested folderId exists.
+    const suggestedId = result.folderId;
+    if (suggestedId && !byId.has(suggestedId)) {
+      return c.json({
+        folderId: null,
+        folderPath: "Root",
+        reason: `${result.reason} (Note: suggested folder not found, saving to root.)`,
+        confidence: result.confidence ?? 0.5,
+      });
+    }
+
+    return c.json({
+      folderId: suggestedId,
+      folderPath: suggestedId ? folderPath(suggestedId) : "Root",
+      reason: result.reason || "AI suggestion",
+      confidence: result.confidence ?? 0.7,
+    });
+  } catch (e) {
+    return c.json({
+      folderId: null,
+      folderPath: "Root",
+      reason: `AI suggestion failed: ${e instanceof Error ? e.message : "unknown"}. Saving to root.`,
+      confidence: 0.0,
+    });
+  }
 });
 
 export default athena;

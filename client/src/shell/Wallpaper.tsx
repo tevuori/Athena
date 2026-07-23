@@ -1,4 +1,5 @@
 import { useSettings, type WallpaperId } from "../store/settings";
+import AnimatedBackground from "./AnimatedBackground";
 
 const GRADIENTS: Record<WallpaperId, string> = {
   aurora: "radial-gradient(at 20% 20%, #4f46e5 0%, transparent 50%), radial-gradient(at 80% 30%, #9333ea 0%, transparent 50%), radial-gradient(at 50% 80%, #06b6d4 0%, transparent 50%), linear-gradient(135deg, #0f172a, #1e1b4b)",
@@ -11,19 +12,25 @@ const GRADIENTS: Record<WallpaperId, string> = {
 
 export default function Wallpaper() {
   const wallpaper = useSettings((s) => s.wallpaper);
+  const animatedBg = useSettings((s) => s.animatedBg);
   return (
-    <div
-      className="fixed inset-0 -z-10"
-      style={{ background: GRADIENTS[wallpaper] }}
-    >
-      {/* subtle noise overlay */}
+    <>
+      {/* Static gradient base layer */}
       <div
-        className="absolute inset-0 opacity-[0.03]"
-        style={{
-          backgroundImage:
-            "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='0.9'/%3E%3C/filter%3E%3Crect width='100' height='100' filter='url(%23n)'/%3E%3C/svg%3E\")",
-        }}
-      />
-    </div>
+        className="fixed inset-0 -z-10"
+        style={{ background: GRADIENTS[wallpaper] }}
+      >
+        {/* subtle noise overlay */}
+        <div
+          className="absolute inset-0 opacity-[0.03]"
+          style={{
+            backgroundImage:
+              "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='0.9'/%3E%3C/filter%3E%3Crect width='100' height='100' filter='url(%23n)'/%3E%3C/svg%3E\")",
+          }}
+        />
+      </div>
+      {/* Animated canvas overlay (renders on top of the gradient, behind everything else) */}
+      <AnimatedBackground bgId={animatedBg} />
+    </>
   );
 }

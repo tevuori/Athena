@@ -1,0 +1,189 @@
+// ===== Study Hub: Home / overview =====
+
+import { useState, useEffect } from "react";
+import {
+  Brain, FileText, HelpCircle, Lightbulb, BookOpen, ListTodo,
+  History, Sparkles, ChevronRight, TrendingUp, Clock,
+} from "lucide-react";
+import { studyApi, type StudySession } from "../../services/study";
+import { flashcardsApi } from "../../services/flashcards";
+import { Loading, ErrorBanner } from "./ui";
+import { useWindows } from "../../store/windows";
+
+interface DeckRow { id: string; name: string; color: string; _count: { cards: number }; }
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d}d ago`;
+  return `${Math.floor(d / 7)}w ago`;
+}
+
+const TYPE_META: Record<string, { label: string; icon: typeof Brain; color: string }> = {
+  flashcards: { label: "Flashcards", icon: Brain, color: "text-indigo-400" },
+  summary: { label: "Summary", icon: FileText, color: "text-sky-400" },
+  explain: { label: "Explain", icon: Lightbulb, color: "text-amber-400" },
+  study_guide: { label: "Study Guide", icon: BookOpen, color: "text-emerald-400" },
+  quiz: { label: "Quiz", icon: HelpCircle, color: "text-pink-400" },
+  syllabus: { label: "Syllabus", icon: ListTodo, color: "text-orange-400" },
+};
+
+export default function StudyHome({ onPickMode }: { onPickMode: (m: string) => void }) {
+  const [sessions, setSessions] = useState<StudySession[]>([]);
+  const [decks, setDecks] = useState<DeckRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const openWindow = useWindows((s) => s.open);
+
+  useEffect(() => {
+    Promise.all([
+      studyApi.sessions().then((r) => r.sessions).catch(() => [] as StudySession[]),
+      flashcardsApi.listDecks().then((r) => r.decks).catch(() => [] as DeckRow[]),
+    ]).then(([s, d]) => {
+      setSessions(s);
+      setDecks(d);
+      setLoading(false);
+    }).catch((e) => {
+      setError(e instanceof Error ? e.message : "Failed to load");
+      setLoading(false);
+    });
+  }, []);
+
+  const totalCards = decks.reduce((sum, d) => sum + d._count.cards, 0);
+  const lastSession = sessions[0];
+  const studyCount = sessions.length;
+
+  const quickActions: { mode: string; label: string; icon: typeof Brain; color: string; desc: string }[] = [
+    { mode: "flashcards", label: "Generate Flashcards", icon: Brain, color: "text-indigo-400", desc: "AI Q/A cards from a note or text" },
+    { mode: "summarize", label: "Summarize", icon: FileText, color: "text-sky-400", desc: "TL;DR, outline, or key points" },
+    { mode: "quiz", label: "Quiz Me", icon: HelpCircle, color: "text-pink-400", desc: "Test yourself, AI-graded" },
+    { mode: "explain", label: "Explain", icon: Lightbulb, color: "text-amber-400", desc: "Get a concept explained" },
+    { mode: "study_guide", label: "Study Guide", icon: BookOpen, color: "text-emerald-400", desc: "Consolidate notes into a cheat sheet" },
+    { mode: "syllabus", label: "Syllabus → Tasks", icon: ListTodo, color: "text-orange-400", desc: "Extract tasks from a syllabus" },
+  ];
+
+  return (
+    <div className="flex flex-col gap-4">
+      {loading && <Loading label="Loading overview…" />}
+      {error && <ErrorBanner message={error} />}
+
+      {/* Stats row */}
+      <div className="grid grid-cols-3 gap-2">
+        <div className="flex flex-col gap-1 rounded-lg border border-edge bg-surface-2 p-3">
+          <div className="flex items-center gap-1.5 text-ink-muted">
+            <Brain size={13} />
+            <span className="text-[10px] font-semibold uppercase tracking-wide">Decks</span>
+          </div>
+          <span className="text-lg font-bold text-ink">{decks.length}</span>
+          <span className="text-[10px] text-ink-muted">{totalCards} cards total</span>
+        </div>
+        <div className="flex flex-col gap-1 rounded-lg border border-edge bg-surface-2 p-3">
+          <div className="flex items-center gap-1.5 text-ink-muted">
+            <TrendingUp size={13} />
+            <span className="text-[10px] font-semibold uppercase tracking-wide">Sessions</span>
+          </div>
+          <span className="text-lg font-bold text-ink">{studyCount}</span>
+          <span className="text-[10px] text-ink-muted">all-time study activity</span>
+        </div>
+        <div className="flex flex-col gap-1 rounded-lg border border-edge bg-surface-2 p-3">
+          <div className="flex items-center gap-1.5 text-ink-muted">
+            <Clock size={13} />
+            <span className="text-[10px] font-semibold uppercase tracking-wide">Last studied</span>
+          </div>
+          <span className="text-sm font-bold text-ink">
+            {lastSession ? timeAgo(lastSession.createdAt) : "Never"}
+          </span>
+          {lastSession && (
+            <span className="text-[10px] text-ink-muted truncate">{lastSession.title}</span>
+          )}
+        </div>
+      </div>
+
+      {/* Quick actions */}
+      <div className="flex flex-col gap-2">
+        <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Quick actions</span>
+        <div className="grid grid-cols-2 gap-2">
+          {quickActions.map((qa) => {
+            const Icon = qa.icon;
+            return (
+              <button
+                key={qa.mode}
+                onClick={() => onPickMode(qa.mode)}
+                className="flex items-center gap-2.5 rounded-lg border border-edge bg-surface-2 p-3 text-left transition hover:border-accent/40 hover:bg-surface-3"
+              >
+                <Icon size={18} className={`shrink-0 ${qa.color}`} />
+                <div className="flex flex-col">
+                  <span className="text-xs font-medium text-ink">{qa.label}</span>
+                  <span className="text-[10px] text-ink-muted">{qa.desc}</span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Decks */}
+      {decks.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Your decks</span>
+          <div className="flex flex-col gap-1.5">
+            {decks.slice(0, 5).map((d) => (
+              <button
+                key={d.id}
+                onClick={() => openWindow({ appId: "flashcards", title: "Flashcards", icon: "Brain", payload: { deckId: d.id } })}
+                className="flex items-center gap-2.5 rounded-md border border-edge bg-surface-2 px-3 py-2 text-left transition hover:bg-surface-3"
+              >
+                <div className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: d.color }} />
+                <span className="flex-1 truncate text-xs font-medium text-ink">{d.name}</span>
+                <span className="text-[10px] text-ink-muted">{d._count.cards} cards</span>
+                <ChevronRight size={14} className="shrink-0 text-ink-muted" />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Recent activity */}
+      {sessions.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Recent activity</span>
+            <button
+              onClick={() => onPickMode("recent")}
+              className="flex items-center gap-1 text-[10px] text-ink-muted hover:text-ink"
+            >
+              <History size={11} /> View all
+            </button>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            {sessions.slice(0, 5).map((s) => {
+              const meta = TYPE_META[s.type] ?? { label: s.type, icon: FileText, color: "text-ink-muted" };
+              const Icon = meta.icon;
+              return (
+                <div key={s.id} className="flex items-center gap-2.5 rounded-md border border-edge bg-surface-2 px-3 py-2">
+                  <Icon size={14} className={`shrink-0 ${meta.color}`} />
+                  <div className="flex flex-1 flex-col">
+                    <span className="text-xs font-medium text-ink truncate">{s.title}</span>
+                    <span className="text-[10px] text-ink-muted">{meta.label} · {timeAgo(s.createdAt)}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {!loading && sessions.length === 0 && decks.length === 0 && (
+        <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+          <Sparkles size={32} className="text-ink-muted opacity-40" />
+          <p className="text-sm text-ink-muted">Welcome to Study Hub. Pick a quick action above to get started.</p>
+        </div>
+      )}
+    </div>
+  );
+}

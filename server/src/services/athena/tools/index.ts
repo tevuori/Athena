@@ -6,6 +6,10 @@ import { fileTools } from "./files";
 import { pomodoroTools } from "./pomodoro";
 import { windowTools } from "./windows";
 import { workspaceTools } from "./workspaces";
+import { studyTools } from "./study";
+import { moodleTools } from "./moodle";
+import { calendarTools } from "./calendar";
+import { habitsTools } from "./habits";
 
 export { AthenaToolsPlugin, type ToolDef, type ToolContext, type ClientWindowInfo } from "./plugin";
 
@@ -18,6 +22,10 @@ export const ALL_TOOLS: ToolDef[] = [
   ...pomodoroTools,
   ...windowTools,
   ...workspaceTools,
+  ...studyTools,
+  ...moodleTools,
+  ...calendarTools,
+  ...habitsTools,
 ];
 
 /** Tool metadata safe to expose to the client (no handlers). */

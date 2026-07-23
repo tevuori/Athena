@@ -12,6 +12,13 @@ import grades from "./routes/grades";
 import vut from "./routes/vut";
 import ai from "./routes/ai";
 import athena from "./routes/athena";
+import conversations from "./routes/conversations";
+import study from "./routes/study";
+import moodle from "./routes/moodle";
+import calendar from "./routes/calendar";
+import habits from "./routes/habits";
+import capture from "./routes/capture";
+import microsoft from "./routes/microsoft";
 import { isSpotifyConfigured } from "./services/spotify";
 
 const app = new Hono();
@@ -47,6 +54,13 @@ app.route("/api/grades", grades);
 app.route("/api/vut", vut);
 app.route("/api/ai", ai);
 app.route("/api/athena", athena);
+app.route("/api/conversations", conversations);
+app.route("/api/study", study);
+app.route("/api/moodle", moodle);
+app.route("/api/calendar", calendar);
+app.route("/api/habits", habits);
+app.route("/api/capture", capture);
+app.route("/api/microsoft", microsoft);
 
 const port = Number(process.env.SERVER_PORT ?? 3000);
 const hostname = process.env.SERVER_HOST ?? "0.0.0.0";

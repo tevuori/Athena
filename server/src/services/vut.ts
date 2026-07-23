@@ -967,3 +967,76 @@ export async function proxyVutPage(
 export function clearVutSession(userId: string) {
   sessions.delete(userId);
 }
+
+/**
+ * Make an authenticated fetch using the user's VUT session cookie jar.
+ * Follows redirects manually (collecting cookies from each hop) so that
+ * cross-domain SSO flows (e.g. Moodle OIDC via id.vut.cz) work correctly.
+ * Other services (e.g. moodle.ts) use this to ride the established session.
+ *
+ * Returns a Response-like object with the final URL + body text available.
+ */
+export async function fetchWithVutSession(
+  userId: string,
+  url: string,
+  init?: RequestInit
+): Promise<Response & { url: string }> {
+  const session = getSession(userId);
+  const headers: Record<string, string> = {
+    ...(init?.headers as Record<string, string>),
+    Cookie: session.jar.header(),
+  };
+
+  let currentUrl = url;
+  const maxRedirects = 20;
+
+  for (let i = 0; i < maxRedirects; i++) {
+    const resp = await fetch(currentUrl, {
+      ...init,
+      redirect: "manual",
+      headers,
+    });
+    session.jar.setFromHeaders(resp.headers);
+
+    if (resp.status >= 300 && resp.status < 400) {
+      const loc = resp.headers.get("location");
+      if (!loc) {
+        return Object.assign(resp, { url: currentUrl });
+      }
+      currentUrl = resolveUrl(currentUrl, loc);
+      // Update Cookie header for the next hop
+      headers.Cookie = session.jar.header();
+      continue;
+    }
+
+    // Check for meta-refresh / JS redirect in 200 responses
+    if (resp.status === 200) {
+      const html = await resp.text();
+      const $ = cheerio.load(html);
+      const metaRefresh = $('meta[http-equiv="refresh"]').attr("content");
+      if (metaRefresh) {
+        const urlMatch = metaRefresh.match(/url=(.+)/i);
+        if (urlMatch) {
+          currentUrl = resolveUrl(currentUrl, urlMatch[1].trim().replace(/&amp;/g, "&"));
+          headers.Cookie = session.jar.header();
+          continue;
+        }
+      }
+      const jsMatch = html.match(/window\.location\.href\s*=\s*["']([^"']+)["']/);
+      if (jsMatch) {
+        currentUrl = resolveUrl(currentUrl, jsMatch[1].trim());
+        headers.Cookie = session.jar.header();
+        continue;
+      }
+      // No redirect — return the response with the consumed body re-wrapped
+      return Object.assign(
+        new Response(html, { status: 200, headers: resp.headers }),
+        { url: currentUrl }
+      );
+    }
+
+    return Object.assign(resp, { url: currentUrl });
+  }
+
+  throw new Error("Too many redirects in fetchWithVutSession");
+}

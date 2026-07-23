@@ -2,17 +2,20 @@ import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Brain, Plus, Trash2, ArrowLeft, ChevronRight, RotateCcw,
-  Check, X, AlertCircle, Layers,
+  Check, X, AlertCircle, Layers, Sparkles,
 } from "lucide-react";
 import { flashcardsApi } from "../../services/flashcards";
 import type { Flashcard, FlashcardDeck } from "../../types";
+import { useWindows } from "../../store/windows";
+import type { WindowInstance } from "../../store/windows";
 
 type View = "decks" | "cards" | "review";
 
 const DECK_COLORS = ["#6366f1", "#ec4899", "#22c55e", "#f59e0b", "#06b6d4", "#8b5cf6"];
 
-export default function FlashcardsApp() {
+export default function FlashcardsApp({ win }: { win: WindowInstance }) {
   const [view, setView] = useState<View>("decks");
+  const openWindow = useWindows((s) => s.open);
   const [decks, setDecks] = useState<(FlashcardDeck & { _count: { cards: number } })[]>([]);
   const [selectedDeck, setSelectedDeck] = useState<FlashcardDeck | null>(null);
   const [cards, setCards] = useState<Flashcard[]>([]);
@@ -49,6 +52,16 @@ export default function FlashcardsApp() {
   }, []);
 
   useEffect(() => { loadDecks(); }, [loadDecks]);
+
+  // Auto-open a deck when opened with a deckId payload (e.g. from Athena's
+  // generate_flashcards tool or the Study Hub "Open deck" button).
+  useEffect(() => {
+    const deckId = win.payload?.deckId;
+    if (!deckId || decks.length === 0) return;
+    const deck = decks.find((d) => d.id === deckId);
+    if (deck) openDeck(deck);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [win.payload, decks]);
 
   const loadCards = useCallback(async (deckId: string) => {
     setLoading(true);
@@ -163,7 +176,7 @@ export default function FlashcardsApp() {
               <p className="text-sm text-ink-muted">No decks yet. Create one to start studying!</p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 @2xl:grid-cols-2 @4xl:grid-cols-3">
               {decks.map((deck) => (
                 <motion.button
                   key={deck.id}
@@ -256,6 +269,21 @@ export default function FlashcardsApp() {
                 <Brain size={14} /> Study
               </button>
             )}
+            <button
+              onClick={() => {
+                if (!selectedDeck) return;
+                openWindow({
+                  appId: "study",
+                  title: "Study Hub",
+                  icon: "GraduationCap",
+                  payload: { mode: "flashcards", appendDeckId: selectedDeck.id, appendDeckName: selectedDeck.name },
+                });
+              }}
+              className="flex items-center gap-1 rounded-lg border border-edge px-3 py-1.5 text-xs font-medium text-ink-muted transition hover:bg-surface-3 hover:text-ink"
+              title="Generate AI flashcards and add them to this deck"
+            >
+              <Sparkles size={14} /> Generate more
+            </button>
             <button
               onClick={() => setShowCardForm(true)}
               className="flex items-center gap-1 rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white transition hover:bg-accent/90"
@@ -379,11 +407,10 @@ export default function FlashcardsApp() {
         <div className="flex flex-1 flex-col items-center justify-center p-6" style={{ perspective: "1000px" }}>
           <motion.div
             key={card.id}
-            initial={{ opacity: 0, x: 30 }}
-            animate={{ opacity: 1, x: 0 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
             transition={{ duration: 0.2 }}
             className="relative w-full max-w-md"
-            style={{ transformStyle: "preserve-3d" }}
           >
             <div
               onClick={() => setFlipped(!flipped)}

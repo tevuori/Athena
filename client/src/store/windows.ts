@@ -4,7 +4,6 @@ export type AppId =
   | "notes"
   | "tasks"
   | "files"
-  | "music"
   | "settings"
   | "terminal"
   | "pomodoro"
@@ -13,7 +12,11 @@ export type AppId =
   | "vut"
   | "editor"
   | "viewer"
-  | "athena";
+  | "athena"
+  | "study"
+  | "today"
+  | "calendar"
+  | "habits";
 
 export interface WindowRect {
   x: number;
@@ -86,7 +89,6 @@ const DEFAULT_SIZE: Record<AppId, WindowRect> = {
   notes: { x: 120, y: 80, width: 880, height: 600 },
   tasks: { x: 180, y: 100, width: 920, height: 560 },
   files: { x: 100, y: 60, width: 820, height: 560 },
-  music: { x: 220, y: 120, width: 760, height: 620 },
   settings: { x: 260, y: 140, width: 720, height: 540 },
   terminal: { x: 200, y: 160, width: 700, height: 440 },
   pomodoro: { x: 300, y: 100, width: 420, height: 560 },
@@ -96,6 +98,10 @@ const DEFAULT_SIZE: Record<AppId, WindowRect> = {
   editor: { x: 160, y: 70, width: 920, height: 640 },
   viewer: { x: 200, y: 90, width: 820, height: 620 },
   athena: { x: 200, y: 90, width: 760, height: 620 },
+  study: { x: 140, y: 60, width: 960, height: 660 },
+  today: { x: 160, y: 70, width: 880, height: 640 },
+  calendar: { x: 120, y: 60, width: 1000, height: 680 },
+  habits: { x: 200, y: 100, width: 820, height: 600 },
 };
 
 function clampToViewport(rect: WindowRect): WindowRect {

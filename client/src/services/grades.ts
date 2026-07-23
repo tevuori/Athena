@@ -36,26 +36,22 @@ export function coursePercentage(course: Course): number {
 
 /** Convert percentage to letter grade. */
 export function percentageToLetter(pct: number): string {
-  if (pct >= 93) return "A";
-  if (pct >= 90) return "A-";
-  if (pct >= 87) return "B+";
-  if (pct >= 83) return "B";
-  if (pct >= 80) return "B-";
-  if (pct >= 77) return "C+";
-  if (pct >= 73) return "C";
-  if (pct >= 70) return "C-";
-  if (pct >= 67) return "D+";
+  if (pct >= 90) return "A";
+  if (pct >= 80) return "B";
+  if (pct >= 70) return "C";
   if (pct >= 60) return "D";
+  if (pct >= 50) return "E";
   return "F";
 }
 
 /** Convert letter grade to GPA points (4.0 scale). */
 export function letterToGpa(letter: string): number {
   const map: Record<string, number> = {
-    "A": 4.0, "A-": 3.7,
-    "B+": 3.3, "B": 3.0, "B-": 2.7,
-    "C+": 2.3, "C": 2.0, "C-": 1.7,
-    "D+": 1.3, "D": 1.0,
+    "A": 4.0,
+    "B": 3.0,
+    "C": 2.0,
+    "D": 1.0,
+    "E": 0.5,
     "F": 0.0,
   };
   return map[letter] ?? 0;

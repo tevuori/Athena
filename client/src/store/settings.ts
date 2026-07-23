@@ -4,6 +4,24 @@ export type ThemeMode = "light" | "dark";
 export type WallpaperId = "aurora" | "sunset" | "ocean" | "forest" | "mesh" | "mono";
 export type AthenaRollEdge = "bottom" | "top" | "left" | "right";
 
+/** Animated background id — null means use static wallpaper. */
+export type AnimatedBgId =
+  | "none"
+  | "starfield"
+  | "particles"
+  | "matrix"
+  | "aurora-waves"
+  | "bubbles"
+  | "geometric"
+  | "fireflies"
+  | "rain"
+  | "plasma"
+  | "constellation"
+  | "neon-grid"
+  | "bokeh"
+  | "snow"
+  | "waves";
+
 export interface AthenaQuickSize {
   width: number;
   height: number;
@@ -13,6 +31,7 @@ interface SettingsState {
   theme: ThemeMode;
   accent: string; // hex
   wallpaper: WallpaperId;
+  animatedBg: AnimatedBgId;
   volume: number; // 0-100
   notificationsEnabled: boolean;
   doNotDisturb: boolean;
@@ -21,6 +40,7 @@ interface SettingsState {
   setTheme: (t: ThemeMode) => void;
   setAccent: (hex: string) => void;
   setWallpaper: (w: WallpaperId) => void;
+  setAnimatedBg: (b: AnimatedBgId) => void;
   setVolume: (v: number) => void;
   setNotificationsEnabled: (b: boolean) => void;
   setDoNotDisturb: (b: boolean) => void;
@@ -34,6 +54,7 @@ interface PersistedSettings {
   theme: ThemeMode;
   accent: string;
   wallpaper: WallpaperId;
+  animatedBg: AnimatedBgId;
   volume: number;
   notificationsEnabled: boolean;
   doNotDisturb: boolean;
@@ -67,6 +88,7 @@ const defaults: PersistedSettings = {
   theme: "dark",
   accent: "#6366f1",
   wallpaper: "aurora",
+  animatedBg: "none",
   volume: 70,
   notificationsEnabled: true,
   doNotDisturb: false,
@@ -103,6 +125,10 @@ export const useSettings = create<SettingsState>((set, get) => ({
   setWallpaper: (wallpaper) => {
     set({ wallpaper });
     persist({ ...get(), wallpaper } as PersistedSettings);
+  },
+  setAnimatedBg: (animatedBg) => {
+    set({ animatedBg });
+    persist({ ...get(), animatedBg } as PersistedSettings);
   },
   setVolume: (volume) => {
     set({ volume });

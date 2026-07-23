@@ -3,7 +3,6 @@ import type { AppId, WindowInstance } from "../store/windows";
 import NotesApp from "./notes/NotesApp";
 import TasksApp from "./tasks/TasksApp";
 import FilesApp from "./files/FilesApp";
-import MusicApp from "./music/MusicApp";
 import SettingsApp from "./settings/SettingsApp";
 import PomodoroApp from "./pomodoro/PomodoroApp";
 import FlashcardsApp from "./flashcards/FlashcardsApp";
@@ -12,6 +11,10 @@ import VUTApp from "./vut/VUTApp";
 import EditorApp from "./editor/EditorApp";
 import ViewerApp from "./viewer/ViewerApp";
 import AthenaApp from "./athena/AthenaApp";
+import StudyApp from "./study/StudyApp";
+import TodayApp from "./today/TodayApp";
+import CalendarApp from "./calendar/CalendarApp";
+import HabitsApp from "./habits/HabitsApp";
 
 export interface AppDefinition {
   id: AppId;
@@ -27,13 +30,16 @@ export const APPS: AppDefinition[] = [
   { id: "files", name: "Files", icon: "Folder", component: FilesApp, pinnedToDesktop: true },
   { id: "editor", name: "Editor", icon: "Code2", component: EditorApp, pinnedToDesktop: true },
   { id: "viewer", name: "Viewer", icon: "Eye", component: ViewerApp, pinnedToDesktop: false },
-  { id: "music", name: "Music", icon: "Music", component: MusicApp, pinnedToDesktop: true },
   { id: "pomodoro", name: "Pomodoro", icon: "Timer", component: PomodoroApp, pinnedToDesktop: true },
   { id: "flashcards", name: "Flashcards", icon: "Brain", component: FlashcardsApp, pinnedToDesktop: true },
   { id: "grades", name: "Grades", icon: "GraduationCap", component: GradesApp, pinnedToDesktop: true },
   { id: "vut", name: "VUT", icon: "GraduationCap", component: VUTApp, pinnedToDesktop: true },
   { id: "settings", name: "Settings", icon: "Settings", component: SettingsApp, pinnedToDesktop: false },
   { id: "athena", name: "Athena", icon: "Sparkles", component: AthenaApp, pinnedToDesktop: true },
+  { id: "study", name: "Study Hub", icon: "GraduationCap", component: StudyApp, pinnedToDesktop: true },
+  { id: "today", name: "Today", icon: "CalendarCheck", component: TodayApp, pinnedToDesktop: true },
+  { id: "calendar", name: "Calendar", icon: "Calendar", component: CalendarApp, pinnedToDesktop: true },
+  { id: "habits", name: "Habits", icon: "Flame", component: HabitsApp, pinnedToDesktop: true },
 ];
 
 export const APP_MAP: Record<AppId, AppDefinition> = Object.fromEntries(

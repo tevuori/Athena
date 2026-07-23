@@ -2,9 +2,9 @@ import { useState } from "react";
 import * as Lucide from "lucide-react";
 import { APPS } from "../apps/registry";
 import { useWindows } from "../store/windows";
-import { useSettings, type WallpaperId } from "../store/settings";
+import { useSettings, type WallpaperId, type AnimatedBgId } from "../store/settings";
 import ContextMenu, { type MenuItem } from "./ContextMenu";
-import { RefreshCw, FolderPlus, Image, Trash2 } from "lucide-react";
+import { RefreshCw, FolderPlus, Image, Trash2, Film } from "lucide-react";
 
 const WALLPAPERS: { id: WallpaperId; name: string }[] = [
   { id: "aurora", name: "Aurora" },
@@ -15,16 +15,29 @@ const WALLPAPERS: { id: WallpaperId; name: string }[] = [
   { id: "mono", name: "Mono" },
 ];
 
+const QUICK_ANIM_BGS: { id: AnimatedBgId; name: string }[] = [
+  { id: "none", name: "None (static)" },
+  { id: "starfield", name: "Starfield" },
+  { id: "particles", name: "Particle Network" },
+  { id: "matrix", name: "Matrix Rain" },
+  { id: "neon-grid", name: "Neon Grid" },
+  { id: "fireflies", name: "Fireflies" },
+  { id: "aurora-waves", name: "Aurora Waves" },
+  { id: "constellation", name: "Constellation" },
+];
+
 export default function Desktop() {
   const { open } = useWindows();
-  const { setWallpaper } = useSettings();
+  const { setWallpaper, setAnimatedBg } = useSettings();
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [wallpaperSubmenu, setWallpaperSubmenu] = useState(false);
+  const [animBgSubmenu, setAnimBgSubmenu] = useState(false);
 
   const onContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     setMenu({ x: e.clientX, y: e.clientY });
     setWallpaperSubmenu(false);
+    setAnimBgSubmenu(false);
   };
 
   const items: MenuItem[] = wallpaperSubmenu
@@ -35,6 +48,21 @@ export default function Desktop() {
           label: w.name,
           onClick: () => setWallpaper(w.id),
         })),
+      ]
+    : animBgSubmenu
+    ? [
+        { label: "← Back", onClick: () => setAnimBgSubmenu(false) },
+        { separator: true },
+        ...QUICK_ANIM_BGS.map((b) => ({
+          label: b.name,
+          onClick: () => setAnimatedBg(b.id),
+        })),
+        { separator: true },
+        {
+          label: "More in Settings...",
+          icon: <Lucide.Settings size={15} />,
+          onClick: () => open({ appId: "settings", title: "Settings", icon: "Settings" }),
+        },
       ]
     : [
         {
@@ -48,6 +76,11 @@ export default function Desktop() {
           label: "Change Wallpaper",
           icon: <Image size={15} />,
           onClick: () => setWallpaperSubmenu(true),
+        },
+        {
+          label: "Animated Background",
+          icon: <Film size={15} />,
+          onClick: () => setAnimBgSubmenu(true),
         },
         {
           label: "Open Settings",

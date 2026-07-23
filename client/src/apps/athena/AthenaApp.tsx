@@ -1,16 +1,23 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, Square, Sparkles, Loader2, Wrench, AlertCircle, Save, FolderOpen, LayoutGrid, Maximize2, X, ChevronDown } from "lucide-react";
+import { Send, Square, Sparkles, Loader2, Wrench, AlertCircle, Save, FolderOpen, LayoutGrid, Maximize2, X, ChevronDown, Paperclip, FileText, FileCode, FileType, Trash2, Cloud, Lightbulb, Check, Folder as FolderIcon, Plus, History, MessageSquare, Trash } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   streamAthenaChat,
+  attachFile,
+  saveAttachedFile,
+  suggestFolder,
   type AthenaMessage,
   type AthenaToolEvent,
   type AthenaClientAction,
   type AthenaWindowState,
+  type AthenaAttachment,
 } from "../../services/athena";
+import { filesApi } from "../../services/files";
+import { conversationsApi, type ConversationSummary, type ConversationMessage } from "../../services/conversations";
 import { useWindows, type AppId, type WindowRect } from "../../store/windows";
 import type { WindowInstance } from "../../store/windows";
+import type { VFolder } from "../../types";
 import { useSettings, type AthenaRollEdge } from "../../store/settings";
 import { useAthenaQuick } from "../../store/athenaQuick";
 
@@ -44,6 +51,7 @@ const APP_ICONS: Record<string, string> = {
   editor: "Code",
   viewer: "Image",
   athena: "Sparkles",
+  study: "GraduationCap",
 };
 
 export default function AthenaApp({
@@ -61,6 +69,35 @@ export default function AthenaApp({
   const [edgeMenuOpen, setEdgeMenuOpen] = useState(false);
   const handleRef = useRef<{ abort: () => void; done: Promise<void> } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // File attachment state
+  const [attachment, setAttachment] = useState<AthenaAttachment | null>(null);
+  const [attaching, setAttaching] = useState(false);
+  const [attachError, setAttachError] = useState<string | null>(null);
+
+  // Save-to-storage dialog state
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [folders, setFolders] = useState<VFolder[]>([]);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestion, setSuggestion] = useState<{ folderId: string | null; folderPath: string; reason: string; confidence: number } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+
+  // Conversation history state
+  const [activeConvId, setActiveConvId] = useState<string | null>(null);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [loadingConv, setLoadingConv] = useState(false);
+  const [titleGenerated, setTitleGenerated] = useState(false);
+
+  // Ref to track the latest turns for auto-save (avoids stale closures)
+  const turnsRef = useRef<ChatTurn[]>([]);
+  turnsRef.current = turns;
+  const activeConvIdRef = useRef<string | null>(null);
+  activeConvIdRef.current = activeConvId;
+
   const windows = useWindows((s) => s.windows);
   const focusedId = useWindows((s) => s.focusedId);
   const openWindow = useWindows((s) => s.open);
@@ -81,6 +118,9 @@ export default function AthenaApp({
   windowsRef.current = windows;
   const storeRef = useRef({ openWindow, closeWindow, focusWindow, minimizeWindow, setRect, closeAll, retile });
   storeRef.current = { openWindow, closeWindow, focusWindow, minimizeWindow, setRect, closeAll, retile };
+  // Ref to the send function so dispatchClientAction can trigger a chat
+  // message (used by Quick Capture's open_athena client action).
+  const sendRef = useRef<((text: string) => void) | null>(null);
 
   // Build the window state snapshot to send with each chat request.
   const buildWindowState = useCallback((): AthenaWindowState[] => {
@@ -103,13 +143,190 @@ export default function AthenaApp({
     return () => handleRef.current?.abort();
   }, []);
 
+  // ===== Conversation persistence =====
+
+  // On mount: load conversation list, resume active conversation or create new.
+  useEffect(() => {
+    (async () => {
+      try {
+        const { conversations: list } = await conversationsApi.list();
+        setConversations(list);
+        const active = list.find((c) => c.status === "active");
+        if (active) {
+          // Resume active conversation.
+          const { conversation } = await conversationsApi.get(active.id);
+          setActiveConvId(active.id);
+          setTitleGenerated(active.title !== "New Chat");
+          setTurns(
+            (conversation.messages as ConversationMessage[]).map((m) => ({
+              role: m.role,
+              content: m.content,
+              tools: m.tools,
+            }))
+          );
+        } else {
+          // No active conversation — create one.
+          const { conversation: conv } = await conversationsApi.create();
+          setActiveConvId(conv.id);
+          setConversations((prev) => [conv, ...prev]);
+        }
+      } catch (e) {
+        console.error("[athena] Failed to load conversations:", e);
+      }
+    })();
+  }, []);
+
+  // Save conversation after each completed turn.
+  const saveConversation = useCallback(async (currentTurns: ChatTurn[]) => {
+    const convId = activeConvIdRef.current;
+    if (!convId) return;
+    const messages: ConversationMessage[] = currentTurns
+      .filter((t) => !t.error && t.content.trim())
+      .map((t) => ({
+        role: t.role,
+        content: t.content,
+        tools: t.tools,
+        timestamp: new Date().toISOString(),
+      }));
+    try {
+      await conversationsApi.update(convId, { messages });
+      // Refresh conversation list (for updated timestamp).
+      const { conversations: list } = await conversationsApi.list();
+      setConversations(list);
+    } catch (e) {
+      console.error("[athena] Failed to save conversation:", e);
+    }
+  }, []);
+
+  // Generate title after first user message.
+  const maybeGenerateTitle = useCallback(async () => {
+    const convId = activeConvIdRef.current;
+    if (!convId || titleGenerated) return;
+    const turns = turnsRef.current;
+    // Generate title after at least 2 turns (1 user + 1 assistant response).
+    if (turns.length < 2) return;
+    setTitleGenerated(true);
+    try {
+      const { title } = await conversationsApi.generateTitle(convId);
+      // Update local conversation list with new title.
+      setConversations((prev) =>
+        prev.map((c) => (c.id === convId ? { ...c, title } : c))
+      );
+    } catch (e) {
+      console.error("[athena] Failed to generate title:", e);
+    }
+  }, [titleGenerated]);
+
+  // Start a new chat — archives the current active conversation.
+  const startNewChat = useCallback(async () => {
+    if (streaming) return;
+    // Save current conversation first.
+    if (turnsRef.current.length > 0) {
+      await saveConversation(turnsRef.current);
+    }
+    try {
+      const { conversation: conv } = await conversationsApi.create();
+      setActiveConvId(conv.id);
+      setTitleGenerated(false);
+      setTurns([]);
+      setConversations((prev) => [conv, ...prev]);
+    } catch (e) {
+      console.error("[athena] Failed to create conversation:", e);
+    }
+  }, [streaming, saveConversation]);
+
+  // Load an archived conversation for viewing.
+  const loadConversation = useCallback(async (id: string) => {
+    if (streaming) return;
+    setLoadingConv(true);
+    try {
+      const { conversation } = await conversationsApi.get(id);
+      // If loading an archived conversation, make it active (resume).
+      if (conversation.status === "archived") {
+        // Archive current active first, then set this as active.
+        if (activeConvIdRef.current && turnsRef.current.length > 0) {
+          await saveConversation(turnsRef.current);
+        }
+        // Re-activate by creating a new active conversation with same messages.
+        // Actually, simpler: just load the messages for viewing. If user sends
+        // a new message, we'll re-activate it.
+        setActiveConvId(id);
+        setTitleGenerated(conversation.title !== "New Chat");
+        setTurns(
+          (conversation.messages as ConversationMessage[]).map((m) => ({
+            role: m.role,
+            content: m.content,
+            tools: m.tools,
+          }))
+        );
+        // Mark as active in DB so future messages persist here.
+        await conversationsApi.update(id, {
+          messages: conversation.messages as ConversationMessage[],
+        });
+        // Refresh list.
+        const { conversations: list } = await conversationsApi.list();
+        setConversations(list);
+      } else {
+        // Already active — just load.
+        setActiveConvId(id);
+        setTitleGenerated(conversation.title !== "New Chat");
+        setTurns(
+          (conversation.messages as ConversationMessage[]).map((m) => ({
+            role: m.role,
+            content: m.content,
+            tools: m.tools,
+          }))
+        );
+      }
+      setHistoryOpen(false);
+    } catch (e) {
+      console.error("[athena] Failed to load conversation:", e);
+    } finally {
+      setLoadingConv(false);
+    }
+  }, [streaming, saveConversation]);
+
+  // Delete a conversation.
+  const deleteConversation = useCallback(async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await conversationsApi.delete(id);
+      setConversations((prev) => prev.filter((c) => c.id !== id));
+      // If deleting the active conversation, start a new one.
+      if (id === activeConvIdRef.current) {
+        const { conversation: conv } = await conversationsApi.create();
+        setActiveConvId(conv.id);
+        setTitleGenerated(false);
+        setTurns([]);
+        setConversations((prev) => [conv, ...prev.filter((c) => c.id !== id)]);
+      }
+    } catch (err) {
+      console.error("[athena] Failed to delete conversation:", err);
+    }
+  }, []);
+
   // ===== Client-action dispatcher =====
   // Handles all client_action SSE events from the server (window mgmt,
-  // pomodoro, workspace restore). Uses refs to avoid stale closures.
+  // pomodoro, workspace restore, study tool results). Uses refs to avoid
+  // stale closures.
+  //
+  // The SSE event's `tool` field is the *tool name* (e.g. "start_quiz"),
+  // but the *semantic action* is inside the payload as `action` (e.g.
+  // "open_study_hub"). We switch on `p.action` so that tools like
+  // start_quiz (→ action: "open_study_hub") and generate_flashcards
+  // (→ action: "open_app") are dispatched correctly. For tools where the
+  // action name happens to equal the tool name (open_app, close_window,
+  // etc.), this still works because p.action === action.tool.
   const dispatchClientAction = useCallback((action: AthenaClientAction) => {
     const p = action.payload as Record<string, any>;
     const { openWindow, closeWindow, focusWindow, minimizeWindow, setRect, closeAll, retile } = storeRef.current;
-    switch (action.tool) {
+    // Some calendar tools historically used a nested clientAction pattern.
+    // Unwrap it if present so the date/params are at the top level.
+    const payload: Record<string, any> = p.clientAction?.payload
+      ? { ...p.clientAction.payload }
+      : p;
+    const act = (p.action ?? p.clientAction?.tool ?? action.tool) as string;
+    switch (act) {
       case "start_pomodoro": {
         openWindow({
           appId: "pomodoro",
@@ -117,47 +334,68 @@ export default function AthenaApp({
           icon: "Timer",
           payload: {
             autoStart: true,
-            phase: p.phase ?? "work",
-            durationMinutes: p.durationMinutes ?? null,
+            phase: payload.phase ?? "work",
+            durationMinutes: payload.durationMinutes ?? null,
           },
         });
         break;
       }
       case "open_app": {
+        // generate_flashcards and other generation tools return an open_app
+        // payload — pass through app-specific fields like deckId (Flashcards)
+        // and noteId (Notes) so the target app opens the created resource.
+        const appPayload: Record<string, any> = {};
+        if (payload.deckId) appPayload.deckId = payload.deckId;
+        if (payload.noteId) appPayload.noteId = payload.noteId;
         openWindow({
-          appId: p.appId as AppId,
-          title: p.title ?? p.appId,
-          icon: APP_ICONS[p.appId] ?? "AppWindow",
-          rect: p.rect as Partial<WindowRect> | undefined,
+          appId: payload.appId as AppId,
+          title: payload.title ?? payload.appId,
+          icon: APP_ICONS[payload.appId] ?? "AppWindow",
+          rect: payload.rect as Partial<WindowRect> | undefined,
+          payload: Object.keys(appPayload).length > 0 ? appPayload : undefined,
+        });
+        break;
+      }
+      case "open_study_hub": {
+        openWindow({
+          appId: "study",
+          title: "Study Hub",
+          icon: APP_ICONS["study"] ?? "GraduationCap",
+          payload: {
+            mode: payload.mode ?? undefined,
+            sourceKind: payload.sourceKind ?? undefined,
+            sourceId: payload.sourceId ?? undefined,
+            quizId: payload.quizId ?? undefined,
+          },
         });
         break;
       }
       case "close_window": {
-        closeWindow(p.windowId);
+        closeWindow(payload.windowId);
         break;
       }
       case "focus_window": {
-        focusWindow(p.windowId);
+        focusWindow(payload.windowId);
         break;
       }
       case "minimize_window": {
-        minimizeWindow(p.windowId);
+        minimizeWindow(payload.windowId);
         break;
       }
       case "resize_window": {
-        const w = windowsRef.current.find((x) => x.id === p.windowId);
-        if (w) setRect(p.windowId, { ...w.rect, width: p.width, height: p.height });
+        const w = windowsRef.current.find((x) => x.id === payload.windowId);
+        if (w) setRect(payload.windowId, { ...w.rect, width: payload.width, height: payload.height });
         break;
       }
       case "move_window": {
-        const w = windowsRef.current.find((x) => x.id === p.windowId);
+        const w = windowsRef.current.find((x) => x.id === payload.windowId);
         if (w) {
           // Snap to 20px grid for cleaner positioning.
           const GRID = 20;
-          setRect(p.windowId, {
+          setRect(payload.windowId, {
             ...w.rect,
-            x: Math.round(Number(p.x) / GRID) * GRID,
-            y: Math.round(Number(p.y) / GRID) * GRID,
+            x: Math.round(Number(payload.x) / GRID) * GRID,
+            y: Math.round(Number(payload.y) / GRID) * GRID,
           });
         }
         break;
@@ -172,7 +410,7 @@ export default function AthenaApp({
       }
       case "open_workspace": {
         closeAll();
-        const savedWindows = (p.windows as Array<{
+        const savedWindows = (payload.windows as Array<{
           appId: string;
           title: string;
           rect: WindowRect;
@@ -187,13 +425,114 @@ export default function AthenaApp({
         }
         break;
       }
+      case "open_calendar": {
+        openWindow({
+          appId: "calendar",
+          title: "Calendar",
+          icon: "Calendar",
+          payload: payload.date ? { date: payload.date } : undefined,
+        });
+        break;
+      }
+      case "open_habits": {
+        openWindow({
+          appId: "habits",
+          title: "Habits",
+          icon: "Flame",
+        });
+        break;
+      }
+      case "open_athena": {
+        // Quick Capture routes questions to Athena with a prefilled prompt.
+        if (payload.prompt) {
+          sendRef.current?.(String(payload.prompt));
+        }
+        break;
+      }
+      default: {
+        console.warn(`[athena] unhandled client_action: tool=${action.tool} action=${act}`);
+        break;
+      }
     }
   }, []);
 
+  // ===== File attachment handlers =====
+
+  const handleFileSelect = async (file: File) => {
+    setAttaching(true);
+    setAttachError(null);
+    try {
+      const result = await attachFile(file);
+      setAttachment(result);
+      // Ask user if they want to save to permanent storage.
+      setShowSaveDialog(true);
+      setSuggestion(null);
+      setSelectedFolderId(null);
+      setSaveMsg(null);
+      // Load folders for the picker.
+      const foldersRes = await filesApi.listFolders(undefined).catch(() => null);
+      if (foldersRes?.folders) setFolders(foldersRes.folders);
+    } catch (e) {
+      setAttachError(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setAttaching(false);
+    }
+  };
+
+  const handleSuggestFolder = async () => {
+    if (!attachment) return;
+    setSuggesting(true);
+    setSuggestion(null);
+    try {
+      const result = await suggestFolder(attachment.fileName, attachment.text.slice(0, 2000));
+      setSuggestion(result);
+      setSelectedFolderId(result.folderId);
+    } catch (e) {
+      setSuggestion({
+        folderId: null,
+        folderPath: "Root",
+        reason: `Suggestion failed: ${e instanceof Error ? e.message : "unknown"}`,
+        confidence: 0,
+      });
+    } finally {
+      setSuggesting(false);
+    }
+  };
+
+  const handleSaveToStorage = async () => {
+    if (!attachment) return;
+    setSaving(true);
+    setSaveMsg(null);
+    try {
+      await saveAttachedFile(attachment.tempPath, selectedFolderId, attachment.fileName);
+      setSaveMsg(`Saved "${attachment.fileName}" to ${selectedFolderId ? folders.find(f => f.id === selectedFolderId)?.name ?? "folder" : "root"}`);
+      setShowSaveDialog(false);
+      // Clear attachment after saving (keep it for chat context though).
+    } catch (e) {
+      setSaveMsg(`Save failed: ${e instanceof Error ? e.message : "unknown"}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeAttachment = () => {
+    setAttachment(null);
+    setAttachError(null);
+  };
+
   const send = useCallback(
     (text: string) => {
-      const content = text.trim();
+      let content = text.trim();
       if (!content || streaming) return;
+
+      // If there's an attachment, inject its content into the message.
+      if (attachment) {
+        const fileLabel = attachment.fileType === "pdf" ? "PDF document" : `${attachment.fileType} file`;
+        const truncationNote = attachment.truncated ? "\n_(content truncated — first 50,000 characters shown)_" : "";
+        content = `I've attached a ${fileLabel}: **${attachment.fileName}** (${(attachment.fileSize / 1024).toFixed(1)} KB)\n\nFile content:\n\`\`\`\n${attachment.text}${truncationNote}\n\`\`\`\n\n${content}`;
+        // Clear the attachment after sending (it's now in the chat context).
+        setAttachment(null);
+      }
 
       // Build conversation history for the server. We must maintain
       // alternating user/assistant messages — some providers reject
@@ -278,14 +617,21 @@ export default function AthenaApp({
             });
           },
           onDone: () => {
+            let finalTurns: ChatTurn[] = [];
             setTurns((prev) => {
               const next = [...prev];
               const last = next[next.length - 1];
               if (last && last.role === "assistant") {
                 next[next.length - 1] = { ...last, pending: false };
               }
+              finalTurns = next;
               return next;
             });
+            // Save conversation + generate title after the turn completes.
+            setTimeout(() => {
+              saveConversation(finalTurns);
+              maybeGenerateTitle();
+            }, 100);
           },
         },
         winState
@@ -293,8 +639,9 @@ export default function AthenaApp({
 
       handleRef.current.done.finally(() => setStreaming(false));
     },
-    [turns, streaming, dispatchClientAction, buildWindowState]
+    [turns, streaming, dispatchClientAction, buildWindowState, attachment, saveConversation, maybeGenerateTitle]
   );
+  sendRef.current = send;
 
   const stop = () => {
     handleRef.current?.abort();
@@ -320,6 +667,76 @@ export default function AthenaApp({
         <Sparkles size={16} className="text-accent" />
         <span className="text-sm font-semibold text-ink">Athena</span>
         <span className="text-[11px] text-ink-muted">workspace assistant</span>
+
+        {/* New Chat button */}
+        <button
+          onClick={startNewChat}
+          disabled={streaming || loadingConv}
+          className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-ink-muted hover:bg-surface-2 hover:text-ink disabled:opacity-40"
+          title="Start a new chat"
+        >
+          <Plus size={12} /> New
+        </button>
+
+        {/* History dropdown */}
+        <div className="relative">
+          <button
+            onClick={() => setHistoryOpen((v) => !v)}
+            disabled={loadingConv}
+            className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-ink-muted hover:bg-surface-2 hover:text-ink disabled:opacity-40"
+            title="Chat history"
+          >
+            <History size={12} /> History
+            <ChevronDown size={10} />
+          </button>
+          {historyOpen && (
+            <>
+              <div
+                className="fixed inset-0 z-50"
+                onClick={() => setHistoryOpen(false)}
+              />
+              <div className="absolute left-0 top-full z-[60] mt-1 max-h-96 w-72 overflow-y-auto rounded-lg border border-edge bg-surface shadow-window">
+                {conversations.length === 0 ? (
+                  <div className="px-3 py-4 text-center text-[11px] text-ink-muted">
+                    No conversations yet
+                  </div>
+                ) : (
+                  conversations.map((conv) => (
+                    <div
+                      key={conv.id}
+                      onClick={() => loadConversation(conv.id)}
+                      className={`group flex cursor-pointer items-center gap-2 px-3 py-2 text-xs transition hover:bg-surface-2 ${
+                        conv.id === activeConvId ? "bg-accent/5" : ""
+                      }`}
+                    >
+                      <MessageSquare
+                        size={12}
+                        className={`shrink-0 ${conv.status === "active" ? "text-accent" : "text-ink-muted"}`}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate font-medium text-ink">{conv.title}</div>
+                        <div className="text-[10px] text-ink-muted">
+                          {new Date(conv.lastMessageAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                          {" · "}
+                          {new Date(conv.lastMessageAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+                          {conv.status === "active" && " · active"}
+                        </div>
+                      </div>
+                      <button
+                        onClick={(e) => deleteConversation(conv.id, e)}
+                        className="shrink-0 rounded p-1 text-ink-muted opacity-0 transition hover:bg-red-500/10 hover:text-red-400 group-hover:opacity-100"
+                        title="Delete conversation"
+                      >
+                        <Trash size={11} />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </>
+          )}
+        </div>
+
         <div className="ml-auto flex items-center gap-1">
           {mode === "quick" && (
             <>
@@ -425,7 +842,7 @@ export default function AthenaApp({
             </div>
           </div>
         ) : (
-          <div className="mx-auto flex max-w-2xl flex-col gap-3">
+          <div className="mx-auto flex max-w-none @5xl:max-w-2xl flex-col gap-3">
             {turns.map((t, i) => (
               <TurnBubble key={i} turn={t} />
             ))}
@@ -435,7 +852,51 @@ export default function AthenaApp({
 
       {/* Composer */}
       <div className="border-t border-edge p-3">
-        <div className="mx-auto flex max-w-2xl items-end gap-2">
+        {/* Attachment chip */}
+        {attachment && (
+          <div className="mx-auto mb-2 flex max-w-none @5xl:max-w-2xl items-center gap-2 rounded-lg border border-accent/30 bg-accent/5 px-3 py-1.5">
+            {attachment.fileType === "pdf" ? <FileType size={14} className="shrink-0 text-red-400" /> : <FileCode size={14} className="shrink-0 text-accent" />}
+            <span className="truncate text-xs font-medium text-ink">{attachment.fileName}</span>
+            <span className="shrink-0 text-[10px] text-ink-muted">{(attachment.fileSize / 1024).toFixed(1)} KB</span>
+            {attachment.truncated && <span className="shrink-0 text-[10px] text-amber-500">truncated</span>}
+            <button onClick={removeAttachment} className="ml-auto shrink-0 rounded p-0.5 text-ink-muted hover:bg-surface-3 hover:text-red-400" title="Remove attachment">
+              <X size={12} />
+            </button>
+          </div>
+        )}
+        {/* Attach error */}
+        {attachError && (
+          <div className="mx-auto mb-2 flex max-w-none @5xl:max-w-2xl items-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-1.5 text-xs text-red-400">
+            <AlertCircle size={12} /> {attachError}
+          </div>
+        )}
+        {/* Save status message */}
+        {saveMsg && (
+          <div className="mx-auto mb-2 flex max-w-none @5xl:max-w-2xl items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-1.5 text-xs text-emerald-500">
+            <Check size={12} /> {saveMsg}
+          </div>
+        )}
+        <div className="mx-auto flex max-w-none @5xl:max-w-2xl items-end gap-2">
+          {/* Attach button */}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={attaching || streaming}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-edge text-ink-muted hover:bg-surface-3 hover:text-ink disabled:opacity-40"
+            title="Attach file (PDF, TXT, C, C++, Java, TS)"
+          >
+            {attaching ? <Loader2 size={15} className="animate-spin" /> : <Paperclip size={15} />}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,.txt,.c,.h,.cpp,.cc,.cxx,.hpp,.java,.ts,.tsx,.js,.jsx,.py,.md"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) handleFileSelect(f);
+              e.target.value = "";
+            }}
+          />
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -445,7 +906,7 @@ export default function AthenaApp({
                 send(input);
               }
             }}
-            placeholder="Ask Athena to do something…"
+            placeholder={attachment ? "Ask about the attached file…" : "Ask Athena to do something…"}
             rows={1}
             className="max-h-32 flex-1 resize-none rounded-lg border border-edge bg-surface-2 px-3 py-2 text-sm text-ink outline-none focus:border-accent"
           />
@@ -460,7 +921,7 @@ export default function AthenaApp({
           ) : (
             <button
               onClick={() => send(input)}
-              disabled={!input.trim()}
+              disabled={!input.trim() && !attachment}
               className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-accent-fg hover:opacity-90 disabled:opacity-40"
               title="Send"
             >
@@ -469,6 +930,24 @@ export default function AthenaApp({
           )}
         </div>
       </div>
+
+      {/* Save-to-storage dialog */}
+      {showSaveDialog && attachment && (
+        <SaveToStorageDialog
+          fileName={attachment.fileName}
+          fileSize={attachment.fileSize}
+          contentPreview={attachment.text.slice(0, 500)}
+          folders={folders}
+          selectedFolderId={selectedFolderId}
+          onSelectFolder={setSelectedFolderId}
+          suggesting={suggesting}
+          suggestion={suggestion}
+          onSuggest={handleSuggestFolder}
+          saving={saving}
+          onSave={handleSaveToStorage}
+          onSkip={() => { setShowSaveDialog(false); setSaveMsg(null); }}
+        />
+      )}
     </div>
   );
 }
@@ -538,5 +1017,155 @@ function ToolChip({ tool }: { tool: AthenaToolEvent }) {
       ) : null}
       <span className="opacity-70">· {tool.state}</span>
     </span>
+  );
+}
+
+// ===== Save-to-storage dialog =====
+
+function SaveToStorageDialog({
+  fileName,
+  fileSize,
+  contentPreview,
+  folders,
+  selectedFolderId,
+  onSelectFolder,
+  suggesting,
+  suggestion,
+  onSuggest,
+  saving,
+  onSave,
+  onSkip,
+}: {
+  fileName: string;
+  fileSize: number;
+  contentPreview: string;
+  folders: VFolder[];
+  selectedFolderId: string | null;
+  onSelectFolder: (id: string | null) => void;
+  suggesting: boolean;
+  suggestion: { folderId: string | null; folderPath: string; reason: string; confidence: number } | null;
+  onSuggest: () => void;
+  saving: boolean;
+  onSave: () => void;
+  onSkip: () => void;
+}) {
+  // Build a flat folder path map for display.
+  const byId = new Map(folders.map((f) => [f.id, f]));
+  function folderPath(id: string): string {
+    const parts: string[] = [];
+    let curId: string | null = id;
+    let guard = 0;
+    while (curId && guard++ < 50) {
+      const f = byId.get(curId);
+      if (!f) break;
+      parts.unshift(f.name);
+      curId = f.parentId;
+    }
+    return parts.join("/") || "Root";
+  }
+
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onSkip}>
+      <div
+        className="w-full max-w-md overflow-hidden rounded-xl border border-edge bg-surface shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center gap-2 border-b border-edge px-4 py-3">
+          <Cloud size={16} className="text-accent" />
+          <span className="text-sm font-semibold text-ink">Save to Storage?</span>
+        </div>
+
+        {/* File info */}
+        <div className="px-4 py-3">
+          <div className="flex items-center gap-2 rounded-lg bg-surface-2 px-3 py-2">
+            <FileText size={14} className="shrink-0 text-ink-muted" />
+            <span className="truncate text-sm font-medium text-ink">{fileName}</span>
+            <span className="ml-auto shrink-0 text-[11px] text-ink-muted">{(fileSize / 1024).toFixed(1)} KB</span>
+          </div>
+          {contentPreview && (
+            <p className="mt-2 line-clamp-2 text-[11px] text-ink-muted">
+              Preview: {contentPreview.slice(0, 150)}…
+            </p>
+          )}
+        </div>
+
+        {/* Folder selection */}
+        <div className="px-4 pb-3">
+          <label className="mb-1.5 block text-xs font-medium text-ink-muted">Save to folder:</label>
+          <div className="max-h-40 overflow-y-auto rounded-lg border border-edge bg-surface-2">
+            {/* Root option */}
+            <button
+              onClick={() => onSelectFolder(null)}
+              className={`flex w-full items-center gap-2 px-3 py-2 text-sm transition ${
+                selectedFolderId === null ? "bg-accent/10 text-accent" : "text-ink hover:bg-surface-3"
+              }`}
+            >
+              <FolderIcon size={14} className="shrink-0" />
+              Root (no folder)
+              {selectedFolderId === null && <Check size={12} className="ml-auto" />}
+            </button>
+            {folders.map((f) => (
+              <button
+                key={f.id}
+                onClick={() => onSelectFolder(f.id)}
+                className={`flex w-full items-center gap-2 px-3 py-2 text-sm transition ${
+                  selectedFolderId === f.id ? "bg-accent/10 text-accent" : "text-ink hover:bg-surface-3"
+                }`}
+              >
+                <FolderIcon size={14} className="shrink-0" />
+                <span className="truncate">{folderPath(f.id)}</span>
+                {selectedFolderId === f.id && <Check size={12} className="ml-auto shrink-0" />}
+              </button>
+            ))}
+            {folders.length === 0 && (
+              <p className="px-3 py-2 text-[11px] text-ink-muted">No folders yet — will save to root.</p>
+            )}
+          </div>
+
+          {/* Athena suggest */}
+          <button
+            onClick={onSuggest}
+            disabled={suggesting}
+            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2 text-xs font-medium text-accent transition hover:bg-accent/10 disabled:opacity-50"
+          >
+            {suggesting ? <Loader2 size={13} className="animate-spin" /> : <Lightbulb size={13} />}
+            {suggesting ? "Athena is thinking…" : "Let Athena suggest a folder"}
+          </button>
+
+          {/* Suggestion result */}
+          {suggestion && (
+            <div className="mt-2 rounded-lg border border-edge bg-surface-2 px-3 py-2">
+              <div className="flex items-center gap-1.5 text-xs">
+                <Lightbulb size={12} className="text-amber-400" />
+                <span className="font-medium text-ink">{suggestion.folderPath}</span>
+                <span className="ml-auto rounded-full bg-surface-3 px-1.5 py-0.5 text-[10px] text-ink-muted">
+                  {Math.round(suggestion.confidence * 100)}% confidence
+                </span>
+              </div>
+              <p className="mt-1 text-[11px] text-ink-muted">{suggestion.reason}</p>
+            </div>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center justify-end gap-2 border-t border-edge px-4 py-3">
+          <button
+            onClick={onSkip}
+            className="rounded-md border border-edge px-3 py-1.5 text-xs text-ink-muted hover:bg-surface-3"
+          >
+            Don't save
+          </button>
+          <button
+            onClick={onSave}
+            disabled={saving}
+            className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+          >
+            {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+            Save to Storage
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

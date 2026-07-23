@@ -1,10 +1,12 @@
 import Wallpaper from "./Wallpaper";
+import MusicWidget from "./MusicWidget";
 import Desktop from "./Desktop";
 import Taskbar from "./Taskbar";
 import WindowLayer from "../wm/WindowLayer";
 import SnapPreview from "../wm/SnapPreview";
 import AltTabSwitcher from "../wm/AltTabSwitcher";
 import CommandPalette from "./CommandPalette";
+import QuickCapture from "./QuickCapture";
 import AthenaQuickPanel from "./AthenaQuickPanel";
 import { useWindows } from "../store/windows";
 import { useAthenaQuick } from "../store/athenaQuick";
@@ -13,16 +15,6 @@ import { useEffect } from "react";
 export default function DesktopEnvironment() {
   const { open, focusedId, snap, toggleMaximize, close } = useWindows();
   const toggleAthenaQuick = useAthenaQuick((s) => s.toggle);
-
-  // Open a welcome window on first load if none open
-  useEffect(() => {
-    const t = setTimeout(() => {
-      if (useWindows.getState().windows.length === 0) {
-        open({ appId: "notes", title: "Notes", icon: "StickyNote" });
-      }
-    }, 200);
-    return () => clearTimeout(t);
-  }, [open]);
 
   // Win + Y → toggle Athena quick panel (rolls in from the selected edge)
   useEffect(() => {
@@ -35,6 +27,24 @@ export default function DesktopEnvironment() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [toggleAthenaQuick]);
+
+  // Win + F → toggle true fullscreen via the Fullscreen API.
+  // Unlike F11, Firefox does not reveal its toolbar on cursor hover when
+  // fullscreen is entered via the API, so this is a kiosk-style fullscreen.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "f" || e.key === "F")) {
+        e.preventDefault();
+        if (!document.fullscreenElement) {
+          document.documentElement.requestFullscreen?.().catch(() => {});
+        } else {
+          document.exitFullscreen?.().catch(() => {});
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // Keyboard shortcuts for window management
   //   Win + Arrow keys  → snap to grid zones
@@ -94,6 +104,7 @@ export default function DesktopEnvironment() {
   return (
     <div className="relative h-full w-full overflow-hidden">
       <Wallpaper />
+      <MusicWidget />
       <Desktop />
       <WindowLayer />
       <AthenaQuickPanel />
@@ -101,6 +112,7 @@ export default function DesktopEnvironment() {
       <Taskbar />
       <AltTabSwitcher />
       <CommandPalette />
+      <QuickCapture />
     </div>
   );
 }

@@ -80,7 +80,7 @@ export const spotifyApi = {
 declare global {
   interface Window {
     onSpotifyWebPlaybackSDKReady: () => void;
-    Spotify: SpotifySDKConstructor;
+    Spotify: SpotifySDKNamespace;
   }
 }
 
@@ -98,6 +98,7 @@ export interface SpotifyPlayer {
   seek: (ms: number) => Promise<void>;
   previousTrack: () => Promise<void>;
   nextTrack: () => Promise<void>;
+  activateElement: () => Promise<void>;
 }
 
 export interface SpotifySDKConstructor {
@@ -105,7 +106,14 @@ export interface SpotifySDKConstructor {
     name: string;
     getOAuthToken: (cb: (token: string) => void) => void;
     volume?: number;
+    enableMediaSession?: boolean;
   }): SpotifyPlayer;
+}
+
+// The Spotify Web Playback SDK exposes `window.Spotify` as a namespace object;
+// the actual player constructor lives at `window.Spotify.Player`.
+export interface SpotifySDKNamespace {
+  Player: SpotifySDKConstructor;
 }
 
 export interface WebPlaybackState {
@@ -130,12 +138,12 @@ export interface WebPlaybackState {
   };
 }
 
-let sdkPromise: Promise<SpotifySDKConstructor> | null = null;
+let sdkPromise: Promise<SpotifySDKNamespace> | null = null;
 
-export function loadSpotifySDK(): Promise<SpotifySDKConstructor> {
+export function loadSpotifySDK(): Promise<SpotifySDKNamespace> {
   if (sdkPromise) return sdkPromise;
   sdkPromise = new Promise((resolve) => {
-    if (window.Spotify) {
+    if (window.Spotify?.Player) {
       resolve(window.Spotify);
       return;
     }

@@ -85,4 +85,19 @@ export const taskTools: ToolDef[] = [
       return { task, updated: true };
     },
   },
+  {
+    name: "delete_task",
+    description: "Delete a task permanently. Use when the user asks to remove or delete a task.",
+    destructive: true,
+    parameters: [
+      { name: "taskId", type: "string", description: "Task id from list_tasks", required: true },
+    ],
+    handler: async (args, { userId }) => {
+      const id = String(args.taskId);
+      const task = await prisma.task.findUnique({ where: { id, userId } });
+      if (!task) return { error: "Task not found" };
+      await prisma.task.delete({ where: { id, userId } });
+      return { deleted: true, taskId: id, title: task.title };
+    },
+  },
 ];

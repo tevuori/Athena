@@ -71,6 +71,9 @@ spotify.put("/play", zValidator("json", z.object({ device_id: z.string().optiona
     method: "PUT",
     body: Object.keys(payload).length ? JSON.stringify(payload) : undefined,
   });
+  // Spotify returns 204 No Content on success — must NOT send a body with 204,
+  // otherwise the HTTP parser on the proxy/client chokes ("Parse Error").
+  if (res.status === 204) return c.body(null, 204);
   return c.json({ ok: res.ok }, res.status as 200);
 });
 
@@ -81,6 +84,7 @@ spotify.put("/pause", zValidator("json", deviceSchema.optional()), async (c) => 
   const body = c.req.valid("json") ?? {};
   const qs = body.device_id ? `?device_id=${encodeURIComponent(body.device_id)}` : "";
   const res = await spotifyFetch(`/me/player/pause${qs}`, { method: "PUT" });
+  if (res.status === 204) return c.body(null, 204);
   return c.json({ ok: res.ok }, res.status as 200);
 });
 
@@ -91,6 +95,7 @@ spotify.post("/next", zValidator("json", deviceSchema.optional()), async (c) => 
   const body = c.req.valid("json") ?? {};
   const qs = body.device_id ? `?device_id=${encodeURIComponent(body.device_id)}` : "";
   const res = await spotifyFetch(`/me/player/next${qs}`, { method: "POST" });
+  if (res.status === 204) return c.body(null, 204);
   return c.json({ ok: res.ok }, res.status as 200);
 });
 
@@ -101,6 +106,7 @@ spotify.post("/previous", zValidator("json", deviceSchema.optional()), async (c)
   const body = c.req.valid("json") ?? {};
   const qs = body.device_id ? `?device_id=${encodeURIComponent(body.device_id)}` : "";
   const res = await spotifyFetch(`/me/player/previous${qs}`, { method: "POST" });
+  if (res.status === 204) return c.body(null, 204);
   return c.json({ ok: res.ok }, res.status as 200);
 });
 
@@ -114,6 +120,7 @@ spotify.put("/seek", async (c) => {
   let qs = `?position_ms=${encodeURIComponent(position_ms)}`;
   if (deviceId) qs += `&device_id=${encodeURIComponent(deviceId)}`;
   const res = await spotifyFetch(`/me/player/seek${qs}`, { method: "PUT" });
+  if (res.status === 204) return c.body(null, 204);
   return c.json({ ok: res.ok }, res.status as 200);
 });
 
@@ -127,6 +134,7 @@ spotify.put("/volume", async (c) => {
   let qs = `?volume_percent=${encodeURIComponent(volume)}`;
   if (deviceId) qs += `&device_id=${encodeURIComponent(deviceId)}`;
   const res = await spotifyFetch(`/me/player/volume${qs}`, { method: "PUT" });
+  if (res.status === 204) return c.body(null, 204);
   return c.json({ ok: res.ok }, res.status as 200);
 });
 
@@ -139,6 +147,7 @@ spotify.put("/shuffle", async (c) => {
   let qs = `?state=${state === "true" ? "true" : "false"}`;
   if (deviceId) qs += `&device_id=${encodeURIComponent(deviceId)}`;
   const res = await spotifyFetch(`/me/player/shuffle${qs}`, { method: "PUT" });
+  if (res.status === 204) return c.body(null, 204);
   return c.json({ ok: res.ok }, res.status as 200);
 });
 
@@ -151,6 +160,7 @@ spotify.put("/repeat", async (c) => {
   let qs = `?state=${encodeURIComponent(state)}`;
   if (deviceId) qs += `&device_id=${encodeURIComponent(deviceId)}`;
   const res = await spotifyFetch(`/me/player/repeat${qs}`, { method: "PUT" });
+  if (res.status === 204) return c.body(null, 204);
   return c.json({ ok: res.ok }, res.status as 200);
 });
 
@@ -171,6 +181,9 @@ spotify.put("/transfer", zValidator("json", z.object({ device_ids: z.array(z.str
     method: "PUT",
     body: JSON.stringify(body),
   });
+  // Spotify returns 204 No Content on success — sending a JSON body with a 204
+  // status produces invalid HTTP that breaks the Vite proxy HTTP parser.
+  if (res.status === 204) return c.body(null, 204);
   return c.json({ ok: res.ok }, res.status as 200);
 });
 
