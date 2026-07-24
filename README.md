@@ -184,8 +184,8 @@ See [`.env.example`](.env.example) for the full list. Key ones:
 | `VITE_API_URL` | Backend URL for client (Vite proxy) |
 | `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` / `SPOTIFY_REFRESH_TOKEN` | Spotify integration |
 | `MS_CLIENT_ID` / `MS_CLIENT_SECRET` / `MS_TENANT_ID` / `MS_REFRESH_TOKEN` | Microsoft Calendar sync (Graph API) |
-| `OPENAI_PROVIDER` / `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL` | Athena LLM server-wide fallback (per-user DB config takes priority). Default provider `openai`, base URL `https://opencode.ai/zen/v1`, model `deepseek-v4-flash-free` |
-| `OPENAI_TRANSCRIPTION_MODEL` | Whisper model for Voice Notes transcription (default `whisper-1`). Reuses `OPENAI_API_KEY` / `OPENAI_BASE_URL`. Note: the default OpenCode Zen endpoint does not serve audio transcription — set an OpenAI-compatible key/base URL that does (e.g. OpenAI, Groq) |
+| `OPENAI_PROVIDER` / `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL` | Athena LLM server-wide fallback (per-user DB config takes priority). All optional — if neither is set, Athena AI is unavailable (no free fallback) |
+| `OPENAI_TRANSCRIPTION_MODEL` | Whisper model for Voice Notes transcription (default `whisper-1`). Reuses `OPENAI_API_KEY` / `OPENAI_BASE_URL` (or per-user AiCredential) |
 
 ---
 

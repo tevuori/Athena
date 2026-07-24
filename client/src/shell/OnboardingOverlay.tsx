@@ -146,11 +146,11 @@ function StepContent({ stepId }: { stepId: string }) {
         icon={<Sparkles size={20} />}
         title="Connect Your AI Provider"
         section="athena"
-        description="Athena needs an LLM to work. Enter your API key for OpenAI, DeepSeek, Anthropic, Groq, or any OpenAI-compatible endpoint. You can also set a custom base URL and model."
+        description="Athena needs an LLM to work. Enter your API key for OpenAI, DeepSeek, Anthropic, Groq, or any OpenAI-compatible endpoint. Without a key, Athena's chat and AI features won't be available."
         tips={[
-          "If you skip this, Athena uses a free server fallback (DeepSeek V4 Flash Free)",
-          "Popular free options: Groq (fast), OpenCode Zen (free DeepSeek)",
+          "Popular affordable options: Groq (fast + free tier), DeepSeek, OpenRouter",
           "Your key is encrypted (AES-256-GCM) and stored only on the server",
+          "You can change or remove your key anytime in Settings \u2192 Athena Assistant",
         ]}
       />;
     case "appearance":

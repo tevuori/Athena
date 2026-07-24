@@ -90,8 +90,8 @@ function LlmConfigCard() {
     <Card className="mb-4">
       <div className="mb-3 flex items-center gap-2 text-sm">
         <StatusPill on={hasKey} onLabel="Key set" offLabel="No key set" />
-        {status?.configured && !hasKey && (
-          <span className="text-xs text-ink-muted">(server fallback key active)</span>
+        {!hasKey && (
+          <span className="text-xs text-ink-muted">Athena AI requires a key to function</span>
         )}
       </div>
       <div className="mb-3 grid grid-cols-2 gap-2">
@@ -118,18 +118,18 @@ function LlmConfigCard() {
           <input
             value={modelId}
             onChange={(e) => setModelId(e.target.value)}
-            placeholder="deepseek-v4-flash-free"
+            placeholder="e.g. gpt-4o-mini, deepseek-chat"
             className={inputClass}
           />
         </Field>
       </div>
       <Field
-        label="Base URL (optional — for OpenAI-compatible endpoints like OpenCode Zen)"
+        label="Base URL (optional — for OpenAI-compatible endpoints)"
       >
         <input
           value={baseUrl}
           onChange={(e) => setBaseUrl(e.target.value)}
-          placeholder="https://opencode.ai/zen/v1"
+          placeholder="https://api.openai.com/v1"
           className={inputClass}
         />
       </Field>
@@ -157,8 +157,8 @@ function LlmConfigCard() {
       </div>
       <MsgBox msg={msg} error={err} />
       <p className="mt-3 text-xs text-ink-muted">
-        The key is encrypted (AES-256-GCM) and stored only on the server. Defaults to OpenCode Zen
-        (DeepSeek V4 Flash Free) when no key is set.
+        The key is encrypted (AES-256-GCM) and stored only on the server. Without a key,
+        Athena's chat and AI features are unavailable.
       </p>
     </Card>
   );

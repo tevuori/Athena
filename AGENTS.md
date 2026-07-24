@@ -71,7 +71,7 @@ See `.env.example`. Key ones:
 - `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` / `SPOTIFY_REFRESH_TOKEN` — Spotify integration
 - `MS_CLIENT_ID` / `MS_CLIENT_SECRET` / `MS_TENANT_ID` / `MS_REFRESH_TOKEN` — Microsoft Calendar sync (Graph API, requires `Calendar.ReadWrite` + `offline_access` scopes)
 - `NTFY_SERVER_URL` / `NTFY_TOKEN` / `NTFY_DEFAULT_PRIORITY` — Ntfy server-wide fallback (per-user config in DB takes priority)
-- `OPENAI_PROVIDER` / `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL` — Athena LLM server-wide fallback (per-user config in DB takes priority). Default provider `openai`, base URL `https://opencode.ai/zen/v1`, model `deepseek-v4-flash-free`.
+- `OPENAI_PROVIDER` / `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL` — Athena LLM server-wide fallback (per-user config in DB takes priority). All optional — if neither per-user nor server-wide keys are set, Athena AI is unavailable (no free fallback).
 
 ## Project structure
 
@@ -244,7 +244,7 @@ Athena/
     - **Recent-files context**: the 5 most recently opened files (id, path, type, size, short text preview — NOT full content) are injected into the system prompt every turn, so Athena already "knows" what files exist. Full contents are loaded on demand via `read_file`.
     - **Client-action dispatch**: tools that affect the desktop (e.g. `start_pomodoro`) return a payload streamed as a `client_action` SSE event; the client opens/controls the relevant app (Pomodoro auto-starts with the requested phase/duration).
     - Multi-turn conversation history sent each turn; abortable via the Stop button.
-    - Any `multi-llm-ts` provider works (openai, deepseek, anthropic, openrouter, ollama, groq, mistralai, google, xai, meta, cerebras). Defaults to OpenCode Zen (DeepSeek V4 Flash Free). Per-user config encrypted (AES-256-GCM) in DB; server-wide fallback via env vars.
+    - Any `multi-llm-ts` provider works (openai, deepseek, anthropic, openrouter, ollama, groq, mistralai, google, xai, meta, cerebras). Per-user config encrypted (AES-256-GCM) in DB; optional server-wide fallback via env vars. If neither is configured, Athena AI is unavailable.
     - **Quick panel mode** (`Win+Y`): Athena can be activated as a rolling quick panel that slides in from a user-selected screen edge (bottom/top/left/right) instead of a normal window. The panel occupies a partial area (~80% width, ~3/4 height by default), doesn't cover all apps, is resizable with remembered size (persisted in settings), and has an **Expand** button to switch to the full window mode. Roll edge is configurable via a dropdown in the quick panel header. Athena remains openable as a full window from the Start Menu / Command Palette.
     - **File attachments** (paperclip button in the composer): users can attach files (PDF, TXT, C/C++, Java, TS, JS, Python, Markdown) to the chat. When a file is attached:
       1. The file is uploaded to `POST /api/athena/attach`, which extracts text (text files: direct read; PDF: `pdf-parse` v2 library) and stores the file temporarily in `uploads/temp/`.
@@ -306,7 +306,7 @@ Athena/
     - Records from the mic via `MediaRecorder` (Web Audio `AnalyserNode` for a live level/waveform meter). Picks the best supported container (`audio/webm;codecs=opus` → `audio/ogg` → `audio/mp4`). Pause/resume, elapsed timer, in-app playback of the recording.
     - On stop, `POST /api/voice` (multipart `audio` + optional `title`/`folderId`/`cleanup`): saves the audio to the virtual FS (`VFile`), transcribes via the OpenAI-compatible `/audio/transcriptions` endpoint (Whisper; model from `OPENAI_TRANSCRIPTION_MODEL`, default `whisper-1`), runs an LLM cleanup pass (`services/study/llm-json.ts` `generateJson` → `{title, content}`: punctuate, paragraph, remove filler, smart title), creates a `Note` tagged `voice,audio`, and links note↔file via `ItemLink` (`db/links.ts`). Returns `{ file, note, transcript, transcribed, cleaned }`.
     - `POST /api/voice/transcribe/:fileId` re-transcribes an existing audio file and updates (or creates) its linked note.
-    - **Graceful degradation**: if no AI key is configured or the provider doesn't serve audio transcription (the default OpenCode Zen endpoint doesn't), the audio is still saved and a placeholder note is created — no data loss. The UI points the user to Settings → AI.
+    - **Graceful degradation**: if no AI key is configured or the provider doesn't serve audio transcription, the audio is still saved and a placeholder note is created — no data loss. The UI points the user to Settings → Athena Assistant.
     - **Quick Capture integration**: the `Ctrl+Shift+N` overlay has a mic button that switches to a compact recorder mode; on stop it runs the same `POST /api/voice` pipeline and opens the resulting note.
     - No DB migration — reuses `VFile` + `Note` + `ItemLink`. Client: `apps/voice/{VoiceApp,useRecorder}.tsx` + `services/voice.ts`. The `useRecorder` hook is shared between the app and Quick Capture.
 20. **Browser** — Athena-integrated web browser (`apps/browser/BrowserApp.tsx`):
