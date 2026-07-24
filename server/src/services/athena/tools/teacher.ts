@@ -80,7 +80,7 @@ export const teacherTools: ToolDef[] = [
     description:
       "Open a study source on the student's desktop and (optionally) scroll to / highlight a passage while teaching. " +
       "Provide a sourceId (from the session's StudySource list) OR a kind+refId (note id, file id, or URL). " +
-      "highlightText scrolls to and highlights the first occurrence of that text. " +
+      "highlightText scrolls to and highlights the first occurrence of that text — pass a SHORT specific phrase (max ~50 chars), not a long paragraph. " +
       "highlightLine / highlightLineEnd highlight a line range (1-based) in code/text files. " +
       "Call this RIGHT BEFORE the sentence that references the passage so the visual appears as you speak.",
     clientAction: true,
@@ -169,7 +169,8 @@ export const teacherTools: ToolDef[] = [
     name: "highlight_source",
     description:
       "Highlight a passage in an already-open source window (without re-opening it). " +
-      "Provide the windowId (from list_open_windows or the show_source result) and either text, or lineStart+lineEnd for a line range.",
+      "Provide the windowId (from list_open_windows or the show_source result) and either text, or lineStart+lineEnd for a line range. " +
+      "For text, pass a SHORT specific phrase (max ~50 chars) — not a long paragraph, to avoid over-highlighting.",
     clientAction: true,
     parameters: [
       { name: "windowId", type: "string", description: "Target window id", required: true },

@@ -120,6 +120,8 @@ export default function TeacherMode({ initialSessionId, language = "en" }: Props
   const streamTextRef = useRef("");
   const autoSpeakRef = useRef(autoSpeak);
   autoSpeakRef.current = autoSpeak;
+  const ttsRef = useRef(tts);
+  ttsRef.current = tts;
 
   const selectedSources = [...selectedSourceIds]
     .map((id) => library.find((s) => s.id === id))
@@ -399,16 +401,16 @@ export default function TeacherMode({ initialSessionId, language = "en" }: Props
           // Reload session to pick up persisted assistant message.
           void loadSession(sessionId);
           // Auto-speak the assistant's response if enabled.
-          // (onDone fires even on LLM error if partial text was received —
-          // the server sends done after error when there's partial content.)
-          if (autoSpeak && finalText.trim()) {
-            void tts.speak(finalText);
+          // Use refs so we always have the latest autoSpeak + tts values,
+          // even if the send closure was created before a toggle/provider change.
+          if (autoSpeakRef.current && finalText.trim()) {
+            void ttsRef.current.speak(finalText);
           }
         },
       },
       { windows: windowSnapshot(), sourceHistory, state, language }
     );
-  }, [sessionId, streaming, studentLevel, sourceHistory, language, dispatchTeacherAction, windowSnapshot, loadSession, autoSpeak, tts, comprehensionLog]);
+  }, [sessionId, streaming, studentLevel, sourceHistory, language, dispatchTeacherAction, windowSnapshot, loadSession, comprehensionLog]);
 
   const stop = useCallback(() => {
     handleRef.current?.abort();
