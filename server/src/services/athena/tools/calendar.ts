@@ -5,7 +5,7 @@
 import type { ToolDef } from "./plugin";
 import prisma from "../../../db/client";
 import { fetchTimetable, isVutAuthenticated } from "../../../services/vut";
-import { isMicrosoftConfigured, listEvents as msListEvents } from "../../../services/microsoft";
+import { isMicrosoftConfiguredFor, listEvents as msListEvents } from "../../../services/microsoft";
 
 export const calendarTools: ToolDef[] = [
   {
@@ -206,8 +206,8 @@ export const calendarTools: ToolDef[] = [
       { name: "to", type: "string", description: "ISO 8601 datetime (defaults to 30 days from now)" },
     ],
     handler: async (args, { userId }) => {
-      if (!isMicrosoftConfigured()) {
-        return { error: "Microsoft Calendar is not configured on the server." };
+      if (!(await isMicrosoftConfiguredFor(userId))) {
+        return { error: "Microsoft Calendar is not configured. Add your credentials in Settings → Integrations." };
       }
       const from = args.from
         ? new Date(String(args.from))
@@ -218,7 +218,7 @@ export const calendarTools: ToolDef[] = [
 
       let msEvents;
       try {
-        msEvents = await msListEvents(from.toISOString(), to.toISOString());
+        msEvents = await msListEvents(userId, from.toISOString(), to.toISOString());
       } catch (e) {
         return { error: `Microsoft sync failed: ${(e as { message?: string }).message ?? "unknown"}` };
       }

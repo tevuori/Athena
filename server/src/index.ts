@@ -26,7 +26,6 @@ import voice from "./routes/voice";
 import links from "./routes/links";
 import proactiveAlerts from "./routes/proactive-alerts";
 import browser from "./routes/browser";
-import { isSpotifyConfigured } from "./services/spotify";
 import { startScheduler } from "./services/ntfy/scheduler";
 import { startAllSubscribers } from "./services/ntfy/subscriber";
 import { startProactiveScheduler } from "./services/ntfy/proactive-scheduler";
@@ -60,7 +59,10 @@ app.get("/health", (c) =>
     ok: true,
     service: "athena-server",
     version: "0.1.0",
-    spotifyConfigured: isSpotifyConfigured(),
+    // Spotify is now per-user; report whether the server-wide env fallback exists.
+    spotifyEnvFallback: Boolean(
+      process.env.SPOTIFY_CLIENT_ID && process.env.SPOTIFY_CLIENT_SECRET && process.env.SPOTIFY_REFRESH_TOKEN
+    ),
   })
 );
 

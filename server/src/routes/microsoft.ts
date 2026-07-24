@@ -2,14 +2,17 @@
 // Pulls events from the user's Microsoft (Outlook) calendar via Graph API
 // and upserts them as CalendarEvent rows (source="microsoft", sourceRef=msId).
 // Also supports pushing local events to Microsoft and deleting from MS.
+// Each user configures their own Microsoft credentials (per-user encrypted DB).
 
 import { Hono } from "hono";
 import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
 import prisma from "../db/client";
 import { authMiddleware } from "../middleware/auth";
+import { encryptSecret } from "../services/crypto";
 import {
-  isMicrosoftConfigured,
+  getUserMsConfig,
+  isMicrosoftConfiguredFor,
   listEvents,
   createEvent as msCreateEvent,
   updateEvent as msUpdateEvent,
@@ -20,9 +23,70 @@ import {
 const microsoft = new Hono();
 microsoft.use("*", authMiddleware);
 
-// GET /status — is Microsoft Calendar configured?
-microsoft.get("/status", (c) => {
-  return c.json({ configured: isMicrosoftConfigured() });
+// ---------- Credential management (per-user) ----------
+
+const credSchema = z.object({
+  clientId: z.string().min(1).max(256),
+  clientSecret: z.string().min(1).max(256),
+  tenantId: z.string().max(256).optional().or(z.literal("")),
+  refreshToken: z.string().min(1).max(2048),
+});
+
+/** GET /microsoft/credentials — reports whether per-user MS credentials are set. */
+microsoft.get("/credentials", async (c) => {
+  const { userId } = c.get("auth");
+  const cred = await prisma.microsoftCredential.findUnique({ where: { userId } });
+  const hasEnv = Boolean(
+    process.env.MS_CLIENT_ID && process.env.MS_CLIENT_SECRET && process.env.MS_REFRESH_TOKEN
+  );
+  return c.json({
+    hasCredentials: Boolean(cred),
+    configured: await isMicrosoftConfiguredFor(userId),
+    usingEnvFallback: !cred && hasEnv,
+  });
+});
+
+/** PUT /microsoft/credentials — store (or replace) the user's encrypted MS credentials. */
+microsoft.put("/credentials", zValidator("json", credSchema), async (c) => {
+  const { userId } = c.get("auth");
+  const body = c.req.valid("json");
+  const tenantId = body.tenantId?.trim() || "common";
+  await prisma.microsoftCredential.upsert({
+    where: { userId },
+    create: {
+      userId,
+      clientIdEnc: encryptSecret(body.clientId.trim()),
+      clientSecretEnc: encryptSecret(body.clientSecret.trim()),
+      tenantId,
+      refreshTokenEnc: encryptSecret(body.refreshToken.trim()),
+    },
+    update: {
+      clientIdEnc: encryptSecret(body.clientId.trim()),
+      clientSecretEnc: encryptSecret(body.clientSecret.trim()),
+      tenantId,
+      refreshTokenEnc: encryptSecret(body.refreshToken.trim()),
+    },
+  });
+  return c.json({ ok: true });
+});
+
+/** DELETE /microsoft/credentials — remove the user's stored MS credentials. */
+microsoft.delete("/credentials", async (c) => {
+  const { userId } = c.get("auth");
+  try {
+    await prisma.microsoftCredential.delete({ where: { userId } });
+  } catch {
+    // already absent
+  }
+  return c.json({ ok: true });
+});
+
+// ---------- Calendar sync ----------
+
+// GET /status — is Microsoft Calendar configured for this user?
+microsoft.get("/status", async (c) => {
+  const { userId } = c.get("auth");
+  return c.json({ configured: await isMicrosoftConfiguredFor(userId) });
 });
 
 // POST /sync — pull MS events into the DB for a time range.
@@ -36,7 +100,7 @@ const syncSchema = z.object({
 
 microsoft.post("/sync", zValidator("json", syncSchema), async (c) => {
   const { userId } = c.get("auth");
-  if (!isMicrosoftConfigured()) {
+  if (!(await isMicrosoftConfiguredFor(userId))) {
     return c.json({ error: "Microsoft Calendar not configured" }, 400);
   }
   const body = c.req.valid("json");
@@ -45,7 +109,7 @@ microsoft.post("/sync", zValidator("json", syncSchema), async (c) => {
 
   let msEvents: MsGraphEvent[];
   try {
-    msEvents = await listEvents(from, to);
+    msEvents = await listEvents(userId, from, to);
   } catch (e) {
     const msg = (e as { message?: string }).message ?? "Sync failed";
     return c.json({ error: msg }, 502);
@@ -126,7 +190,7 @@ const pushSchema = z.object({
 
 microsoft.post("/push", zValidator("json", pushSchema), async (c) => {
   const { userId } = c.get("auth");
-  if (!isMicrosoftConfigured()) {
+  if (!(await isMicrosoftConfiguredFor(userId))) {
     return c.json({ error: "Microsoft Calendar not configured" }, 400);
   }
   const { eventId } = c.req.valid("json");
@@ -138,7 +202,7 @@ microsoft.post("/push", zValidator("json", pushSchema), async (c) => {
   // If already linked to MS, update instead of create.
   if (local.sourceRef && local.source === "microsoft") {
     try {
-      const updated = await msUpdateEvent(local.sourceRef, {
+      const updated = await msUpdateEvent(userId, local.sourceRef, {
         subject: local.title,
         body: local.description,
         start: local.start.toISOString(),
@@ -153,7 +217,7 @@ microsoft.post("/push", zValidator("json", pushSchema), async (c) => {
   }
 
   try {
-    const created = await msCreateEvent({
+    const created = await msCreateEvent(userId, {
       subject: local.title,
       body: local.description,
       start: local.start.toISOString(),
@@ -175,12 +239,12 @@ microsoft.post("/push", zValidator("json", pushSchema), async (c) => {
 // DELETE /event/:msId — delete an event from Microsoft calendar.
 microsoft.delete("/event/:msId", async (c) => {
   const { userId } = c.get("auth");
-  if (!isMicrosoftConfigured()) {
+  if (!(await isMicrosoftConfiguredFor(userId))) {
     return c.json({ error: "Microsoft Calendar not configured" }, 400);
   }
   const msId = c.req.param("msId");
   try {
-    await msDeleteEvent(msId);
+    await msDeleteEvent(userId, msId);
   } catch (e) {
     return c.json({ error: (e as { message?: string }).message ?? "Delete failed" }, 502);
   }
