@@ -15,6 +15,7 @@ import {
 import type { VFile, VFolder, FolderTreeNode, StorageInfo } from "../../types";
 import type { WindowInstance } from "../../store/windows";
 import { useWindows } from "../../store/windows";
+import { useDataRefreshVersion } from "../../store/dataRefresh";
 import ContextMenu, { type MenuItem } from "../../shell/ContextMenu";
 import CollapsibleSidebar from "../../wm/CollapsibleSidebar";
 import { setLinkPayload } from "../links/linkDnd";
@@ -32,6 +33,7 @@ interface ClipboardItem {
 
 export default function FilesApp(_: { win: WindowInstance }) {
   const { open: openWindow } = useWindows();
+  const refreshVersion = useDataRefreshVersion("files");
 
   // ---- State ----
   const [folders, setFolders] = useState<VFolder[]>([]);
@@ -145,6 +147,15 @@ export default function FilesApp(_: { win: WindowInstance }) {
     loadTree();
     loadStorage();
   }, [loadTree, loadStorage]);
+
+  // Refresh when Athena mutates files data (edit_file, create_file)
+  useEffect(() => {
+    if (refreshVersion > 0) {
+      load();
+      loadTree();
+      loadStorage();
+    }
+  }, [refreshVersion, load, loadTree, loadStorage]);
 
   // ---- Navigation ----
   const navigateToFolder = useCallback((folder: VFolder) => {

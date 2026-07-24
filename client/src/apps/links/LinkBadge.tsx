@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Link2, X, FileText, CheckSquare, Brain, Calendar, File as FileIcon } from "lucide-react";
+import { Link2, X, FileText, CheckSquare, Brain, Calendar, File as FileIcon, GraduationCap, Mic } from "lucide-react";
 import type { LinkType, LinkedItem } from "../../types";
 import { useWindows, type AppId } from "../../store/windows";
 import { useLinks } from "./useLinks";
@@ -10,6 +10,9 @@ const TYPE_META: Record<LinkType, { icon: typeof FileText; appId: AppId; label: 
   flashcardDeck: { icon: Brain, appId: "flashcards", label: "Deck" },
   calendarEvent: { icon: Calendar, appId: "calendar", label: "Event" },
   file: { icon: FileIcon, appId: "viewer", label: "File" },
+  studySource: { icon: FileText, appId: "study", label: "Source" },
+  studyChat: { icon: GraduationCap, appId: "study", label: "Study Chat" },
+  podcast: { icon: Mic, appId: "study", label: "Podcast" },
 };
 
 /** Open a linked item in its app. */
@@ -26,6 +29,17 @@ function openLinked(item: LinkedItem) {
       break;
     case "file":
       payload.fileId = item.refId;
+      break;
+    case "studyChat":
+      payload.mode = "chat";
+      payload.chatId = item.refId;
+      break;
+    case "podcast":
+      payload.mode = "podcast";
+      payload.podcastId = item.refId;
+      break;
+    case "studySource":
+      payload.mode = "chat";
       break;
     case "task":
     case "calendarEvent":

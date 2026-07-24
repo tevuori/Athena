@@ -2,7 +2,7 @@
 
 import { api } from "./api";
 
-export type SourceKind = "note" | "file" | "paste" | "moodle";
+export type SourceKind = "note" | "file" | "paste" | "moodle" | "url";
 
 export interface SourceDescriptor {
   kind: SourceKind;

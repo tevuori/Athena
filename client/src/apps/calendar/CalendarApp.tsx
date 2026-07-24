@@ -16,6 +16,7 @@ import { microsoftApi } from "../../services/microsoft";
 import { apiUrl } from "../../services/api";
 import { useWindows } from "../../store/windows";
 import type { WindowInstance } from "../../store/windows";
+import { useDataRefreshVersion } from "../../store/dataRefresh";
 import type { CalendarEvent, Task, VutTimetableSlot, Course } from "../../types";
 import { linksApi } from "../../services/links";
 import { setLinkPayload } from "../links/linkDnd";
@@ -86,6 +87,7 @@ interface DisplayEvent {
 
 export default function CalendarApp({ win }: { win: WindowInstance }) {
   const openWindow = useWindows((s) => s.open);
+  const refreshVersion = useDataRefreshVersion("calendar");
   const [view, setView] = useState<ViewMode>(() =>
     typeof window !== "undefined" &&
     window.matchMedia("(pointer: coarse)").matches &&
@@ -156,6 +158,11 @@ export default function CalendarApp({ win }: { win: WindowInstance }) {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // Refresh when Athena mutates calendar data (create_calendar_event, etc.)
+  useEffect(() => {
+    if (refreshVersion > 0) refresh();
+  }, [refreshVersion, refresh]);
 
   // ===== Build display events from all sources =====
   const displayEvents: DisplayEvent[] = useMemo(() => {

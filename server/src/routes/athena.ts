@@ -12,6 +12,7 @@ import {
   AthenaToolsPlugin,
   ALL_TOOLS,
   CLIENT_ACTION_TOOLS,
+  DESTRUCTIVE_TOOLS,
   toolManifest,
   type ClientWindowInfo,
 } from "../services/athena/tools";
@@ -240,6 +241,19 @@ athena.post("/chat", zValidator("json", chatSchema, (result, c) => {
                 failedTools++;
               } else {
                 completedTools++;
+              }
+              // Emit a data_change event so already-open apps can refresh
+              // their data after Athena mutates it (e.g. create_note → the
+              // Notes app reloads its list without being reopened).
+              if (
+                DESTRUCTIVE_TOOLS.has(chunk.name) &&
+                result &&
+                !result?.error
+              ) {
+                await stream.writeSSE({
+                  event: "data_change",
+                  data: JSON.stringify({ tool: chunk.name }),
+                });
               }
               if (
                 CLIENT_ACTION_TOOLS.has(chunk.name) &&

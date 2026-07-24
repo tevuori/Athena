@@ -1,18 +1,21 @@
 // ===== Study Hub source resolution =====
-// Resolves a source descriptor ({ kind, id?, text? }) to plain text content
-// from a note, a text file on disk, or pasted text. Reused by all study
-// workflows so the LLM always receives clean source text.
+// Resolves a source descriptor ({ kind, id?, text?, url? }) to plain text
+// content from a note, a text file or PDF on disk, a fetched web URL, pasted
+// text, or a Moodle resource. Reused by all study workflows so the LLM always
+// receives clean source text. Also provides resolveAndCache() to persist the
+// extracted text as a StudySource for reuse across grounded Q&A / podcasts.
 
 import path from "node:path";
 import { readFile } from "node:fs/promises";
 import prisma from "../../db/client";
 import { decryptSecret } from "../crypto";
 import { fetchResourceContent } from "../moodle";
+import { fetchUrl } from "../fetcher";
 
 const UPLOAD_DIR = path.resolve(process.cwd(), "uploads");
 
 /** Maximum source text length sent to the LLM (protects context windows). */
-export const MAX_SOURCE_CHARS = 20000;
+export const MAX_SOURCE_CHARS = 30000;
 
 const TEXT_EXT = new Set([
   "txt", "md", "markdown", "json", "html", "htm", "css", "xml", "svg", "py",
@@ -21,7 +24,7 @@ const TEXT_EXT = new Set([
   "tsv", "log", "js", "jsx", "ts", "tsx",
 ]);
 
-export type SourceKind = "note" | "file" | "paste" | "moodle";
+export type SourceKind = "note" | "file" | "paste" | "moodle" | "url";
 
 export interface SourceDescriptor {
   kind: SourceKind;
@@ -29,9 +32,9 @@ export interface SourceDescriptor {
   id?: string;
   /** Pasted text (required for kind "paste"). */
   text?: string;
-  /** Moodle resource URL (required for kind "moodle"). */
+  /** Moodle resource URL or web URL (required for kind "moodle" / "url"). */
   url?: string;
-  /** Moodle resource name (optional, for display). */
+  /** Moodle resource / URL display name (optional, for display). */
   name?: string;
 }
 
@@ -40,9 +43,11 @@ export interface ResolvedSource {
   name: string;
   /** Full (possibly truncated) text content. */
   text: string;
-  /** Reference id for the StudySession log (note id / file id / "paste"). */
+  /** Reference id for the StudySession log (note id / file id / "paste" / url). */
   ref: string;
   truncated: boolean;
+  /** The source kind (echoed back for callers that build StudySource rows). */
+  kind: SourceKind;
 }
 
 function isTextFile(name: string, mime: string): boolean {
@@ -53,6 +58,12 @@ function isTextFile(name: string, mime: string): boolean {
   return TEXT_EXT.has(ext);
 }
 
+function isPdfFile(name: string, mime: string): boolean {
+  if (mime === "application/pdf") return true;
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  return ext === "pdf";
+}
+
 function truncate(text: string): { text: string; truncated: boolean } {
   if (text.length <= MAX_SOURCE_CHARS) return { text, truncated: false };
   return {
@@ -61,15 +72,27 @@ function truncate(text: string): { text: string; truncated: boolean } {
   };
 }
 
+/** Extract text from a PDF buffer using pdf-parse v2 API. */
+async function extractPdfText(buf: Buffer): Promise<string> {
+  const { PDFParse } = await import("pdf-parse");
+  const parser = new PDFParse({ data: new Uint8Array(buf) });
+  try {
+    const result = await parser.getText();
+    return result.text || "";
+  } finally {
+    await parser.destroy().catch(() => {});
+  }
+}
+
 /** Resolve a source descriptor to text content for the LLM. */
 export async function resolveSource(
   userId: string,
   src: SourceDescriptor
 ): Promise<ResolvedSource> {
-  if (src.kind === "paste" || (!src.id && src.text != null)) {
+  if (src.kind === "paste" || (!src.id && src.text != null && src.kind !== "url" && src.kind !== "moodle")) {
     const text = String(src.text ?? "");
     const t = truncate(text);
-    return { name: "Pasted text", text: t.text, ref: "paste", truncated: t.truncated };
+    return { name: "Pasted text", text: t.text, ref: "paste", truncated: t.truncated, kind: "paste" };
   }
 
   if (src.kind === "note") {
@@ -77,20 +100,41 @@ export async function resolveSource(
     const note = await prisma.note.findFirst({ where: { id: src.id, userId } });
     if (!note) throw new Error("Note not found");
     const t = truncate(note.content);
-    return { name: note.title || "Untitled note", text: t.text, ref: note.id, truncated: t.truncated };
+    return { name: note.title || "Untitled note", text: t.text, ref: note.id, truncated: t.truncated, kind: "note" };
   }
 
   if (src.kind === "file") {
     if (!src.id) throw new Error("File id is required");
     const file = await prisma.vFile.findFirst({ where: { id: src.id, userId } });
     if (!file) throw new Error("File not found");
-    if (!isTextFile(file.name, file.mimeType)) {
-      throw new Error(`File '${file.name}' is not a text file`);
-    }
     const abs = path.join(UPLOAD_DIR, file.storageKey);
-    const content = await readFile(abs, "utf-8");
+    const buf = await readFile(abs);
+    let content: string;
+    if (isPdfFile(file.name, file.mimeType)) {
+      content = await extractPdfText(buf);
+      if (!content.trim()) {
+        throw new Error(`Could not extract text from '${file.name}' (it may be a scanned/image-only PDF).`);
+      }
+    } else if (isTextFile(file.name, file.mimeType)) {
+      content = buf.toString("utf-8");
+    } else {
+      throw new Error(`File '${file.name}' is not a supported text or PDF file`);
+    }
     const t = truncate(content);
-    return { name: file.name, text: t.text, ref: file.id, truncated: t.truncated };
+    return { name: file.name, text: t.text, ref: file.id, truncated: t.truncated, kind: "file" };
+  }
+
+  if (src.kind === "url") {
+    if (!src.url) throw new Error("URL is required");
+    const page = await fetchUrl(src.url, MAX_SOURCE_CHARS);
+    const name = src.name?.trim() || page.title || src.url;
+    return {
+      name,
+      text: page.content,
+      ref: src.url,
+      truncated: page.truncated,
+      kind: "url",
+    };
   }
 
   if (src.kind === "moodle") {
@@ -109,8 +153,42 @@ export async function resolveSource(
       text: t.text,
       ref: src.url,
       truncated: t.truncated,
+      kind: "moodle",
     };
   }
 
   throw new Error(`Unknown source kind: ${src.kind}`);
+}
+
+/**
+ * Resolve a source descriptor and persist (or refresh) it as a StudySource row
+ * with the extracted text cached. Returns the StudySource. Dedupes by
+ * (userId, kind, refId) — re-resolving the same note/file/url updates the
+ * cached text in place rather than creating a duplicate.
+ */
+export async function resolveAndCache(
+  userId: string,
+  src: SourceDescriptor
+): Promise<{ id: string; name: string; kind: SourceKind; refId: string; textCache: string; truncated: boolean; charCount: number }> {
+  const resolved = await resolveSource(userId, src);
+  const refId = resolved.ref;
+  const existing = await prisma.studySource.findFirst({
+    where: { userId, kind: resolved.kind, refId },
+  });
+
+  const data = {
+    name: resolved.name.slice(0, 300),
+    textCache: resolved.text,
+    truncated: resolved.truncated,
+    charCount: resolved.text.length,
+  };
+
+  if (existing) {
+    const updated = await prisma.studySource.update({ where: { id: existing.id }, data });
+    return { id: updated.id, ...data, kind: resolved.kind, refId };
+  }
+  const created = await prisma.studySource.create({
+    data: { userId, kind: resolved.kind, refId, ...data },
+  });
+  return { id: created.id, ...data, kind: resolved.kind, refId };
 }

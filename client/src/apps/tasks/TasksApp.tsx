@@ -14,6 +14,7 @@ import type { WindowInstance } from "../../store/windows";
 import LinkDragHandle from "../links/LinkDragHandle";
 import LinkBadge from "../links/LinkBadge";
 import { useLinkDrop } from "../links/useLinkDrop";
+import { useDataRefreshVersion } from "../../store/dataRefresh";
 
 export default function TasksApp(_: { win: WindowInstance }) {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -21,6 +22,7 @@ export default function TasksApp(_: { win: WindowInstance }) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [addingTo, setAddingTo] = useState<TaskStatus | null>(null);
   const [newTitle, setNewTitle] = useState("");
+  const refreshVersion = useDataRefreshVersion("tasks");
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -44,6 +46,11 @@ export default function TasksApp(_: { win: WindowInstance }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Refresh when Athena mutates tasks data (create_task, update_task_status, etc.)
+  useEffect(() => {
+    if (refreshVersion > 0) load();
+  }, [refreshVersion, load]);
 
   const byStatus = (status: TaskStatus) => tasks.filter((t) => t.status === status);
 

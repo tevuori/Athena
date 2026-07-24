@@ -1,7 +1,7 @@
 // ===== Study Hub: Recent Activity =====
 
 import { useState, useEffect } from "react";
-import { Brain, FileText, HelpCircle, Lightbulb, BookOpen, ListTodo, RefreshCw, ChevronRight } from "lucide-react";
+import { Brain, FileText, HelpCircle, Lightbulb, BookOpen, ListTodo, RefreshCw, ChevronRight, MessageSquare, Mic } from "lucide-react";
 import { studyApi, type StudySession } from "../../services/study";
 import { Loading, ErrorBanner } from "./ui";
 import { useWindows } from "../../store/windows";
@@ -13,6 +13,8 @@ const TYPE_META: Record<string, { label: string; icon: typeof Brain; color: stri
   explain: { label: "Explain", icon: Lightbulb, color: "text-yellow-400" },
   study_guide: { label: "Study Guide", icon: BookOpen, color: "text-emerald-400" },
   syllabus: { label: "Tasks", icon: ListTodo, color: "text-rose-400" },
+  chat: { label: "Study Chat", icon: MessageSquare, color: "text-violet-400" },
+  podcast: { label: "Podcast", icon: Mic, color: "text-rose-400" },
 };
 
 function timeAgo(iso: string): string {
@@ -51,6 +53,10 @@ export default function RecentActivity() {
       });
     } else if (s.type === "syllabus") {
       openWindow({ appId: "tasks", title: "Tasks", icon: "CheckSquare" });
+    } else if (s.type === "chat" && meta.chatId) {
+      openWindow({ appId: "study", title: "Study Hub", icon: "GraduationCap", payload: { mode: "chat", chatId: meta.chatId as string } });
+    } else if (s.type === "podcast" && meta.podcastId) {
+      openWindow({ appId: "study", title: "Study Hub", icon: "GraduationCap", payload: { mode: "podcast", podcastId: meta.podcastId as string } });
     }
   };
 
@@ -61,6 +67,8 @@ export default function RecentActivity() {
     if ((s.type === "summary" || s.type === "explain" || s.type === "study_guide") && meta.noteId) return true;
     if (s.type === "quiz" && s.sourceRef && s.sourceRef !== "paste") return true;
     if (s.type === "syllabus") return true;
+    if (s.type === "chat" && meta.chatId) return true;
+    if (s.type === "podcast" && meta.podcastId) return true;
     return false;
   };
 
@@ -105,6 +113,10 @@ export default function RecentActivity() {
               ? `${(s.meta as any).score ?? 0}%`
               : s.type === "syllabus"
               ? `${(s.meta as any).created ?? 0} tasks`
+              : s.type === "chat"
+              ? `${(s.meta as any).citations ?? 0} citations`
+              : s.type === "podcast"
+              ? `${(s.meta as any).sourceCount ?? 0} sources`
               : null;
           const continuable = canContinue(s);
           return (

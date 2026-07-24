@@ -3,11 +3,15 @@
 import { useState, useEffect } from "react";
 import {
   Brain, FileText, HelpCircle, Lightbulb, BookOpen, ListTodo,
-  History, Sparkles, ChevronRight, TrendingUp, Clock,
+  History, Sparkles, ChevronRight, TrendingUp, Clock, MessageSquare, Mic, Plus, Trash2, Link2,
+  FolderOpen, Pencil,
 } from "lucide-react";
 import { studyApi, type StudySession } from "../../services/study";
 import { flashcardsApi } from "../../services/flashcards";
+import { studySourcesApi, type StudySource } from "../../services/study-sources";
+import { studyWorkspacesApi, type LearningWorkspace } from "../../services/study-workspaces";
 import { Loading, ErrorBanner } from "./ui";
+import WorkspaceEditor from "./WorkspaceEditor";
 import { useWindows } from "../../store/windows";
 
 interface DeckRow { id: string; name: string; color: string; _count: { cards: number }; }
@@ -31,34 +35,76 @@ const TYPE_META: Record<string, { label: string; icon: typeof Brain; color: stri
   study_guide: { label: "Study Guide", icon: BookOpen, color: "text-emerald-400" },
   quiz: { label: "Quiz", icon: HelpCircle, color: "text-pink-400" },
   syllabus: { label: "Syllabus", icon: ListTodo, color: "text-orange-400" },
+  chat: { label: "Study Chat", icon: MessageSquare, color: "text-violet-400" },
+  podcast: { label: "Podcast", icon: Mic, color: "text-rose-400" },
 };
 
-export default function StudyHome({ onPickMode }: { onPickMode: (m: string) => void }) {
+export default function StudyHome({ onPickMode }: { onPickMode: (m: string, opts?: { workspaceId?: string }) => void }) {
   const [sessions, setSessions] = useState<StudySession[]>([]);
   const [decks, setDecks] = useState<DeckRow[]>([]);
+  const [sources, setSources] = useState<StudySource[]>([]);
+  const [workspaces, setWorkspaces] = useState<LearningWorkspace[]>([]);
+  const [editingWs, setEditingWs] = useState<LearningWorkspace | null>(null);
+  const [showWsEditor, setShowWsEditor] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const openWindow = useWindows((s) => s.open);
 
-  useEffect(() => {
+  const loadAll = () => {
     Promise.all([
       studyApi.sessions().then((r) => r.sessions).catch(() => [] as StudySession[]),
       flashcardsApi.listDecks().then((r) => r.decks).catch(() => [] as DeckRow[]),
-    ]).then(([s, d]) => {
+      studySourcesApi.list().then((r) => r.sources).catch(() => [] as StudySource[]),
+      studyWorkspacesApi.list().then((r) => r.workspaces).catch(() => [] as LearningWorkspace[]),
+    ]).then(([s, d, src, ws]) => {
       setSessions(s);
       setDecks(d);
+      setSources(src);
+      setWorkspaces(ws);
       setLoading(false);
     }).catch((e) => {
       setError(e instanceof Error ? e.message : "Failed to load");
       setLoading(false);
     });
-  }, []);
+  };
+
+  useEffect(loadAll, []);
+
+  const deleteSource = async (id: string) => {
+    try {
+      await studySourcesApi.remove(id);
+      setSources((prev) => prev.filter((s) => s.id !== id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to delete source");
+    }
+  };
+
+  const deleteWorkspace = async (id: string) => {
+    try {
+      await studyWorkspacesApi.remove(id);
+      setWorkspaces((prev) => prev.filter((w) => w.id !== id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to delete workspace");
+    }
+  };
+
+  const launchWorkspace = (ws: LearningWorkspace, mode: "chat" | "podcast") => {
+    onPickMode(mode, { workspaceId: ws.id });
+  };
+
+  const onWsSaved = (w: LearningWorkspace) => {
+    setWorkspaces((prev) => [w, ...prev.filter((x) => x.id !== w.id)]);
+    setShowWsEditor(false);
+    setEditingWs(null);
+  };
 
   const totalCards = decks.reduce((sum, d) => sum + d._count.cards, 0);
   const lastSession = sessions[0];
   const studyCount = sessions.length;
 
   const quickActions: { mode: string; label: string; icon: typeof Brain; color: string; desc: string }[] = [
+    { mode: "chat", label: "Ask (grounded)", icon: MessageSquare, color: "text-violet-400", desc: "Q&A grounded in your sources, with citations" },
+    { mode: "podcast", label: "Podcast", icon: Mic, color: "text-rose-400", desc: "Audio overview from your sources" },
     { mode: "flashcards", label: "Generate Flashcards", icon: Brain, color: "text-indigo-400", desc: "AI Q/A cards from a note or text" },
     { mode: "summarize", label: "Summarize", icon: FileText, color: "text-sky-400", desc: "TL;DR, outline, or key points" },
     { mode: "quiz", label: "Quiz Me", icon: HelpCircle, color: "text-pink-400", desc: "Test yourself, AI-graded" },
@@ -104,6 +150,89 @@ export default function StudyHome({ onPickMode }: { onPickMode: (m: string) => v
         </div>
       </div>
 
+      {/* Learning workspaces */}
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Learning workspaces</span>
+          <button
+            onClick={() => { setEditingWs(null); setShowWsEditor(true); }}
+            className="flex items-center gap-1 text-[10px] text-ink-muted hover:text-ink"
+          >
+            <Plus size={11} /> New workspace
+          </button>
+        </div>
+
+        {showWsEditor && (
+          <WorkspaceEditor
+            workspace={editingWs}
+            onSaved={onWsSaved}
+            onCancel={() => { setShowWsEditor(false); setEditingWs(null); }}
+          />
+        )}
+
+        {workspaces.length === 0 && !showWsEditor ? (
+          <div className="rounded-lg border border-dashed border-edge bg-surface-2 p-4 text-center">
+            <FolderOpen size={22} className="mx-auto mb-1.5 text-ink-muted opacity-40" />
+            <p className="text-xs text-ink-muted">
+              No workspaces yet. Group your sources into a named workspace so you can open grounded chats and podcasts without re-picking sources each time.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-2 @3xl:grid-cols-2">
+            {workspaces.map((ws) => (
+              <div
+                key={ws.id}
+                className="group flex flex-col gap-2 rounded-lg border border-edge bg-surface-2 p-3"
+              >
+                <div className="flex items-start gap-2">
+                  <span
+                    className="mt-1 h-3 w-3 shrink-0 rounded-full"
+                    style={{ background: ws.color ?? "#6366f1" }}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-ink">{ws.name}</p>
+                    {ws.description && (
+                      <p className="truncate text-[11px] text-ink-muted">{ws.description}</p>
+                    )}
+                    <p className="text-[10px] text-ink-muted">{ws.sourceIds.length} source{ws.sourceIds.length === 1 ? "" : "s"}</p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition group-hover:opacity-100">
+                    <button
+                      onClick={() => { setEditingWs(ws); setShowWsEditor(true); }}
+                      className="rounded p-1 text-ink-muted hover:text-ink"
+                      title="Edit workspace"
+                    >
+                      <Pencil size={12} />
+                    </button>
+                    <button
+                      onClick={() => void deleteWorkspace(ws.id)}
+                      className="rounded p-1 text-ink-muted hover:text-red-400"
+                      title="Delete workspace"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => launchWorkspace(ws, "chat")}
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-edge bg-surface px-2 py-1.5 text-[11px] font-medium text-ink transition hover:border-accent/50 hover:text-accent"
+                  >
+                    <MessageSquare size={12} /> Ask
+                  </button>
+                  <button
+                    onClick={() => launchWorkspace(ws, "podcast")}
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-edge bg-surface px-2 py-1.5 text-[11px] font-medium text-ink transition hover:border-accent/50 hover:text-accent"
+                  >
+                    <Mic size={12} /> Podcast
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Quick actions */}
       <div className="flex flex-col gap-2">
         <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Quick actions</span>
@@ -147,6 +276,46 @@ export default function StudyHome({ onPickMode }: { onPickMode: (m: string) => v
           </div>
         </div>
       )}
+
+      {/* Source library */}
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Source library</span>
+          <button
+            onClick={() => onPickMode("chat")}
+            className="flex items-center gap-1 text-[10px] text-ink-muted hover:text-ink"
+          >
+            <Plus size={11} /> Add via Ask
+          </button>
+        </div>
+        {sources.length === 0 ? (
+          <div className="rounded-md border border-edge bg-surface-2 p-3 text-xs text-ink-muted">
+            No sources yet. Open "Ask (grounded)" or "Podcast" to add notes, files (incl. PDF), URLs, or pasted text.
+          </div>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            {sources.slice(0, 6).map((s) => (
+              <div
+                key={s.id}
+                className="group flex items-center gap-2.5 rounded-md border border-edge bg-surface-2 px-3 py-2 text-xs"
+              >
+                <FileText size={14} className="shrink-0 text-ink-muted" />
+                <div className="flex flex-1 flex-col">
+                  <span className="truncate font-medium text-ink">{s.name}</span>
+                  <span className="text-[10px] text-ink-muted uppercase">{s.kind}{s.truncated ? " · truncated" : ""}</span>
+                </div>
+                <button
+                  onClick={() => void deleteSource(s.id)}
+                  className="shrink-0 rounded p-0.5 text-ink-muted opacity-0 transition hover:text-red-400 group-hover:opacity-100"
+                  title="Remove source"
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Recent activity */}
       {sessions.length > 0 && (

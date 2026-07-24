@@ -2,13 +2,14 @@ import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Brain, Plus, Trash2, ArrowLeft, ChevronRight, RotateCcw,
-  Check, X, AlertCircle, Layers, Sparkles,
+  Check, X, AlertCircle, Layers, Sparkles, FileText,
 } from "lucide-react";
 import { flashcardsApi } from "../../services/flashcards";
 import { linksApi } from "../../services/links";
 import type { Flashcard, FlashcardDeck } from "../../types";
 import { useWindows } from "../../store/windows";
 import type { WindowInstance } from "../../store/windows";
+import { useDataRefreshVersion } from "../../store/dataRefresh";
 import { setLinkPayload } from "../links/linkDnd";
 import LinkDragHandle from "../links/LinkDragHandle";
 import LinkBadge from "../links/LinkBadge";
@@ -21,6 +22,7 @@ const DECK_COLORS = ["#6366f1", "#ec4899", "#22c55e", "#f59e0b", "#06b6d4", "#8b
 export default function FlashcardsApp({ win }: { win: WindowInstance }) {
   const [view, setView] = useState<View>("decks");
   const openWindow = useWindows((s) => s.open);
+  const refreshVersion = useDataRefreshVersion("flashcards");
   const [decks, setDecks] = useState<(FlashcardDeck & { _count: { cards: number } })[]>([]);
   const [selectedDeck, setSelectedDeck] = useState<FlashcardDeck | null>(null);
   const [cards, setCards] = useState<Flashcard[]>([]);
@@ -57,6 +59,11 @@ export default function FlashcardsApp({ win }: { win: WindowInstance }) {
   }, []);
 
   useEffect(() => { loadDecks(); }, [loadDecks]);
+
+  // Refresh when Athena generates flashcards (generate_flashcards tool)
+  useEffect(() => {
+    if (refreshVersion > 0) loadDecks();
+  }, [refreshVersion, loadDecks]);
 
   // Auto-open a deck when opened with a deckId payload (e.g. from Athena's
   // generate_flashcards tool or the Study Hub "Open deck" button).
@@ -296,6 +303,11 @@ export default function FlashcardsApp({ win }: { win: WindowInstance }) {
                     <div className="min-w-0 flex-1">
                       <p className="mb-1 text-sm font-medium text-ink">{card.front}</p>
                       <p className="text-xs text-ink-muted">{card.back}</p>
+                      {card.sourceRef && (
+                        <span className="mt-1 inline-flex items-center gap-1 rounded bg-surface-3 px-1.5 py-0.5 text-[10px] text-ink-muted" title="Source this card was generated from">
+                          <FileText size={9} /> {card.sourceRef}
+                        </span>
+                      )}
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                       <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
