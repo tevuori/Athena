@@ -354,9 +354,12 @@ teacher.post("/:id/stream", zValidator("json", streamSchema), async (c) => {
       errored = true;
       const msg = e instanceof Error ? e.message : "Generation failed";
       const status = e instanceof LlmError ? e.status : 500;
+      console.error(`[teacher] generation error: ${msg} (status=${status}, contentLen=${full.length}, tools=${toolEvents.length})`);
       await stream.writeSSE({ event: "error", data: JSON.stringify({ error: msg, status }) });
       if (!full.trim()) return;
     }
+
+    console.log(`[teacher] stream done: contentLen=${full.length}, tools=${toolEvents.length}, errored=${errored}`);
 
     // Persist the assistant message.
     const assistantMsg: StoredMessage = {
