@@ -25,6 +25,10 @@ services:
       # Requires the Docker socket mounted below + runsc installed on the host.
       SANDBOX_ENABLED: ${SANDBOX_ENABLED:-true}
       SANDBOX_DOCKER_RUNTIME: ${SANDBOX_DOCKER_RUNTIME:-runsc}
+      # Shared temp directory for sandbox code files. Must be the same path on
+      # both the host and this container so the Docker daemon can resolve -v
+      # mounts when spawning sandbox containers via the socket.
+      SANDBOX_HOST_TMP: /tmp/athena-sandbox
     volumes:
       - athena-data:/app/data
       - athena-uploads:/app/uploads
@@ -33,6 +37,8 @@ services:
       # run inside a userspace kernel that intercepts syscalls, preventing
       # container escape to the host.
       - /var/run/docker.sock:/var/run/docker.sock
+      # Shared temp dir for sandbox code files (same path on host + container).
+      - /tmp/athena-sandbox:/tmp/athena-sandbox
     restart: unless-stopped
 
   client:
