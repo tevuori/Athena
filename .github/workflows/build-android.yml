@@ -78,15 +78,21 @@ jobs:
           java-version: "21"
 
       - name: Set up Android SDK
-        # ubuntu-latest already has the Android SDK pre-installed at
-        # /usr/local/lib/android/sdk. We just need to ensure the platform +
-        # build-tools matching our compileSdkVersion (36) are present.
-        # Using sdkmanager directly (not the setup-android action) because the
-        # action joins multi-package inputs with newlines and passes them as a
-        # single argument, which sdkmanager rejects.
+        # ubuntu-latest has the Android SDK pre-installed at $ANDROID_HOME
+        # (=/usr/local/lib/android/sdk), but sdkmanager isn't on PATH by
+        # default — it lives under cmdline-tools/<version>/bin/. Add it to
+        # PATH, accept licenses, then install the platform + build-tools
+        # matching our compileSdkVersion (36).
         run: |
-          yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+          # Find the sdkmanager binary wherever cmdline-tools put it.
+          SDKMAN=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | head -1)
+          if [ -z "$SDKMAN" ]; then
+            echo "::error::sdkmanager not found under $ANDROID_HOME/cmdline-tools"
+            exit 1
+          fi
+          echo "Using sdkmanager at: $SDKMAN"
+          yes | "$SDKMAN" --licenses >/dev/null 2>&1 || true
+          "$SDKMAN" "platforms;android-36" "build-tools;36.0.0"
 
       - name: Install root dependencies
         run: bun install --frozen-lockfile
