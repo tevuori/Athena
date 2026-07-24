@@ -282,6 +282,35 @@ teacher.post("/:id/stream", zValidator("json", streamSchema), async (c) => {
     const plugin = new AthenaToolsPlugin(ALL_TOOLS, { userId, windows: clientWindows });
     model.addPlugin(plugin);
 
+    // Patch the internal OpenAI client's fetch to retry on transient
+    // "Upstream request failed" 400 errors from the provider. This happens
+    // intermittently during multi-step tool call loops (same fix as athena.ts).
+    const engine = (model as any).engine;
+    const client = engine?.client;
+    if (client && typeof client.fetch === "function") {
+      const origFetch = client.fetch.bind(client);
+      client.fetch = async (url: string, init?: any) => {
+        const maxRetries = 5;
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+          const res = await origFetch(url, init);
+          if (res.status !== 400 || attempt === maxRetries) return res;
+          const cloned = res.clone();
+          let isTransient = false;
+          try {
+            const body = await cloned.json();
+            const msg = body?.error?.message ?? body?.message ?? "";
+            isTransient = /upstream request failed/i.test(msg);
+          } catch { /* not JSON */ }
+          if (!isTransient) return res;
+          const base = Math.min(2000 * 2 ** attempt, 32000);
+          const jitter = Math.floor(Math.random() * 500);
+          console.warn(`[teacher] transient upstream error, retrying (${attempt + 1}/${maxRetries}) in ${base + jitter}ms…`);
+          await new Promise((r) => setTimeout(r, base + jitter));
+        }
+        return origFetch(url, init);
+      };
+    }
+
     let full = "";
     let errored = false;
     const toolEvents: { id: string; name: string; state: string }[] = [];
