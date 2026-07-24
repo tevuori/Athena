@@ -6,7 +6,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Sparkles, Send, Square, Plus, MessageSquare, Trash2, Loader2,
-  AlertCircle, ChevronDown,
+  AlertCircle, ChevronDown, PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 import {
   studyChatApi,
@@ -53,7 +53,8 @@ export default function SourceChat({ initialChatId, initialWorkspaceId, language
   // Source library + selection
   const [library, setLibrary] = useState<StudySource[]>([]);
   const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(new Set());
-  const [showSourcePanel, setShowSourcePanel] = useState(false);
+  const [showSourcePanel, setShowSourcePanel] = useState(true);
+  const [historyCollapsed, setHistoryCollapsed] = useState(false);
 
   const [listOpen, setListOpen] = useState(false);
 
@@ -69,11 +70,6 @@ export default function SourceChat({ initialChatId, initialWorkspaceId, language
       return next;
     });
   };
-
-  /** Selected StudySource objects resolved from the library. */
-  const selectedSources = [...selectedSourceIds]
-    .map((id) => library.find((s) => s.id === id))
-    .filter((s): s is StudySource => s !== null);
 
   // Load chat list + source library on mount.
   const refreshLists = useCallback(async () => {
@@ -173,13 +169,13 @@ export default function SourceChat({ initialChatId, initialWorkspaceId, language
 
   const ensureChat = async (): Promise<StudyChat | null> => {
     if (chat) return chat;
-    if (selectedSources.length === 0) {
+    if (selectedSourceIds.size === 0) {
       setError("Add at least one source to ground the chat.");
       return null;
     }
     try {
       const { chat: created } = await studyChatApi.create({
-        sourceIds: selectedSources.map((s) => s.id),
+        sourceIds: [...selectedSourceIds],
       });
       setChat(created);
       setChatId(created.id);
@@ -293,48 +289,67 @@ export default function SourceChat({ initialChatId, initialWorkspaceId, language
 
   return (
     <div className="flex h-full min-h-0 gap-3">
-      {/* Chat history sidebar */}
-      <div className="hidden w-56 shrink-0 flex-col gap-2 @4xl:flex">
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">History</span>
-          <button
-            onClick={startNewChat}
-            className="flex items-center gap-1 rounded-md border border-edge px-1.5 py-0.5 text-[10px] text-ink-muted hover:bg-surface-2 hover:text-ink"
-            title="New chat"
-          >
-            <Plus size={10} /> New
-          </button>
-        </div>
-        <div className="flex flex-1 flex-col gap-1 overflow-y-auto">
-          {chats.length === 0 ? (
-            <p className="px-1 py-2 text-[11px] text-ink-muted">No chats yet.</p>
-          ) : (
-            chats.map((c) => (
-              <div
-                key={c.id}
-                className={`group flex items-center gap-1.5 rounded-md border px-2 py-1.5 text-xs transition ${
-                  chatId === c.id ? "border-accent/40 bg-accent/10" : "border-transparent hover:bg-surface-2"
-                }`}
+      {/* Chat history sidebar — collapsible */}
+      {historyCollapsed ? (
+        <button
+          onClick={() => setHistoryCollapsed(false)}
+          className="hidden shrink-0 items-center self-start rounded-md border border-edge bg-surface-2 p-1.5 text-ink-muted hover:bg-surface-3 hover:text-ink @4xl:flex"
+          title="Show history"
+        >
+          <PanelLeftOpen size={14} />
+        </button>
+      ) : (
+        <div className="hidden w-56 shrink-0 flex-col gap-2 @4xl:flex">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">History</span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={startNewChat}
+                className="flex items-center gap-1 rounded-md border border-edge px-1.5 py-0.5 text-[10px] text-ink-muted hover:bg-surface-2 hover:text-ink"
+                title="New chat"
               >
-                <button
-                  onClick={() => void loadChat(c.id)}
-                  className="flex flex-1 flex-col items-start text-left"
+                <Plus size={10} /> New
+              </button>
+              <button
+                onClick={() => setHistoryCollapsed(true)}
+                className="rounded-md border border-edge p-0.5 text-ink-muted hover:bg-surface-2 hover:text-ink"
+                title="Collapse history"
+              >
+                <PanelLeftClose size={12} />
+              </button>
+            </div>
+          </div>
+          <div className="flex flex-1 flex-col gap-1 overflow-y-auto">
+            {chats.length === 0 ? (
+              <p className="px-1 py-2 text-[11px] text-ink-muted">No chats yet.</p>
+            ) : (
+              chats.map((c) => (
+                <div
+                  key={c.id}
+                  className={`group flex items-center gap-1.5 rounded-md border px-2 py-1.5 text-xs transition ${
+                    chatId === c.id ? "border-accent/40 bg-accent/10" : "border-transparent hover:bg-surface-2"
+                  }`}
                 >
-                  <span className="truncate text-ink">{c.title}</span>
-                  <span className="text-[10px] text-ink-muted">{c.sourceIds.length} src · {timeAgo(c.updatedAt)}</span>
-                </button>
-                <button
-                  onClick={() => void deleteChat(c.id)}
-                  className="shrink-0 rounded p-0.5 text-ink-muted opacity-0 transition hover:text-red-400 group-hover:opacity-100"
-                  title="Delete chat"
-                >
-                  <Trash2 size={11} />
-                </button>
-              </div>
-            ))
-          )}
+                  <button
+                    onClick={() => void loadChat(c.id)}
+                    className="flex flex-1 flex-col items-start text-left"
+                  >
+                    <span className="truncate text-ink">{c.title}</span>
+                    <span className="text-[10px] text-ink-muted">{c.sourceIds.length} src · {timeAgo(c.updatedAt)}</span>
+                  </button>
+                  <button
+                    onClick={() => void deleteChat(c.id)}
+                    className="shrink-0 rounded p-0.5 text-ink-muted opacity-0 transition hover:text-red-400 group-hover:opacity-100"
+                    title="Delete chat"
+                  >
+                    <Trash2 size={11} />
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Chat panel */}
       <div className="flex min-w-0 flex-1 flex-col gap-3">
@@ -430,7 +445,7 @@ export default function SourceChat({ initialChatId, initialWorkspaceId, language
             <div className="flex flex-1 flex-col items-center justify-center gap-2 py-8 text-center">
               <Sparkles size={28} className="text-ink-muted opacity-40" />
               <p className="text-xs text-ink-muted">
-                {selectedSources.length === 0
+                {selectedSourceIds.size === 0
                   ? "Add sources above, then ask a question grounded in them."
                   : "Ask a question about your sources. Answers cite the source for every claim."}
               </p>
@@ -487,7 +502,7 @@ export default function SourceChat({ initialChatId, initialWorkspaceId, language
                 void send();
               }
             }}
-            placeholder={selectedSources.length === 0 ? "Add sources first…" : "Ask about your sources…"}
+            placeholder={selectedSourceIds.size === 0 ? "Add sources first…" : "Ask about your sources…"}
             rows={2}
             className="flex-1 resize-y rounded-md border border-edge bg-surface-2 px-3 py-2 text-sm text-ink outline-none focus:border-accent"
           />
@@ -496,7 +511,7 @@ export default function SourceChat({ initialChatId, initialWorkspaceId, language
               <Square size={13} /> Stop
             </ActionButton>
           ) : (
-            <ActionButton onClick={send} disabled={!input.trim() || selectedSources.length === 0}>
+            <ActionButton onClick={send} disabled={!input.trim() || selectedSourceIds.size === 0}>
               <Send size={13} /> Send
             </ActionButton>
           )}
