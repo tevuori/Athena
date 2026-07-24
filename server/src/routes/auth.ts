@@ -3,14 +3,18 @@ import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
 import bcrypt from "bcryptjs";
 import prisma from "../db/client";
-import { signToken } from "../services/jwt";
+import { signToken, issueRefreshToken, rotateRefreshToken, revokeRefreshToken } from "../services/jwt";
 import { authMiddleware } from "../middleware/auth";
+import { rateLimit } from "../middleware/rateLimit";
 
 const auth = new Hono();
 
 const loginSchema = z.object({
   username: z.string().min(1),
   password: z.string().min(1),
+  rememberMe: z.boolean().optional().default(false),
+  deviceFingerprint: z.string().max(256).optional().default(""),
+  deviceLabel: z.string().max(256).optional().default(""),
 });
 
 const registerSchema = z.object({
@@ -35,32 +39,100 @@ function publicUser(u: {
   };
 }
 
+/** Derive a short human-readable device label from the User-Agent header. */
+function deviceLabelFromUA(ua: string): string {
+  if (!ua) return "Unknown device";
+  let os = "Unknown OS";
+  if (/Windows/i.test(ua)) os = "Windows";
+  else if (/Android/i.test(ua)) os = "Android";
+  else if (/iPhone|iPad|iPod/i.test(ua)) os = "iOS";
+  else if (/Mac OS X/i.test(ua)) os = "macOS";
+  else if (/Linux/i.test(ua)) os = "Linux";
+  let browser = "Browser";
+  if (/Edg/i.test(ua)) browser = "Edge";
+  else if (/Chrome/i.test(ua)) browser = "Chrome";
+  else if (/Firefox/i.test(ua)) browser = "Firefox";
+  else if (/Safari/i.test(ua)) browser = "Safari";
+  return `${browser} on ${os}`;
+}
+
+// 5 login attempts per 15s per IP — brute-force protection for the public site.
+const loginLimiter = rateLimit({ max: 5, windowMs: 15_000 });
+
 /** POST /auth/login */
-auth.post("/login", zValidator("json", loginSchema), async (c) => {
-  const { username, password } = c.req.valid("json");
+auth.post("/login", loginLimiter, zValidator("json", loginSchema), async (c) => {
+  const { username, password, rememberMe, deviceFingerprint, deviceLabel } = c.req.valid("json");
   const user = await prisma.user.findUnique({ where: { username } });
   if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
     return c.json({ error: "Invalid username or password" }, 401);
   }
   const token = await signToken({ sub: user.id, username: user.username });
-  return c.json({ token, user: publicUser(user) });
+  let refreshToken: string | null = null;
+  if (rememberMe && deviceFingerprint) {
+    const label = deviceLabel || deviceLabelFromUA(c.req.header("user-agent") ?? "");
+    refreshToken = await issueRefreshToken({
+      userId: user.id,
+      deviceFingerprint,
+      deviceLabel: label,
+    });
+  }
+  return c.json({ token, refreshToken, user: publicUser(user) });
 });
 
-/** POST /auth/register — only allowed if no users exist yet (bootstrap), or always for dev. */
-auth.post("/register", zValidator("json", registerSchema), async (c) => {
+/**
+ * POST /auth/register — bootstrap-only.
+ * Allowed only when zero users exist (first admin setup). Once any user exists,
+ * self-registration is closed; admins create users via /api/users.
+ */
+auth.post("/register", rateLimit({ max: 5, windowMs: 60_000 }), zValidator("json", registerSchema), async (c) => {
+  const userCount = await prisma.user.count();
+  if (userCount > 0) {
+    return c.json({ error: "Registration is closed. Ask an administrator for an account." }, 403);
+  }
   const { username, password, displayName } = c.req.valid("json");
   const existing = await prisma.user.findUnique({ where: { username } });
   if (existing) {
     return c.json({ error: "Username already taken" }, 409);
   }
   const passwordHash = await bcrypt.hash(password, 10);
-  // First user becomes an admin; subsequent self-registrations are regular users.
-  const userCount = await prisma.user.count();
   const user = await prisma.user.create({
-    data: { username, passwordHash, displayName, role: userCount === 0 ? "ADMIN" : "USER" },
+    data: { username, passwordHash, displayName, role: "ADMIN" },
   });
   const token = await signToken({ sub: user.id, username: user.username });
-  return c.json({ token, user: publicUser(user) });
+  return c.json({ token, refreshToken: null, user: publicUser(user) });
+});
+
+const refreshSchema = z.object({
+  refreshToken: z.string().min(1),
+  deviceFingerprint: z.string().min(1).max(256),
+});
+
+/** POST /auth/refresh — exchange a refresh token for a new access JWT (rotates the refresh token). */
+auth.post("/refresh", zValidator("json", refreshSchema), async (c) => {
+  const { refreshToken, deviceFingerprint } = c.req.valid("json");
+  const result = await rotateRefreshToken({ token: refreshToken, deviceFingerprint });
+  if (!result) {
+    return c.json({ error: "Invalid or expired refresh token" }, 401);
+  }
+  const user = await prisma.user.findUnique({ where: { id: result.userId } });
+  if (!user) {
+    return c.json({ error: "Invalid or expired refresh token" }, 401);
+  }
+  const token = await signToken({ sub: user.id, username: user.username });
+  return c.json({ token, refreshToken: result.token, user: publicUser(user) });
+});
+
+const logoutSchema = z.object({
+  refreshToken: z.string().optional(),
+});
+
+/** POST /auth/logout — revoke the provided refresh token (device). */
+auth.post("/logout", zValidator("json", logoutSchema), async (c) => {
+  const { refreshToken } = c.req.valid("json");
+  if (refreshToken) {
+    await revokeRefreshToken(refreshToken);
+  }
+  return c.json({ ok: true });
 });
 
 /** GET /auth/me */
@@ -69,6 +141,53 @@ auth.get("/me", authMiddleware, async (c) => {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) return c.json({ error: "Not found" }, 404);
   return c.json(publicUser(user));
+});
+
+// ---------- Devices (active sessions) ----------
+
+/** GET /auth/devices — list the current user's remembered devices. */
+auth.get("/devices", authMiddleware, async (c) => {
+  const { userId } = c.get("auth");
+  const rows = await prisma.refreshToken.findMany({
+    where: { userId, expiresAt: { gt: new Date() } },
+    orderBy: { lastUsedAt: "desc" },
+    select: {
+      id: true,
+      deviceLabel: true,
+      deviceFingerprint: true,
+      lastUsedAt: true,
+      createdAt: true,
+      expiresAt: true,
+    },
+  });
+  return c.json(
+    rows.map((r) => ({
+      id: r.id,
+      deviceLabel: r.deviceLabel,
+      lastUsedAt: r.lastUsedAt.toISOString(),
+      createdAt: r.createdAt.toISOString(),
+      expiresAt: r.expiresAt.toISOString(),
+    }))
+  );
+});
+
+/** DELETE /auth/devices/:id — revoke a remembered device (ends that session). */
+auth.delete("/devices/:id", authMiddleware, async (c) => {
+  const { userId } = c.get("auth");
+  const targetId = c.req.param("id");
+  const row = await prisma.refreshToken.findUnique({ where: { id: targetId } });
+  if (!row || row.userId !== userId) {
+    return c.json({ error: "Device not found" }, 404);
+  }
+  await prisma.refreshToken.delete({ where: { id: targetId } });
+  return c.json({ ok: true });
+});
+
+/** DELETE /auth/devices — revoke all of the current user's devices (force re-login everywhere). */
+auth.delete("/devices", authMiddleware, async (c) => {
+  const { userId } = c.get("auth");
+  await prisma.refreshToken.deleteMany({ where: { userId } });
+  return c.json({ ok: true });
 });
 
 // ---------- Profile + password (self-service) ----------
@@ -110,6 +229,8 @@ auth.post("/password", authMiddleware, zValidator("json", passwordSchema), async
     where: { id: userId },
     data: { passwordHash: await bcrypt.hash(newPassword, 10) },
   });
+  // Revoke all refresh tokens — force re-login on other devices after a password change.
+  await prisma.refreshToken.deleteMany({ where: { userId } });
   return c.json({ ok: true });
 });
 
@@ -173,7 +294,7 @@ auth.delete("/account", authMiddleware, zValidator("json", deleteSchema), async 
   if (!(await bcrypt.compare(password, user.passwordHash))) {
     return c.json({ error: "Password is incorrect" }, 401);
   }
-  // Cascade deletes handle all related user data (notes, tasks, files, etc.).
+  // Cascade deletes handle all related user data (notes, tasks, files, refresh tokens, etc.).
   await prisma.user.delete({ where: { id: userId } });
   return c.json({ ok: true });
 });

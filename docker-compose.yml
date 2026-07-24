@@ -4,8 +4,8 @@ services:
       context: ./server
       dockerfile: Dockerfile
     container_name: athena-server
-    ports:
-      - "3001:3000"
+    expose:
+      - "3000"
     environment:
       SERVER_PORT: 3000
       SERVER_HOST: 0.0.0.0
@@ -13,20 +13,19 @@ services:
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
       SEED_USERNAME: ${SEED_USERNAME:-admin}
       SEED_PASSWORD: ${SEED_PASSWORD:-admin}
+      # Comma-separated list of allowed CORS origins. For a single-origin public
+      # deploy behind the host nginx, set this to the public URL.
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN:-}
       SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID}
       SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET}
       SPOTIFY_REFRESH_TOKEN: ${SPOTIFY_REFRESH_TOKEN}
-      SPOTIFY_REDIRECT_URI: ${SPOTIFY_REDIRECT_URI:-http://localhost:5173/auth/spotify/callback}
-      # Athena code execution sandbox (run_code tool). Requires Docker socket
-      # mounted below. Set to "false" to disable code execution.
-      SANDBOX_ENABLED: ${SANDBOX_ENABLED:-true}
+      SPOTIFY_REDIRECT_URI: ${SPOTIFY_REDIRECT_URI:-https://athena.tevuori.eu/auth/spotify/callback}
+      # Disable the Athena code-execution sandbox on public multi-user deployments
+      # (it requires the host Docker socket, which is unsafe to share there).
+      SANDBOX_ENABLED: ${SANDBOX_ENABLED:-false}
     volumes:
       - athena-data:/app/data
       - athena-uploads:/app/uploads
-      # Docker socket for the Athena code execution sandbox (run_code tool).
-      # Mount only on trusted single-user deployments. Set SANDBOX_ENABLED=false
-      # to disable code execution without removing this mount.
-      - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
 
   client:
@@ -35,9 +34,8 @@ services:
       dockerfile: Dockerfile
     container_name: athena-client
     ports:
-      - "5173:80"
-    environment:
-      VITE_API_URL: http://localhost:3001
+      # Bind to localhost only — the host nginx terminates TLS and proxies to this.
+      - "127.0.0.1:8080:80"
     depends_on:
       - server
     restart: unless-stopped
