@@ -21,6 +21,7 @@ import type { VFolder } from "../../types";
 import { useSettings, type AthenaRollEdge } from "../../store/settings";
 import { useAthenaQuick } from "../../store/athenaQuick";
 import { useBrowser } from "../../store/browser";
+import { useDataRefresh } from "../../store/dataRefresh";
 
 interface ChatTurn extends AthenaMessage {
   tools?: AthenaToolEvent[];
@@ -674,6 +675,9 @@ export default function AthenaApp({
             });
           },
           onClientAction: (action) => dispatchClientAction(action),
+          onDataChange: (tool) => {
+            if (tool) useDataRefresh.getState().notifyTool(tool);
+          },
           onError: (msg) => {
             setTurns((prev) => {
               const next = [...prev];

@@ -22,9 +22,15 @@ import {
   quizGenerateSchemaHint,
   quizGradePrompt,
   quizGradeSchemaHint,
+  flashcardsCitedPrompt,
+  flashcardsCitedSchemaHint,
+  summarizeCitedPrompt,
+  explainCitedPrompt,
+  studyGuideCitedPrompt,
   type FlashcardSpec,
   type QuizQuestionSpec,
   type SyllabusTaskSpec,
+  type CitedFlashcardSpec,
 } from "../services/study/prompts";
 import { createQuiz, getQuiz, deleteQuiz, type StoredQuizQuestion } from "../services/study/quiz-store";
 import { logSessionSafe } from "../services/study/logSession";
@@ -82,10 +88,10 @@ study.post("/flashcards", zValidator("json", flashcardsSchema), async (c) => {
 
   let result;
   try {
-    result = await generateJson<{ cards: FlashcardSpec[] }>(
+    result = await generateJson<{ cards: CitedFlashcardSpec[] }>(
       loaded.model,
-      flashcardsPrompt(resolved.text, body.count, body.mode),
-      flashcardsSchemaHint()
+      flashcardsCitedPrompt([{ index: 1, name: resolved.name, text: resolved.text }], body.count, body.mode),
+      flashcardsCitedSchemaHint()
     );
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : "Generation failed" }, 502);
@@ -113,6 +119,7 @@ study.post("/flashcards", zValidator("json", flashcardsSchema), async (c) => {
       data: cards.map((card) => ({
         front: String(card.front).slice(0, 2000),
         back: String(card.back).slice(0, 2000),
+        sourceRef: resolved.name.slice(0, 200),
         deckId: deck.id,
       })),
     });
@@ -158,7 +165,7 @@ study.post("/summarize", zValidator("json", summarizeSchema), async (c) => {
   try {
     summary = await generateText(
       loaded.model,
-      summarizePrompt(resolved.text, body.mode),
+      summarizeCitedPrompt(resolved.text, body.mode, resolved.name),
       "You are a study assistant. Summarize accurately in clear Markdown. Do not invent information."
     );
   } catch (e) {
@@ -212,7 +219,7 @@ study.post("/explain", zValidator("json", explainSchema), async (c) => {
   try {
     explanation = await generateText(
       loaded.model,
-      explainPrompt(resolved.text, body.depth),
+      explainCitedPrompt(resolved.text, body.depth, resolved.name),
       "You are a study assistant. Explain clearly and accurately in Markdown with examples. Do not invent information."
     );
   } catch (e) {
@@ -280,11 +287,14 @@ study.post("/study-guide", zValidator("json", studyGuideSchema), async (c) => {
 
   if (materials.length === 0) return c.json({ error: "No notes or sources found" }, 404);
 
+  // Number materials 1..N for the cited prompt's [n] markers.
+  const citedMaterials = materials.map((m, i) => ({ index: i + 1, name: m.title, content: m.content }));
+
   let guide: string;
   try {
     guide = await generateText(
       loaded.model,
-      studyGuidePrompt(materials),
+      studyGuideCitedPrompt(citedMaterials),
       "You are a study assistant. Create a clear, comprehensive study guide in Markdown. Do not invent information."
     );
   } catch (e) {

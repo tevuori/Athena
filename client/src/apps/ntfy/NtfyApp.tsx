@@ -7,6 +7,7 @@ import {
   Bell, Send, RefreshCw, Plus, Trash2, Play, Check, X, Clock, Settings as Cog,
 } from "lucide-react";
 import { ntfyApi } from "../../services/ntfy";
+import { useDataRefreshVersion } from "../../store/dataRefresh";
 import type { NtfyStatus, NtfyMessage, NtfyCronJob, NtfyCronInput } from "../../services/ntfy";
 
 type Tab = "setup" | "messages" | "cron";
@@ -388,6 +389,7 @@ function CronTab() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<NtfyCronJob | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const refreshVersion = useDataRefreshVersion("ntfy");
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -400,6 +402,11 @@ function CronTab() {
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  // Refresh when Athena mutates ntfy cron jobs (create/update/delete_cron_job)
+  useEffect(() => {
+    if (refreshVersion > 0) refresh();
+  }, [refreshVersion, refresh]);
 
   const toggle = async (job: NtfyCronJob) => {
     try {

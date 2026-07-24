@@ -38,6 +38,7 @@ export interface AthenaStreamCallbacks {
   onReasoning?: (text: string) => void;
   onTool?: (ev: AthenaToolEvent) => void;
   onClientAction?: (action: AthenaClientAction) => void;
+  onDataChange?: (tool: string) => void;
   onUsage?: (usage: unknown) => void;
   onError?: (message: string, status?: number) => void;
   onDone?: () => void;
@@ -122,6 +123,9 @@ export function streamAthenaChat(
           break;
         case "client_action":
           cb.onClientAction?.(parsed as AthenaClientAction);
+          break;
+        case "data_change":
+          cb.onDataChange?.(parsed.tool ?? "");
           break;
         case "usage":
           cb.onUsage?.(parsed.usage);

@@ -21,6 +21,9 @@ import {
   Flame,
   Check,
   Loader2,
+  MessageSquare,
+  Mic,
+  FileText,
 } from "lucide-react";
 import { useWindows, type AppId } from "../../store/windows";
 import { useAuth } from "../../store/auth";
@@ -29,6 +32,9 @@ import { flashcardsApi } from "../../services/flashcards";
 import { vutApi } from "../../services/vut";
 import { calendarApi } from "../../services/calendar";
 import { habitsApi } from "../../services/habits";
+import { studySourcesApi } from "../../services/study-sources";
+import { studyChatApi } from "../../services/study-chat";
+import { studyPodcastsApi } from "../../services/study-podcasts";
 import { usePullToRefresh } from "../../shell/mobile/usePullToRefresh";
 import type { Task, TaskPriority, VutTimetableSlot, CalendarEvent, Habit, HabitStats } from "../../types";
 
@@ -99,6 +105,9 @@ export default function TodayApp() {
   const [todayEvents, setTodayEvents] = useState<CalendarEvent[]>([]);
   const [habits, setHabits] = useState<Habit[]>([]);
   const [habitStats, setHabitStats] = useState<HabitStats[]>([]);
+  const [sourceCount, setSourceCount] = useState(0);
+  const [chatCount, setChatCount] = useState(0);
+  const [podcastCount, setPodcastCount] = useState(0);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -114,13 +123,16 @@ export default function TodayApp() {
     const dayEnd = new Date();
     dayEnd.setHours(23, 59, 59, 999);
 
-    const [tasksRes, dueRes, statusRes, feedRes, habitsRes, habitStatsRes] = await Promise.all([
+    const [tasksRes, dueRes, statusRes, feedRes, habitsRes, habitStatsRes, sourcesRes, chatsRes, podcastsRes] = await Promise.all([
       tasksApi.list().catch(() => null),
       flashcardsApi.getDue().catch(() => null),
       statusPromise,
       calendarApi.feed(dayStart.toISOString(), dayEnd.toISOString()).catch(() => null),
       habitsApi.list().catch(() => null),
       habitsApi.stats().catch(() => null),
+      studySourcesApi.list().catch(() => null),
+      studyChatApi.list().catch(() => null),
+      studyPodcastsApi.list().catch(() => null),
     ]);
 
     if (tasksRes?.tasks) setTasks(tasksRes.tasks);
@@ -140,6 +152,9 @@ export default function TodayApp() {
     if (feedRes?.events) setTodayEvents(feedRes.events);
     if (habitsRes?.habits) setHabits(habitsRes.habits);
     if (habitStatsRes?.stats) setHabitStats(habitStatsRes.stats);
+    if (sourcesRes?.sources) setSourceCount(sourcesRes.sources.length);
+    if (chatsRes?.chats) setChatCount(chatsRes.chats.length);
+    if (podcastsRes?.podcasts) setPodcastCount(podcastsRes.podcasts.length);
     const st = statusRes as VutStatus | null;
     setVutStatus(st);
     if (st?.authenticated) {
@@ -479,6 +494,45 @@ export default function TodayApp() {
                 </div>
               );
             })}
+          </SectionCard>
+
+          {/* Study Hub */}
+          <SectionCard
+            icon={<GraduationCap size={16} />}
+            title="Study Hub"
+            accent="text-violet-500"
+            badge={sourceCount > 0 ? sourceCount : undefined}
+            onOpen={() => openApp("study", "Study Hub", "GraduationCap")}
+            openLabel="Open Study Hub"
+            loading={loading}
+            empty="No sources yet — add notes, files, or URLs to ground your study"
+          >
+            <button
+              onClick={() => openApp("study", "Study Hub", "GraduationCap", { mode: "chat" })}
+              className="flex w-full items-center gap-2.5 py-1.5 text-left"
+            >
+              <MessageSquare size={15} className="shrink-0 text-violet-400" />
+              <p className="min-w-0 flex-1 truncate text-sm text-ink">Ask (grounded Q&A)</p>
+              {chatCount > 0 && <span className="shrink-0 text-[11px] text-ink-muted">{chatCount}</span>}
+              <ArrowRight size={12} className="shrink-0 text-ink-muted" />
+            </button>
+            <button
+              onClick={() => openApp("study", "Study Hub", "GraduationCap", { mode: "podcast" })}
+              className="flex w-full items-center gap-2.5 py-1.5 text-left"
+            >
+              <Mic size={15} className="shrink-0 text-rose-400" />
+              <p className="min-w-0 flex-1 truncate text-sm text-ink">Podcast overview</p>
+              {podcastCount > 0 && <span className="shrink-0 text-[11px] text-ink-muted">{podcastCount}</span>}
+              <ArrowRight size={12} className="shrink-0 text-ink-muted" />
+            </button>
+            <button
+              onClick={() => openApp("study", "Study Hub", "GraduationCap", { mode: "flashcards" })}
+              className="flex w-full items-center gap-2.5 py-1.5 text-left"
+            >
+              <FileText size={15} className="shrink-0 text-indigo-400" />
+              <p className="min-w-0 flex-1 truncate text-sm text-ink">Generate flashcards</p>
+              <ArrowRight size={12} className="shrink-0 text-ink-muted" />
+            </button>
           </SectionCard>
         </div>
       </div>

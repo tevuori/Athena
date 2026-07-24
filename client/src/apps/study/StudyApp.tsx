@@ -12,6 +12,8 @@ import {
   History,
   GraduationCap,
   Home,
+  MessageSquare,
+  Mic,
 } from "lucide-react";
 import type { WindowInstance } from "../../store/windows";
 import type { SourceDescriptor, SourceKind } from "../../services/study";
@@ -24,9 +26,13 @@ import SyllabusTasks from "./SyllabusTasks";
 import QuizMe from "./QuizMe";
 import RecentActivity from "./RecentActivity";
 import StudyHome from "./StudyHome";
+import SourceChat from "./SourceChat";
+import Podcast from "./Podcast";
 
 type Mode =
   | "home"
+  | "chat"
+  | "podcast"
   | "flashcards"
   | "summarize"
   | "explain"
@@ -37,6 +43,8 @@ type Mode =
 
 const MODES: { id: Mode; label: string; icon: typeof Brain; desc: string }[] = [
   { id: "home", label: "Home", icon: Home, desc: "Overview & quick actions" },
+  { id: "chat", label: "Ask (grounded)", icon: MessageSquare, desc: "Source-grounded Q&A with citations" },
+  { id: "podcast", label: "Podcast", icon: Mic, desc: "Audio overview from your sources" },
   { id: "flashcards", label: "Flashcards", icon: Brain, desc: "Generate Q/A cards from a source" },
   { id: "summarize", label: "Summarize", icon: FileText, desc: "TL;DR, outline, or key points" },
   { id: "quiz", label: "Quiz Me", icon: HelpCircle, desc: "Test yourself with AI-graded questions" },
@@ -51,6 +59,9 @@ export default function StudyApp({ win }: { win: WindowInstance }) {
   const [initialSource, setInitialSource] = useState<SourceDescriptor | null>(null);
   const [appendDeck, setAppendDeck] = useState<{ id: string; name: string } | null>(null);
   const [preloadedQuizId, setPreloadedQuizId] = useState<string | null>(null);
+  const [initialChatId, setInitialChatId] = useState<string | null>(null);
+  const [initialPodcastId, setInitialPodcastId] = useState<string | null>(null);
+  const [initialWorkspaceId, setInitialWorkspaceId] = useState<string | null>(null);
 
   // Honor a payload sent when opening (e.g. from Athena's open_study_hub or
   // start_quiz tool).
@@ -74,6 +85,21 @@ export default function StudyApp({ win }: { win: WindowInstance }) {
     // so QuizMe can jump straight into the answering phase.
     if (typeof p.quizId === "string") {
       setPreloadedQuizId(p.quizId);
+    }
+    // Deep links to a specific grounded chat / podcast.
+    if (typeof p.chatId === "string") {
+      setInitialChatId(p.chatId);
+      setMode("chat");
+    }
+    if (typeof p.podcastId === "string") {
+      setInitialPodcastId(p.podcastId);
+      setMode("podcast");
+    }
+    if (typeof p.workspaceId === "string") {
+      setInitialWorkspaceId(p.workspaceId);
+      if (typeof p.mode === "string" && (p.mode === "chat" || p.mode === "podcast")) {
+        setMode(p.mode);
+      }
     }
   }, [win.payload]);
 
@@ -117,16 +143,26 @@ export default function StudyApp({ win }: { win: WindowInstance }) {
 
       {/* Main */}
       <div className="flex-1 overflow-y-auto p-5">
-        <div className="mx-auto max-w-none @5xl:max-w-2xl">
-          {mode === "home" && <StudyHome onPickMode={(m) => setMode(m as Mode)} />}
-          {mode === "flashcards" && <GenerateFlashcards initialSource={initialSource} appendDeck={appendDeck} />}
-          {mode === "summarize" && <Summarize initialSource={initialSource} />}
-          {mode === "explain" && <Explain initialSource={initialSource} />}
-          {mode === "study_guide" && <StudyGuide />}
-          {mode === "quiz" && <QuizMe initialSource={initialSource} preloadedQuizId={preloadedQuizId} />}
-          {mode === "syllabus" && <SyllabusTasks initialSource={initialSource} />}
-          {mode === "recent" && <RecentActivity />}
-        </div>
+        {mode === "chat" ? (
+          <div className="h-full">
+            <SourceChat initialChatId={initialChatId} initialWorkspaceId={initialWorkspaceId} />
+          </div>
+        ) : (
+          <div className="mx-auto max-w-none @5xl:max-w-2xl">
+            {mode === "home" && <StudyHome onPickMode={(m, opts) => {
+              setMode(m as Mode);
+              if (opts?.workspaceId) setInitialWorkspaceId(opts.workspaceId);
+            }} />}
+            {mode === "podcast" && <Podcast initialPodcastId={initialPodcastId} initialWorkspaceId={initialWorkspaceId} />}
+            {mode === "flashcards" && <GenerateFlashcards initialSource={initialSource} appendDeck={appendDeck} />}
+            {mode === "summarize" && <Summarize initialSource={initialSource} />}
+            {mode === "explain" && <Explain initialSource={initialSource} />}
+            {mode === "study_guide" && <StudyGuide />}
+            {mode === "quiz" && <QuizMe initialSource={initialSource} preloadedQuizId={preloadedQuizId} />}
+            {mode === "syllabus" && <SyllabusTasks initialSource={initialSource} />}
+            {mode === "recent" && <RecentActivity />}
+          </div>
+        )}
       </div>
     </div>
   );

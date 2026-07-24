@@ -62,3 +62,8 @@ export function toolManifest() {
 export const CLIENT_ACTION_TOOLS = new Set(
   ALL_TOOLS.filter((t) => t.clientAction).map((t) => t.name)
 );
+
+/** Names of tools that mutate data (used to emit `data_change` SSE events). */
+export const DESTRUCTIVE_TOOLS = new Set(
+  ALL_TOOLS.filter((t) => t.destructive).map((t) => t.name)
+);

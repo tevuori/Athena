@@ -44,6 +44,10 @@ model User {
   refreshTokens RefreshToken[]
   spotifyCredential  SpotifyCredential?
   microsoftCredential MicrosoftCredential?
+  studySources  StudySource[]
+  studyChats    StudyChat[]
+  podcasts      Podcast[]
+  studyWorkspaces LearningWorkspace[]
 }
 
 // ===== Refresh tokens (device-remembering) =====
@@ -243,6 +247,7 @@ model Note {
   pinned    Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  podcasts  Podcast[]
 
   @@index([userId, folderId])
   @@index([userId, updatedAt])
@@ -362,6 +367,9 @@ model Flashcard {
   deck        FlashcardDeck @relation(fields: [deckId], references: [id], onDelete: Cascade)
   front       String
   back        String
+  // Optional reference to the StudySource / note / file a card was generated from
+  // (used to render a "from: <source>" chip on the card). Free-form label, not an FK.
+  sourceRef   String   @default("")
   // SM-2 algorithm fields
   easeFactor  Float    @default(2.5)
   interval    Int      @default(0)  // days
@@ -547,4 +555,95 @@ model HabitLog {
 
   @@unique([habitId, date])
   @@index([userId, date])
+}
+
+// ===== Study Hub: NotebookLM-style sources / chats / podcasts =====
+
+// A persistent study source: a note, file (incl. PDF), pasted text, Moodle
+// resource, or web URL that has been resolved to plain text and cached so it
+// can be reused across grounded Q&A, podcasts, and cited study materials
+// without re-extracting on every use.
+model StudySource {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  // "note" | "file" | "paste" | "moodle" | "url"
+  kind      String
+  // Note/file id, "paste", or the URL (for moodle/url). Free-form, not an FK.
+  refId     String   @default("")
+  // Truncated extracted plain text (capped at MAX_SOURCE_CHARS). Re-extractable
+  // via the /refresh endpoint when the underlying note/file changes.
+  textCache String   @default("")
+  truncated Boolean  @default(false)
+  charCount Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([userId, kind])
+}
+
+// A persisted source-grounded Q&A conversation (NotebookLM "notebook").
+// Scoped to a fixed set of StudySources whose text is injected into the
+// system prompt as numbered SOURCE blocks for inline [n] citations.
+model StudyChat {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String   @default("New Study Chat")
+  // JSON array of StudySource ids this chat is grounded on.
+  sourceIds String   @default("[]")
+  // JSON array of { role: "user"|"assistant", content: string, citations?: [{index,name,refId,kind}], timestamp: string }
+  messages  String   @default("[]")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lastMessageAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([userId, updatedAt])
+}
+
+// An audio overview / "podcast" generated from one or more StudySources.
+// The LLM writes a 2-host dialogue script (saved as a Note); audio is played
+// back in-browser via the Web Speech API (see client usePodcastTts). The
+// script note is the persistent, downloadable artifact.
+model Podcast {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  // The saved dialogue script note.
+  scriptNoteId String?
+  scriptNote Note?  @relation(fields: [scriptNoteId], references: [id], onDelete: SetNull)
+  // JSON array of StudySource ids this podcast was generated from.
+  sourceIds String   @default("[]")
+  host1Label String  @default("Host A")
+  host2Label String  @default("Host B")
+  // Rough duration estimate in seconds (derived from script length).
+  durationEstimate Int @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([userId, createdAt])
+}
+
+// A named, persistent group of StudySources — a "learning workspace" / notebook.
+// The student builds the source set once and reuses it to start grounded chats
+// or podcasts without re-picking sources each time. One workspace can back
+// many StudyChats and Podcasts.
+model LearningWorkspace {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  color       String?  // optional accent color (hex)
+  // JSON array of StudySource ids included in this workspace.
+  sourceIds   String   @default("[]")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([userId, updatedAt])
 }

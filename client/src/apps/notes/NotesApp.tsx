@@ -18,6 +18,7 @@ import { filesApi } from "../../services/files";
 import { linksApi } from "../../services/links";
 import { useSettings } from "../../store/settings";
 import { useWindows } from "../../store/windows";
+import { useDataRefreshVersion } from "../../store/dataRefresh";
 import type { Note, NoteFolder } from "../../types";
 import type { WindowInstance } from "../../store/windows";
 import { setLinkPayload, readLinkPayload, allowLinkDrop } from "../links/linkDnd";
@@ -30,6 +31,7 @@ const SAVE_DEBOUNCE_MS = 1500;
 export default function NotesApp({ win }: { win: WindowInstance }) {
   const isDark = useSettings((s) => s.theme === "dark");
   const openWindow = useWindows((s) => s.open);
+  const refreshVersion = useDataRefreshVersion("notes");
 
   const [folders, setFolders] = useState<NoteFolder[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
@@ -57,6 +59,7 @@ export default function NotesApp({ win }: { win: WindowInstance }) {
   const [noteMenu, setNoteMenu] = useState<{ x: number; y: number; noteId: string } | null>(null);
   const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [expandedNoteId, setExpandedNoteId] = useState<string | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   // Dirty tracking (per-note) for save indicator + debounced flush.
@@ -102,6 +105,14 @@ export default function NotesApp({ win }: { win: WindowInstance }) {
   useEffect(() => {
     loadNotes();
   }, [loadNotes]);
+
+  // Refresh when Athena mutates notes data (create_note, summarize_note, etc.)
+  useEffect(() => {
+    if (refreshVersion > 0) {
+      loadFolders();
+      loadNotes();
+    }
+  }, [refreshVersion, loadFolders, loadNotes]);
 
   // Auto-select a note when opened with a noteId payload (e.g. from the
   // Study Hub "Open note" button after generating a summary/explanation).
@@ -591,8 +602,12 @@ export default function NotesApp({ win }: { win: WindowInstance }) {
           ) : notes.length === 0 ? (
             <p className="p-4 text-center text-xs text-ink-muted">No notes yet</p>
           ) : (
-            notes.map((note) => (
-              <button
+            notes.map((note) => {
+              const stripped = note.content.replace(/[#*`>\-]/g, "").trim();
+              const isLong = stripped.length > 80;
+              const isExpanded = expandedNoteId === note.id;
+              return (
+              <div
                 key={note.id}
                 draggable
                 onDragStart={(e) => {
@@ -604,7 +619,7 @@ export default function NotesApp({ win }: { win: WindowInstance }) {
                   e.preventDefault();
                   setNoteMenu({ x: e.clientX, y: e.clientY, noteId: note.id });
                 }}
-                className={`group block w-full border-b border-edge/50 px-3 py-2.5 text-left transition ${
+                className={`group block w-full cursor-pointer border-b border-edge/50 px-3 py-2.5 text-left transition ${
                   selectedId === note.id ? "bg-accent/10" : "hover:bg-surface-2"
                 }`}
               >
@@ -627,9 +642,46 @@ export default function NotesApp({ win }: { win: WindowInstance }) {
                     </span>
                   </div>
                 </div>
-                <p className="mt-0.5 line-clamp-2 text-[11px] text-ink-muted">
-                  {note.content.replace(/[#*`>\-]/g, "").slice(0, 80) || "Empty note"}
-                </p>
+                {isLong ? (
+                  isExpanded ? (
+                    <div className="mt-0.5">
+                      <p
+                        className="select-text whitespace-pre-wrap break-words text-[11px] text-ink-muted"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {stripped || "Empty note"}
+                      </p>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setExpandedNoteId(null);
+                        }}
+                        className="mt-0.5 text-[10px] font-medium text-accent hover:underline"
+                      >
+                        Show less
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="mt-0.5">
+                      <p className="line-clamp-2 text-[11px] text-ink-muted">
+                        {stripped.slice(0, 80) || "Empty note"}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setExpandedNoteId(note.id);
+                          }}
+                          className="ml-1 inline text-[10px] font-medium text-accent hover:underline"
+                        >
+                          …more
+                        </button>
+                      </p>
+                    </div>
+                  )
+                ) : (
+                  <p className="mt-0.5 line-clamp-2 text-[11px] text-ink-muted">
+                    {stripped || "Empty note"}
+                  </p>
+                )}
                 {note.tags && (
                   <div className="mt-1 flex flex-wrap gap-1">
                     {note.tags.split(",").filter(Boolean).slice(0, 3).map((t) => (
@@ -639,8 +691,9 @@ export default function NotesApp({ win }: { win: WindowInstance }) {
                     ))}
                   </div>
                 )}
-              </button>
-            ))
+              </div>
+              );
+            })
           )}
         </div>
       </div>

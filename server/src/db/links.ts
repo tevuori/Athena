@@ -12,6 +12,9 @@ export const LINK_TYPES = [
   "flashcardDeck",
   "calendarEvent",
   "file",
+  "studySource",
+  "studyChat",
+  "podcast",
 ] as const;
 export type LinkType = (typeof LINK_TYPES)[number];
 
@@ -101,6 +104,27 @@ export async function resolveLinkTitle(
         select: { name: true },
       });
       return f ? f.name : null;
+    }
+    case "studySource": {
+      const s = await prisma.studySource.findFirst({
+        where: { id, userId },
+        select: { name: true },
+      });
+      return s ? s.name : null;
+    }
+    case "studyChat": {
+      const c = await prisma.studyChat.findFirst({
+        where: { id, userId },
+        select: { title: true },
+      });
+      return c ? c.title : null;
+    }
+    case "podcast": {
+      const p = await prisma.podcast.findFirst({
+        where: { id, userId },
+        select: { title: true },
+      });
+      return p ? p.title : null;
     }
     default:
       return null;

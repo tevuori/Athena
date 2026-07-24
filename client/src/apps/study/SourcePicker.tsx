@@ -6,7 +6,7 @@ import { useState, useEffect, useMemo } from "react";
 import {
   StickyNote, FileText, ClipboardPaste, Search, GraduationCap,
   ChevronRight, ArrowLeft, Loader2, AlertCircle, File, Link2, FileCode,
-  ListChecks, Folder as FolderIcon,
+  ListChecks, Folder as FolderIcon, Globe,
 } from "lucide-react";
 import { notesApi } from "../../services/notes";
 import { filesApi } from "../../services/files";
@@ -22,11 +22,13 @@ const TEXT_EXT = new Set([
   "tsv", "log", "js", "jsx", "ts", "tsx",
 ]);
 
-function isTextFile(f: VFile): boolean {
+/** A file is pickable as a study source if it's a text file OR a PDF. */
+function isStudyFile(f: VFile): boolean {
   if (f.mimeType.startsWith("text/")) return true;
   if (["application/json", "application/xml", "application/javascript", "application/x-yaml"].includes(f.mimeType)) return true;
+  if (f.mimeType === "application/pdf") return true;
   const ext = f.name.split(".").pop()?.toLowerCase() ?? "";
-  return TEXT_EXT.has(ext);
+  return TEXT_EXT.has(ext) || ext === "pdf";
 }
 
 const ACTIVITY_ICONS: Record<string, typeof File> = {
@@ -56,6 +58,7 @@ export default function SourcePicker({ value, onChange, hidePaste }: SourcePicke
   const [pasteText, setPasteText] = useState(value?.kind === "paste" ? value.text ?? "" : "");
   const [selectedNoteId, setSelectedNoteId] = useState(value?.kind === "note" ? value.id ?? "" : "");
   const [selectedFileId, setSelectedFileId] = useState(value?.kind === "file" ? value.id ?? "" : "");
+  const [urlText, setUrlText] = useState(value?.kind === "url" ? value.url ?? "" : "");
   const [loading, setLoading] = useState(false);
 
   // Moodle state
@@ -74,7 +77,7 @@ export default function SourcePicker({ value, onChange, hidePaste }: SourcePicke
     }
     if (kind === "file" && files.length === 0) {
       setLoading(true);
-      filesApi.all().then((r) => setFiles(r.files.filter(isTextFile))).finally(() => setLoading(false));
+      filesApi.all().then((r) => setFiles(r.files.filter(isStudyFile))).finally(() => setLoading(false));
     }
     if (kind === "moodle" && !moodleStatus) {
       moodleApi.status().then(setMoodleStatus).catch(() => setMoodleStatus({ configured: false, authenticated: false }));
@@ -92,12 +95,15 @@ export default function SourcePicker({ value, onChange, hidePaste }: SourcePicke
     } else if (kind === "file") {
       if (selectedFileId) onChange({ kind: "file", id: selectedFileId });
       else onChange(null);
+    } else if (kind === "url") {
+      if (urlText.trim()) onChange({ kind: "url", url: urlText.trim() });
+      else onChange(null);
     } else if (kind === "moodle") {
       if (selectedMoodleUrl) onChange({ kind: "moodle", url: selectedMoodleUrl, name: selectedMoodleName });
       else onChange(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kind, pasteText, selectedNoteId, selectedFileId, selectedMoodleUrl, selectedMoodleName]);
+  }, [kind, pasteText, selectedNoteId, selectedFileId, urlText, selectedMoodleUrl, selectedMoodleName]);
 
   const filteredNotes = useMemo(() => {
     if (!noteQuery.trim()) return notes;
@@ -152,6 +158,7 @@ export default function SourcePicker({ value, onChange, hidePaste }: SourcePicke
     { k: "note", label: "Note", icon: StickyNote },
     { k: "file", label: "File", icon: FileText },
     ...(!hidePaste ? [{ k: "paste" as SourceKind, label: "Paste", icon: ClipboardPaste }] : []),
+    { k: "url", label: "URL", icon: Globe },
     { k: "moodle", label: "Moodle", icon: GraduationCap },
   ];
 
@@ -251,6 +258,21 @@ export default function SourcePicker({ value, onChange, hidePaste }: SourcePicke
           rows={6}
           className="w-full resize-y rounded-md border border-edge bg-surface px-2.5 py-2 text-xs text-ink outline-none focus:border-accent"
         />
+      )}
+
+      {kind === "url" && (
+        <div className="flex flex-col gap-1.5">
+          <div className="relative">
+            <Globe size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-ink-muted" />
+            <input
+              value={urlText}
+              onChange={(e) => setUrlText(e.target.value)}
+              placeholder="https://example.com/article"
+              className="w-full rounded-md border border-edge bg-surface px-7 py-1.5 text-xs text-ink outline-none focus:border-accent"
+            />
+          </div>
+          <p className="text-[10px] text-ink-muted">The page's main article text is extracted server-side (Readability).</p>
+        </div>
       )}
 
       {kind === "moodle" && (

@@ -125,6 +125,8 @@ export interface Flashcard {
   repetitions: number;
   dueDate: string;
   lastReviewed: string | null;
+  /** Source label the card was generated from (e.g. note title / file name). */
+  sourceRef?: string | null;
 }
 
 // ===== Grades =====
@@ -256,7 +258,15 @@ export interface WhiteboardSummary {
 
 // ===== Item links (drag-to-link between apps) =====
 
-export type LinkType = "note" | "task" | "flashcardDeck" | "calendarEvent" | "file";
+export type LinkType =
+  | "note"
+  | "task"
+  | "flashcardDeck"
+  | "calendarEvent"
+  | "file"
+  | "studySource"
+  | "studyChat"
+  | "podcast";
 
 /** A resolved link returned by GET /api/links — the "other" side of a link. */
 export interface LinkedItem {

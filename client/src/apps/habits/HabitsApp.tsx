@@ -6,6 +6,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Flame, Plus, Trash2, Check, X, RefreshCw, TrendingUp } from "lucide-react";
 import { habitsApi } from "../../services/habits";
+import { useDataRefreshVersion } from "../../store/dataRefresh";
 import type { Habit, HabitStats } from "../../types";
 
 interface PomodoroStats {
@@ -40,6 +41,7 @@ export default function HabitsApp() {
   const [selectedHabit, setSelectedHabit] = useState<Habit | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [pomoStats, setPomoStats] = useState<PomodoroStats | null>(loadPomodoroStats);
+  const refreshVersion = useDataRefreshVersion("habits");
 
   // Form state
   const [name, setName] = useState("");
@@ -69,6 +71,11 @@ export default function HabitsApp() {
     const id = setInterval(() => setPomoStats(loadPomodoroStats()), 30_000);
     return () => clearInterval(id);
   }, [refresh]);
+
+  // Refresh when Athena mutates habits data (create_habit, log_habit, etc.)
+  useEffect(() => {
+    if (refreshVersion > 0) refresh();
+  }, [refreshVersion, refresh]);
 
   const today = todayKey();
 
