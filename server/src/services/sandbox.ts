@@ -15,6 +15,11 @@
 //   SANDBOX_DOCKER_RUNTIME — docker runtime for sandbox containers (e.g. "runsc"
 //                            for gVisor). When set, adds --runtime=<value> to
 //                            docker run. Recommended for public deployments.
+//   SANDBOX_HOST_TMP      — temp dir for code files, must be visible from both
+//                            the host and the server container when the Docker
+//                            socket is mounted (Docker-in-Docker). Defaults to
+//                            /tmp (fine for local dev; set to a bind-mounted
+//                            shared dir for containerized deployments).
 
 import { spawn } from "node:child_process";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
@@ -41,6 +46,12 @@ const PYTHON_IMAGE = process.env.SANDBOX_PYTHON_IMAGE ?? "python:3.12-slim";
 const NODE_IMAGE = process.env.SANDBOX_NODE_IMAGE ?? "node:22-slim";
 const DOCKER_RUNTIME = process.env.SANDBOX_DOCKER_RUNTIME ?? ""; // e.g. "runsc"
 const MAX_OUTPUT_BYTES = 50 * 1024; // 50 KB per stream
+// When running inside a Docker container (Docker socket mounted from host),
+// temp files must be written to a path that exists on BOTH the host and this
+// container. SANDBOX_HOST_TMP should be a directory bind-mounted at the same
+// path in both (see docker-compose.yml). Defaults to /tmp for local dev where
+// the server runs directly on the host.
+const HOST_TMP = process.env.SANDBOX_HOST_TMP ?? "/tmp";
 
 let dockerChecked: boolean | null = null;
 
@@ -181,7 +192,7 @@ export async function runCode(
   // Write code to a temp file on the host, mount it read-only into the container.
   let tmpDir: string | null = null;
   try {
-    tmpDir = await mkdtemp(path.join(tmpdir(), "athena-sandbox-"));
+    tmpDir = await mkdtemp(path.join(HOST_TMP, "athena-sandbox-"));
     const filePath = path.join(tmpDir, filename);
     await writeFile(filePath, code, "utf-8");
 
