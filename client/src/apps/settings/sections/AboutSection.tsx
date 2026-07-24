@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Info, RefreshCw, Loader2, Heart } from "lucide-react";
+import { Info, RefreshCw, Loader2, Heart, Sparkles } from "lucide-react";
 import { useSettings } from "../../../store/settings";
 import { SectionHeader, Card, StatusPill } from "../ui";
 
@@ -13,7 +13,7 @@ interface HealthInfo {
 }
 
 export default function AboutSection() {
-  const { setTheme, setAccent, setWallpaper, setAnimatedBg, setVolume, setNotificationsEnabled, setDoNotDisturb } =
+  const { setTheme, setAccent, setWallpaper, setAnimatedBg, setVolume, setNotificationsEnabled, setDoNotDisturb, setHasOnboarded } =
     useSettings();
   const [health, setHealth] = useState<HealthInfo | null>(null);
   const [resetting, setResetting] = useState(false);
@@ -75,6 +75,19 @@ export default function AboutSection() {
         ) : (
           <p className="text-sm text-ink-muted">Unable to reach /health.</p>
         )}
+      </Card>
+
+      <Card className="mb-3">
+        <h4 className="mb-1 text-sm font-semibold text-ink">Onboarding tour</h4>
+        <p className="mb-3 text-xs text-ink-muted">
+          New to Athena? Replay the guided tour to learn about all the apps and features.
+        </p>
+        <button
+          onClick={() => setHasOnboarded(false)}
+          className="flex items-center gap-1.5 rounded-lg border border-edge px-3 py-2 text-sm text-ink hover:bg-surface-3"
+        >
+          <Sparkles size={14} /> Replay tour
+        </button>
       </Card>
 
       <Card>

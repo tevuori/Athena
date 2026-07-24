@@ -52,9 +52,9 @@ const SECTIONS: SectionDef[] = [
   { id: "about", label: "About", icon: <Info size={15} /> },
 ];
 
-export default function SettingsApp(_: { win: WindowInstance }) {
+export default function SettingsApp({ win }: { win: WindowInstance }) {
   const { user } = useAuth();
-  const [active, setActive] = useState("appearance");
+  const [active, setActive] = useState((win.payload?.section as string) || "appearance");
   const isAdmin = user?.role === "ADMIN";
 
   const visibleSections = SECTIONS.filter((s) => !s.adminOnly || isAdmin);
