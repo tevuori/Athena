@@ -20,12 +20,19 @@ services:
       SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET}
       SPOTIFY_REFRESH_TOKEN: ${SPOTIFY_REFRESH_TOKEN}
       SPOTIFY_REDIRECT_URI: ${SPOTIFY_REDIRECT_URI:-https://athena.tevuori.eu/auth/spotify/callback}
-      # Disable the Athena code-execution sandbox on public multi-user deployments
-      # (it requires the host Docker socket, which is unsafe to share there).
-      SANDBOX_ENABLED: ${SANDBOX_ENABLED:-false}
+      # Athena code execution sandbox (run_code tool). Uses gVisor (runsc)
+      # runtime for kernel-level isolation — safe for public multi-user hosts.
+      # Requires the Docker socket mounted below + runsc installed on the host.
+      SANDBOX_ENABLED: ${SANDBOX_ENABLED:-true}
+      SANDBOX_DOCKER_RUNTIME: ${SANDBOX_DOCKER_RUNTIME:-runsc}
     volumes:
       - athena-data:/app/data
       - athena-uploads:/app/uploads
+      # Docker socket for the Athena code execution sandbox (run_code tool).
+      # Safe when combined with the gVisor (runsc) runtime — sandbox containers
+      # run inside a userspace kernel that intercepts syscalls, preventing
+      # container escape to the host.
+      - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
 
   client:
