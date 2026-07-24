@@ -78,11 +78,15 @@ jobs:
           java-version: "21"
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: |
-            platforms;android-36
-            build-tools;36.0.0
+        # ubuntu-latest already has the Android SDK pre-installed at
+        # /usr/local/lib/android/sdk. We just need to ensure the platform +
+        # build-tools matching our compileSdkVersion (36) are present.
+        # Using sdkmanager directly (not the setup-android action) because the
+        # action joins multi-package inputs with newlines and passes them as a
+        # single argument, which sdkmanager rejects.
+        run: |
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
       - name: Install root dependencies
         run: bun install --frozen-lockfile
