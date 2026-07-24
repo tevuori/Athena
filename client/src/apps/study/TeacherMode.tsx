@@ -101,7 +101,7 @@ export default function TeacherMode({ initialSessionId, language = "en" }: Props
   const [autoSpeak, setAutoSpeak] = useState(false);
   const [listening, setListening] = useState(false);
   const [interimText, setInterimText] = useState("");
-  const tts = useTeacherTts();
+  const tts = useTeacherTts({ language });
   const transcriberRef = useRef<SpeechTranscriber | null>(null);
   const sttSupported = isSpeechRecognitionSupported();
 
@@ -683,7 +683,7 @@ export default function TeacherMode({ initialSessionId, language = "en" }: Props
               title={autoSpeak ? "Auto-speak on (Athena will read her replies aloud)" : "Auto-speak off"}
             >
               {autoSpeak ? <Volume2 size={12} /> : <VolumeX size={12} />}
-              Auto-speak ({tts.provider === "elevenlabs" ? "ElevenLabs" : tts.provider === "webspeech" ? "Web Speech" : "off"})
+              Auto-speak ({tts.provider === "server" ? "Voice" : tts.provider === "webspeech" ? "Web Speech" : "off"})
             </button>
             {tts.playing && (
               <button onClick={tts.stop} className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-ink-muted hover:bg-surface-2 hover:text-ink">

@@ -1,9 +1,9 @@
-// ===== TTS route (ElevenLabs synthesis + credential CRUD) =====
+// ===== TTS route (Edge TTS primary + ElevenLabs optional premium) =====
 // POST /synthesize         — synthesize text → audio/mpeg
-// POST /synthesize/timed   — synthesize with character-level timestamps
-// GET  /config             — check if TTS is configured (no key returned)
-// PUT  /credential         — save ElevenLabs API key (encrypted)
-// DELETE /credential       — remove stored credential
+// POST /synthesize/timed   — synthesize with word boundaries / timestamps
+// GET  /config             — check if TTS is configured + provider info
+// PUT  /credential         — save ElevenLabs API key (encrypted, optional)
+// DELETE /credential       — remove stored ElevenLabs credential
 
 import { Hono } from "hono";
 import { z } from "zod";
@@ -13,9 +13,9 @@ import { authMiddleware } from "../middleware/auth";
 import { encryptSecret } from "../services/crypto";
 import {
   getTtsConfig,
-  isTtsConfiguredFor,
-  synthesizeSpeech,
-  synthesizeSpeechWithTimestamps,
+  resolveTtsProvider,
+  synthesize,
+  synthesizeTimed,
 } from "../services/tts";
 
 const tts = new Hono();
@@ -25,18 +25,21 @@ tts.use("*", authMiddleware);
 
 tts.get("/config", async (c) => {
   const { userId } = c.get("auth");
-  const configured = await isTtsConfiguredFor(userId);
+  const provider = await resolveTtsProvider(userId);
   const cfg = await getTtsConfig(userId);
   return c.json({
-    configured,
+    configured: true, // Edge TTS is always available
     hasUserKey: Boolean(await prisma.ttsCredential.findUnique({ where: { userId } })),
+    provider,
+    // ElevenLabs config (if set)
     voiceId: cfg.voiceId,
     modelId: cfg.modelId,
-    provider: "elevenlabs",
+    // Edge TTS is always available
+    edgeAvailable: true,
   });
 });
 
-// ---------- credential CRUD ----------
+// ---------- credential CRUD (ElevenLabs — optional premium) ----------
 
 const credSchema = z.object({
   apiKey: z.string().min(1).max(500),
@@ -71,6 +74,8 @@ tts.delete("/credential", async (c) => {
 
 const synthSchema = z.object({
   text: z.string().min(1).max(5000),
+  language: z.enum(["en", "cs"]).optional().default("en"),
+  voice: z.string().max(100).optional(),
   stability: z.number().min(0).max(1).optional(),
   similarityBoost: z.number().min(0).max(1).optional(),
   speed: z.number().min(0.5).max(2).optional(),
@@ -80,12 +85,10 @@ const synthSchema = z.object({
 tts.post("/synthesize", zValidator("json", synthSchema), async (c) => {
   const { userId } = c.get("auth");
   const body = c.req.valid("json");
-  const cfg = await getTtsConfig(userId);
-  if (!cfg.apiKey) {
-    return c.json({ error: "No TTS provider configured. Add an ElevenLabs API key in Settings or set ELEVENLABS_API_KEY." }, 400);
-  }
   try {
-    const result = await synthesizeSpeech(cfg, body.text, {
+    const result = await synthesize(userId, body.text, {
+      language: body.language,
+      voice: body.voice,
       stability: body.stability,
       similarityBoost: body.similarityBoost,
       speed: body.speed,
@@ -103,17 +106,16 @@ tts.post("/synthesize", zValidator("json", synthSchema), async (c) => {
   }
 });
 
-/** POST /synthesize/timed — returns JSON { audio_base64, alignment }.
- *  The client uses alignment for speech-synced highlighting. */
+/** POST /synthesize/timed — returns JSON { audio_base64, wordBoundaries?, alignment? }.
+ *  The client uses wordBoundaries (Edge TTS) or alignment (ElevenLabs) for
+ *  speech-synced highlighting. */
 tts.post("/synthesize/timed", zValidator("json", synthSchema), async (c) => {
   const { userId } = c.get("auth");
   const body = c.req.valid("json");
-  const cfg = await getTtsConfig(userId);
-  if (!cfg.apiKey) {
-    return c.json({ error: "No TTS provider configured." }, 400);
-  }
   try {
-    const result = await synthesizeSpeechWithTimestamps(cfg, body.text, {
+    const result = await synthesizeTimed(userId, body.text, {
+      language: body.language,
+      voice: body.voice,
       stability: body.stability,
       similarityBoost: body.similarityBoost,
       speed: body.speed,
@@ -121,7 +123,9 @@ tts.post("/synthesize/timed", zValidator("json", synthSchema), async (c) => {
     return c.json({
       audio_base64: result.audio.toString("base64"),
       contentType: result.contentType,
+      wordBoundaries: result.wordBoundaries,
       alignment: result.alignment,
+      provider: result.provider,
     });
   } catch (e) {
     const status = (e as any)?.status ?? 500;
