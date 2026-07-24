@@ -34,8 +34,15 @@ export default function ViewerApp({ win }: { win: WindowInstance }) {
     // native viewer. For audio/video: seek via the media element. For images:
     // handled by the ImageViewer via the command prop below.
     if (file && isPdfFile(file) && (activeShowCmd.kind === "scroll_to" || activeShowCmd.kind === "highlight")) {
-      const q = activeShowCmd.text ?? activeShowCmd.selector ?? "";
-      if (q) setPdfSearch(q);
+      const raw = activeShowCmd.text ?? activeShowCmd.selector ?? "";
+      if (raw) {
+        // Truncate to first ~60 chars to avoid highlighting huge portions
+        // of the document. PDF #search= highlights ALL occurrences, so a
+        // long text would highlight too much. A shorter, specific snippet
+        // jumps to the right passage without over-highlighting.
+        const q = raw.length > 60 ? raw.slice(0, 60).trim() : raw;
+        if (q) setPdfSearch(q);
+      }
     }
     if (file && (isAudioFile(file) || isVideoFile(file)) && activeShowCmd.kind === "scroll_to") {
       // "scroll_to" on media = seek to a timestamp (pos in seconds, if numeric).
