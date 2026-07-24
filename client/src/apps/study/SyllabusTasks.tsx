@@ -2,14 +2,30 @@
 
 import { useState } from "react";
 import { Sparkles, Plus, Trash2, CheckSquare } from "lucide-react";
-import SourcePicker from "./SourcePicker";
+import WorkspaceSourceSelector, { studySourceToDescriptor } from "./WorkspaceSourceSelector";
+import { studySourcesApi, type StudySource } from "../../services/study-sources";
 import { ActionButton, ErrorBanner, Loading, SuccessBanner, TruncationNote } from "./ui";
 import { studyApi, type SourceDescriptor, type SyllabusTask } from "../../services/study";
 import { tasksApi } from "../../services/tasks";
 import { useWindows } from "../../store/windows";
 
 export default function SyllabusTasks({ initialSource }: { initialSource?: SourceDescriptor | null }) {
-  const [source, setSource] = useState<SourceDescriptor | null>(initialSource ?? null);
+  const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(new Set());
+  const toggleSource = (id: string) => {
+    setSelectedSourceIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const getSources = async (): Promise<SourceDescriptor[]> => {
+    const { sources: lib } = await studySourcesApi.list();
+    return [...selectedSourceIds].map((id) => {
+      const s = lib.find((x) => x.id === id);
+      return s ? studySourceToDescriptor(s) : null;
+    }).filter((x): x is SourceDescriptor => x !== null);
+  };
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -19,13 +35,14 @@ export default function SyllabusTasks({ initialSource }: { initialSource?: Sourc
   const openWindow = useWindows((s) => s.open);
 
   const run = async () => {
-    if (!source) return;
+    if (selectedSourceIds.size === 0) return;
     setLoading(true);
     setError("");
     setSuccess("");
     setTasks([]);
     try {
-      const res = await studyApi.syllabusTasks({ source, create: false });
+      const sources = await getSources();
+      const res = await studyApi.syllabusTasks({ sources, create: false });
       setTasks(res.tasks);
       setTruncated(res.truncated);
     } catch (e) {
@@ -76,11 +93,11 @@ export default function SyllabusTasks({ initialSource }: { initialSource?: Sourc
 
   return (
     <div className="flex flex-col gap-3">
-      <SourcePicker value={source} onChange={setSource} />
+      <WorkspaceSourceSelector selectedIds={selectedSourceIds} onToggle={toggleSource} disabled={loading} />
       <p className="text-xs text-ink-muted">
         Paste a syllabus, assignment list, or course outline — Athena extracts tasks with due dates and priorities.
       </p>
-      <ActionButton onClick={run} disabled={!source} loading={loading}>
+      <ActionButton onClick={run} disabled={selectedSourceIds.size === 0} loading={loading}>
         <Sparkles size={13} /> Extract tasks
       </ActionButton>
 

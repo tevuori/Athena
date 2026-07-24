@@ -8,7 +8,6 @@ import {
 } from "lucide-react";
 import { studyApi, type StudySession } from "../../services/study";
 import { flashcardsApi } from "../../services/flashcards";
-import { studySourcesApi, type StudySource } from "../../services/study-sources";
 import { studyWorkspacesApi, type LearningWorkspace } from "../../services/study-workspaces";
 import { Loading, ErrorBanner } from "./ui";
 import WorkspaceEditor from "./WorkspaceEditor";
@@ -42,7 +41,6 @@ const TYPE_META: Record<string, { label: string; icon: typeof Brain; color: stri
 export default function StudyHome({ onPickMode }: { onPickMode: (m: string, opts?: { workspaceId?: string }) => void }) {
   const [sessions, setSessions] = useState<StudySession[]>([]);
   const [decks, setDecks] = useState<DeckRow[]>([]);
-  const [sources, setSources] = useState<StudySource[]>([]);
   const [workspaces, setWorkspaces] = useState<LearningWorkspace[]>([]);
   const [editingWs, setEditingWs] = useState<LearningWorkspace | null>(null);
   const [showWsEditor, setShowWsEditor] = useState(false);
@@ -54,12 +52,10 @@ export default function StudyHome({ onPickMode }: { onPickMode: (m: string, opts
     Promise.all([
       studyApi.sessions().then((r) => r.sessions).catch(() => [] as StudySession[]),
       flashcardsApi.listDecks().then((r) => r.decks).catch(() => [] as DeckRow[]),
-      studySourcesApi.list().then((r) => r.sources).catch(() => [] as StudySource[]),
       studyWorkspacesApi.list().then((r) => r.workspaces).catch(() => [] as LearningWorkspace[]),
-    ]).then(([s, d, src, ws]) => {
+    ]).then(([s, d, ws]) => {
       setSessions(s);
       setDecks(d);
-      setSources(src);
       setWorkspaces(ws);
       setLoading(false);
     }).catch((e) => {
@@ -69,15 +65,6 @@ export default function StudyHome({ onPickMode }: { onPickMode: (m: string, opts
   };
 
   useEffect(loadAll, []);
-
-  const deleteSource = async (id: string) => {
-    try {
-      await studySourcesApi.remove(id);
-      setSources((prev) => prev.filter((s) => s.id !== id));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to delete source");
-    }
-  };
 
   const deleteWorkspace = async (id: string) => {
     try {
@@ -276,46 +263,6 @@ export default function StudyHome({ onPickMode }: { onPickMode: (m: string, opts
           </div>
         </div>
       )}
-
-      {/* Source library */}
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Source library</span>
-          <button
-            onClick={() => onPickMode("chat")}
-            className="flex items-center gap-1 text-[10px] text-ink-muted hover:text-ink"
-          >
-            <Plus size={11} /> Add via Ask
-          </button>
-        </div>
-        {sources.length === 0 ? (
-          <div className="rounded-md border border-edge bg-surface-2 p-3 text-xs text-ink-muted">
-            No sources yet. Open "Ask (grounded)" or "Podcast" to add notes, files (incl. PDF), URLs, or pasted text.
-          </div>
-        ) : (
-          <div className="flex flex-col gap-1.5">
-            {sources.slice(0, 6).map((s) => (
-              <div
-                key={s.id}
-                className="group flex items-center gap-2.5 rounded-md border border-edge bg-surface-2 px-3 py-2 text-xs"
-              >
-                <FileText size={14} className="shrink-0 text-ink-muted" />
-                <div className="flex flex-1 flex-col">
-                  <span className="truncate font-medium text-ink">{s.name}</span>
-                  <span className="text-[10px] text-ink-muted uppercase">{s.kind}{s.truncated ? " · truncated" : ""}</span>
-                </div>
-                <button
-                  onClick={() => void deleteSource(s.id)}
-                  className="shrink-0 rounded p-0.5 text-ink-muted opacity-0 transition hover:text-red-400 group-hover:opacity-100"
-                  title="Remove source"
-                >
-                  <Trash2 size={12} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
 
       {/* Recent activity */}
       {sessions.length > 0 && (

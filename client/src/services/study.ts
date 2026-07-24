@@ -90,7 +90,8 @@ export interface StudySession {
 
 export const studyApi = {
   flashcards: (data: {
-    source: SourceDescriptor;
+    source?: SourceDescriptor;
+    sources?: SourceDescriptor[];
     deckName?: string;
     deckColor?: string;
     count?: number;
@@ -99,14 +100,16 @@ export const studyApi = {
   }) => api.post<FlashcardsResult>("/api/study/flashcards", data),
 
   summarize: (data: {
-    source: SourceDescriptor;
+    source?: SourceDescriptor;
+    sources?: SourceDescriptor[];
     mode?: "tldr" | "outline" | "keypoints";
     saveAsNote?: boolean;
     noteTitle?: string;
   }) => api.post<SummarizeResult>("/api/study/summarize", data),
 
   explain: (data: {
-    source: SourceDescriptor;
+    source?: SourceDescriptor;
+    sources?: SourceDescriptor[];
     depth?: "eli5" | "standard" | "expert";
     saveAsNote?: boolean;
     noteTitle?: string;
@@ -119,11 +122,12 @@ export const studyApi = {
     noteTitle?: string;
   }) => api.post<StudyGuideResult>("/api/study/study-guide", data),
 
-  syllabusTasks: (data: { source: SourceDescriptor; create?: boolean }) =>
+  syllabusTasks: (data: { source?: SourceDescriptor; sources?: SourceDescriptor[]; create?: boolean }) =>
     api.post<SyllabusResult>("/api/study/syllabus-tasks", data),
 
   quizStart: (data: {
-    source: SourceDescriptor;
+    source?: SourceDescriptor;
+    sources?: SourceDescriptor[];
     questionCount?: number;
     types?: ("mcq" | "short")[];
   }) => api.post<QuizStartResult>("/api/study/quiz/start", data),

@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { Sparkles, Plus, Trash2, Save } from "lucide-react";
-import SourcePicker from "./SourcePicker";
+import WorkspaceSourceSelector, { studySourceToDescriptor } from "./WorkspaceSourceSelector";
+import { studySourcesApi, type StudySource } from "../../services/study-sources";
 import { ActionButton, ErrorBanner, Loading, SuccessBanner, TruncationNote } from "./ui";
 import { studyApi, type SourceDescriptor, type GeneratedCard } from "../../services/study";
 import { flashcardsApi } from "../../services/flashcards";
@@ -12,7 +13,22 @@ export default function GenerateFlashcards({ initialSource, appendDeck }: {
   initialSource?: SourceDescriptor | null;
   appendDeck?: { id: string; name: string } | null;
 }) {
-  const [source, setSource] = useState<SourceDescriptor | null>(initialSource ?? null);
+  const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(new Set());
+  const toggleSource = (id: string) => {
+    setSelectedSourceIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const getSources = async (): Promise<SourceDescriptor[]> => {
+    const { sources: lib } = await studySourcesApi.list();
+    return [...selectedSourceIds].map((id) => {
+      const s = lib.find((x) => x.id === id);
+      return s ? studySourceToDescriptor(s) : null;
+    }).filter((x): x is SourceDescriptor => x !== null);
+  };
   const [count, setCount] = useState(10);
   const [mode, setMode] = useState<"concept" | "factual" | "mixed" | "cloze">("mixed");
   const [deckName, setDeckName] = useState(appendDeck?.name ?? "");
@@ -26,15 +42,16 @@ export default function GenerateFlashcards({ initialSource, appendDeck }: {
   const openWindow = useWindows((s) => s.open);
 
   const run = async () => {
-    if (!source) return;
+    if (selectedSourceIds.size === 0) return;
     setLoading(true);
     setError("");
     setSuccess("");
     setCards([]);
     setCreatedDeckId(null);
     try {
+      const sources = await getSources();
       const res = await studyApi.flashcards({
-        source,
+        sources,
         count,
         mode,
         deckName: deckName.trim() || undefined,
@@ -101,7 +118,7 @@ export default function GenerateFlashcards({ initialSource, appendDeck }: {
 
   return (
     <div className="flex flex-col gap-3">
-      <SourcePicker value={source} onChange={setSource} />
+      <WorkspaceSourceSelector selectedIds={selectedSourceIds} onToggle={toggleSource} disabled={loading} />
 
       <div className="flex flex-wrap items-end gap-3">
         <label className="flex flex-col gap-1 text-xs text-ink-muted">
@@ -147,7 +164,7 @@ export default function GenerateFlashcards({ initialSource, appendDeck }: {
             <Trash2 size={12} /> New deck
           </button>
         )}
-        <ActionButton onClick={run} disabled={!source} loading={loading}>
+        <ActionButton onClick={run} disabled={selectedSourceIds.size === 0} loading={loading}>
           <Sparkles size={13} /> Generate
         </ActionButton>
       </div>

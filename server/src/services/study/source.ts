@@ -48,6 +48,8 @@ export interface ResolvedSource {
   truncated: boolean;
   /** The source kind (echoed back for callers that build StudySource rows). */
   kind: SourceKind;
+  /** 1-based index when resolved as part of a multi-source list. */
+  index?: number;
 }
 
 function isTextFile(name: string, mime: string): boolean {
