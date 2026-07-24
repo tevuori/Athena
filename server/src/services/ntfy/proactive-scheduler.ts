@@ -34,8 +34,8 @@ function sleep(ms: number): Promise<void> {
 /**
  * Run a proactive Athena turn with aggressive retry logic. Unlike
  * runAthenaTurn (designed for interactive chat, gives up fast), this is
- * non-interactive and can afford to retry heavily — the free OpenCode Zen
- * endpoint frequently drops connections mid-generation.
+ * non-interactive and can afford to retry heavily — some LLM endpoints
+ * drop connections mid-generation.
  *
  * Key optimization: tool results from the first attempt are captured and
  * injected into retry turns, so retries don't re-fetch the same data. The

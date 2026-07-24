@@ -1,15 +1,15 @@
 // ===== Athena LLM client (multi-llm-ts) =====
 // Unified LLM access via https://github.com/nbonamy/multi-llm-ts
-// Default: OpenCode Zen (OpenAI-compatible) → DeepSeek V4 Flash Free.
 //
 // Per-user config (encrypted in DB, AiCredential) takes priority over the
-// server-wide fallback env vars below.
+// server-wide fallback env vars below. If neither is configured, the LLM
+// is unavailable — the user must provide their own API key.
 //
-// Env vars (server-wide fallback):
+// Env vars (server-wide fallback, all optional):
 //   OPENAI_PROVIDER   — multi-llm-ts engine id (default "openai")
 //   OPENAI_API_KEY    — Bearer token
-//   OPENAI_BASE_URL   — base URL (default https://opencode.ai/zen/v1)
-//   OPENAI_MODEL      — model id (default deepseek-v4-flash-free)
+//   OPENAI_BASE_URL   — base URL (optional, for OpenAI-compatible endpoints)
+//   OPENAI_MODEL      — model id (optional)
 
 import {
   igniteModel,
@@ -29,9 +29,8 @@ export interface LlmUserConfig {
 }
 
 const SERVER_KEY = process.env.OPENAI_API_KEY ?? "";
-const SERVER_BASE_URL =
-  process.env.OPENAI_BASE_URL ?? "https://opencode.ai/zen/v1";
-const SERVER_MODEL = process.env.OPENAI_MODEL ?? "deepseek-v4-flash-free";
+const SERVER_BASE_URL = process.env.OPENAI_BASE_URL ?? "";
+const SERVER_MODEL = process.env.OPENAI_MODEL ?? "";
 const SERVER_PROVIDER = process.env.OPENAI_PROVIDER ?? "openai";
 
 export class LlmError extends Error {
@@ -50,7 +49,8 @@ function decryptSafe(enc: string): string | null {
   }
 }
 
-/** Resolve the user's LLM config: per-user (DB) wins, server fallback otherwise. */
+/** Resolve the user's LLM config: per-user (DB) wins, server fallback otherwise.
+ * Returns apiKey="" if neither is configured — callers should check isLlmConfiguredFor(). */
 export async function getUserConfig(userId: string): Promise<LlmUserConfig> {
   const cred = await prisma.aiCredential.findUnique({ where: { userId } });
   if (cred) {
@@ -60,15 +60,25 @@ export async function getUserConfig(userId: string): Promise<LlmUserConfig> {
         provider: cred.provider?.trim() || "openai",
         apiKey: apiKey.trim(),
         baseURL: cred.baseUrl?.trim() || undefined,
-        modelId: cred.modelId?.trim() || SERVER_MODEL,
+        modelId: cred.modelId?.trim() || SERVER_MODEL || "gpt-4o-mini",
       };
     }
   }
+  // Server-wide env fallback (optional — may be empty)
+  if (SERVER_KEY) {
+    return {
+      provider: SERVER_PROVIDER,
+      apiKey: SERVER_KEY,
+      baseURL: SERVER_BASE_URL || undefined,
+      modelId: SERVER_MODEL || "gpt-4o-mini",
+    };
+  }
+  // No config at all — LLM unavailable
   return {
     provider: SERVER_PROVIDER,
-    apiKey: SERVER_KEY,
-    baseURL: SERVER_BASE_URL,
-    modelId: SERVER_MODEL,
+    apiKey: "",
+    baseURL: undefined,
+    modelId: "",
   };
 }
 

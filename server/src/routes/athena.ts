@@ -171,9 +171,9 @@ athena.post("/chat", zValidator("json", chatSchema, (result, c) => {
       model.addPlugin(plugin);
 
       // Patch the internal OpenAI client's fetch to retry on transient
-      // "Upstream request failed" 400 errors from the provider proxy
-      // (OpenCode Zen → DeepSeek). This happens intermittently during
-      // multi-step tool call loops and is not a request format issue.
+      // "Upstream request failed" 400 errors from the provider. This happens
+      // intermittently during multi-step tool call loops and is not a request
+      // format issue.
       const engine = (model as any).engine;
       const client = engine?.client;
       if (client && typeof client.fetch === "function") {
