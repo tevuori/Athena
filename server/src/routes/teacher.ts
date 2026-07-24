@@ -356,7 +356,7 @@ teacher.post("/:id/stream", zValidator("json", streamSchema), async (c) => {
       tools: toolEvents.length,
     });
 
-    if (!errored) {
+    if (!errored || full.trim()) {
       await stream.writeSSE({ event: "done", data: JSON.stringify({ done: true }) });
     }
   });

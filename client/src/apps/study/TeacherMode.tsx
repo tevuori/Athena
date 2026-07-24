@@ -399,6 +399,8 @@ export default function TeacherMode({ initialSessionId, language = "en" }: Props
           // Reload session to pick up persisted assistant message.
           void loadSession(sessionId);
           // Auto-speak the assistant's response if enabled.
+          // (onDone fires even on LLM error if partial text was received —
+          // the server sends done after error when there's partial content.)
           if (autoSpeak && finalText.trim()) {
             void tts.speak(finalText);
           }
