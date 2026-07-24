@@ -6,7 +6,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Sparkles, Send, Square, Plus, MessageSquare, Trash2, Loader2,
-  AlertCircle, FileText, File as FileIcon, Link2, ChevronDown, X, RefreshCw, GraduationCap,
+  AlertCircle, ChevronDown,
 } from "lucide-react";
 import {
   studyChatApi,
@@ -17,19 +17,10 @@ import {
 } from "../../services/study-chat";
 import { studySourcesApi, type StudySource } from "../../services/study-sources";
 import { studyWorkspacesApi } from "../../services/study-workspaces";
-import type { SourceDescriptor } from "../../services/study";
-import SourcePicker from "./SourcePicker";
+import WorkspaceSourceSelector from "./WorkspaceSourceSelector";
 import CitationMarkdown from "./CitationMarkdown";
 import { ActionButton, ErrorBanner, Loading } from "./ui";
 import { useWindows } from "../../store/windows";
-
-const KIND_ICON: Record<string, typeof FileText> = {
-  note: FileText,
-  file: FileIcon,
-  paste: FileText,
-  moodle: GraduationCap,
-  url: Link2,
-};
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -60,16 +51,28 @@ export default function SourceChat({ initialChatId, initialWorkspaceId }: Props)
 
   // Source library + selection
   const [library, setLibrary] = useState<StudySource[]>([]);
-  const [selectedSources, setSelectedSources] = useState<StudySource[]>([]);
-  const [showPicker, setShowPicker] = useState(false);
-  const [pickerValue, setPickerValue] = useState<SourceDescriptor | null>(null);
-  const [addingSource, setAddingSource] = useState(false);
+  const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(new Set());
+  const [showSourcePanel, setShowSourcePanel] = useState(false);
 
   const [listOpen, setListOpen] = useState(false);
 
   const openWindow = useWindows((s) => s.open);
   const handleRef = useRef<{ abort: () => void; done: Promise<void> } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const toggleSource = (id: string) => {
+    setSelectedSourceIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  /** Selected StudySource objects resolved from the library. */
+  const selectedSources = [...selectedSourceIds]
+    .map((id) => library.find((s) => s.id === id))
+    .filter((s): s is StudySource => s !== null);
 
   // Load chat list + source library on mount.
   const refreshLists = useCallback(async () => {
@@ -101,11 +104,9 @@ export default function SourceChat({ initialChatId, initialWorkspaceId }: Props)
         const fetched = await Promise.all(need.map((sid) => studySourcesApi.get(sid).catch(() => null)));
         extra = fetched.filter((x): x is StudySource => x !== null);
       }
-      setSelectedSources(
-        loaded.sourceIds
-          .map((sid) => library.find((s) => s.id === sid) ?? extra.find((s) => s.id === sid))
-          .filter((x): x is StudySource => x !== null)
-      );
+      // Merge fetched sources into library + set selected IDs.
+      setLibrary((prev) => [...prev, ...extra.filter((e) => !prev.some((p) => p.id === e.id))]);
+      setSelectedSourceIds(new Set(loaded.sourceIds));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load chat");
     } finally {
@@ -138,16 +139,12 @@ export default function SourceChat({ initialChatId, initialWorkspaceId }: Props)
       try {
         const { workspace } = await studyWorkspacesApi.get(initialWorkspaceId);
         const need = workspace.sourceIds.filter((sid) => !library.some((s) => s.id === sid));
-        let extra: StudySource[] = [];
         if (need.length > 0) {
           const fetched = await Promise.all(need.map((sid) => studySourcesApi.get(sid).catch(() => null)));
-          extra = fetched.filter((x): x is StudySource => x !== null);
+          const extra = fetched.filter((x): x is StudySource => x !== null);
+          setLibrary((prev) => [...prev, ...extra.filter((e) => !prev.some((p) => p.id === e.id))]);
         }
-        setSelectedSources(
-          workspace.sourceIds
-            .map((sid) => library.find((s) => s.id === sid) ?? extra.find((s) => s.id === sid))
-            .filter((x): x is StudySource => x !== null)
-        );
+        setSelectedSourceIds(new Set(workspace.sourceIds));
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to load workspace");
       }
@@ -166,34 +163,11 @@ export default function SourceChat({ initialChatId, initialWorkspaceId }: Props)
     setChat(null);
     setChatId(null);
     setMessages([]);
-    setSelectedSources([]);
+    setSelectedSourceIds(new Set());
     setInput("");
     setStreamText("");
     setError("");
-    setShowPicker(true);
-  };
-
-  const addPickerSource = async () => {
-    if (!pickerValue) return;
-    setAddingSource(true);
-    setError("");
-    try {
-      const { source } = await studySourcesApi.create(pickerValue);
-      setLibrary((prev) => [source, ...prev.filter((s) => s.id !== source.id)]);
-      setSelectedSources((prev) =>
-        prev.some((s) => s.id === source.id) ? prev : [...prev, source]
-      );
-      setPickerValue(null);
-      setShowPicker(false);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to add source");
-    } finally {
-      setAddingSource(false);
-    }
-  };
-
-  const removeSource = (sid: string) => {
-    setSelectedSources((prev) => prev.filter((s) => s.id !== sid));
+    setShowSourcePanel(true);
   };
 
   const ensureChat = async (): Promise<StudyChat | null> => {
@@ -276,7 +250,7 @@ export default function SourceChat({ initialChatId, initialWorkspaceId }: Props)
         setChat(null);
         setChatId(null);
         setMessages([]);
-        setSelectedSources([]);
+        setSelectedSourceIds(new Set());
       }
       void refreshLists();
     } catch (e) {
@@ -403,53 +377,34 @@ export default function SourceChat({ initialChatId, initialWorkspaceId }: Props)
           </ActionButton>
         </div>
 
-        {/* Source chips */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          {selectedSources.map((s) => {
-            const Icon = KIND_ICON[s.kind] ?? FileText;
-            return (
-              <span
-                key={s.id}
-                className="inline-flex items-center gap-1 rounded-full border border-edge bg-surface-2 px-2 py-1 text-[11px] text-ink"
-                title={s.name}
-              >
-                <Icon size={11} className="shrink-0 text-ink-muted" />
-                <span className="max-w-40 truncate">{s.name}</span>
-                {!streaming && (
-                  <button
-                    onClick={() => removeSource(s.id)}
-                    className="shrink-0 rounded-full text-ink-muted hover:text-red-400"
-                    title="Remove source"
-                  >
-                    <X size={11} />
-                  </button>
-                )}
-              </span>
-            );
-          })}
-          {!streaming && (
+        {/* Source selection — collapsible workspace selector */}
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between">
             <button
-              onClick={() => setShowPicker(true)}
-              className="inline-flex items-center gap-1 rounded-full border border-dashed border-edge px-2 py-1 text-[11px] text-ink-muted hover:border-accent/50 hover:text-accent"
+              onClick={() => setShowSourcePanel((v) => !v)}
+              className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-ink-muted hover:text-ink"
             >
-              <Plus size={11} /> Add source
+              <ChevronDown size={12} className={`transition ${showSourcePanel ? "" : "-rotate-90"}`} />
+              Sources {selectedSourceIds.size > 0 && `(${selectedSourceIds.size})`}
             </button>
+            {selectedSourceIds.size > 0 && !streaming && (
+              <button
+                onClick={() => setSelectedSourceIds(new Set())}
+                className="text-[10px] text-ink-muted hover:text-ink"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          {showSourcePanel && (
+            <WorkspaceSourceSelector
+              selectedIds={selectedSourceIds}
+              onToggle={toggleSource}
+              disabled={streaming}
+              onSourceAdded={(s) => setLibrary((prev) => [s, ...prev.filter((x) => x.id !== s.id)])}
+            />
           )}
         </div>
-
-        {showPicker && (
-          <div className="flex flex-col gap-2 rounded-lg border border-edge bg-surface-2 p-3">
-            <SourcePicker value={pickerValue} onChange={setPickerValue} />
-            <div className="flex justify-end gap-2">
-              <ActionButton onClick={() => { setShowPicker(false); setPickerValue(null); }} variant="ghost">
-                Cancel
-              </ActionButton>
-              <ActionButton onClick={addPickerSource} disabled={!pickerValue} loading={addingSource}>
-                <Plus size={13} /> Add to chat
-              </ActionButton>
-            </div>
-          </div>
-        )}
 
         {error && <ErrorBanner message={error} />}
         {loadingChat && <Loading label="Loading chat…" />}

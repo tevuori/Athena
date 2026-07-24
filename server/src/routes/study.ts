@@ -8,7 +8,7 @@ import { zValidator } from "@hono/zod-validator";
 import prisma from "../db/client";
 import { authMiddleware } from "../middleware/auth";
 import { getUserConfig, buildModel, isLlmConfiguredFor } from "../services/athena/llm";
-import { resolveSource, type SourceDescriptor } from "../services/study/source";
+import { resolveSource, type SourceDescriptor, type ResolvedSource } from "../services/study/source";
 import { generateJson, generateText } from "../services/study/llm-json";
 import {
   flashcardsPrompt,
@@ -39,12 +39,28 @@ const study = new Hono();
 study.use("*", authMiddleware);
 
 const sourceSchema = z.object({
-  kind: z.enum(["note", "file", "paste", "moodle"]),
+  kind: z.enum(["note", "file", "paste", "moodle", "url"]),
   id: z.string().optional(),
   text: z.string().optional(),
   url: z.string().optional(),
   name: z.string().optional(),
 });
+
+/** Resolve either a single `source` or an array of `sources` into a list of
+ *  ResolvedSource (with 1-based index for cited prompts). */
+async function resolveSources(
+  userId: string,
+  body: { source?: SourceDescriptor; sources?: SourceDescriptor[] }
+): Promise<ResolvedSource[]> {
+  const list = body.sources && body.sources.length > 0
+    ? body.sources
+    : body.source
+      ? [body.source]
+      : [];
+  if (list.length === 0) throw new Error("No source provided");
+  const resolved = await Promise.all(list.map((s) => resolveSource(userId, s)));
+  return resolved.map((r, i) => ({ ...r, index: i + 1 }));
+}
 
 /** Resolve the user's LLM or return a 400 if unconfigured. */
 async function loadModel(c: any, userId: string) {
@@ -63,7 +79,8 @@ async function loadModel(c: any, userId: string) {
 
 // ===== Generate Flashcards =====
 const flashcardsSchema = z.object({
-  source: sourceSchema,
+  source: sourceSchema.optional(),
+  sources: z.array(sourceSchema).max(20).optional(),
   deckName: z.string().optional(),
   deckColor: z.string().optional(),
   count: z.number().int().min(1).max(40).optional().default(10),
@@ -79,9 +96,9 @@ study.post("/flashcards", zValidator("json", flashcardsSchema), async (c) => {
   const loaded = await loadModel(c, userId);
   if ("error" in loaded) return loaded.error;
 
-  let resolved;
+  let resolved: ResolvedSource[];
   try {
-    resolved = await resolveSource(userId, body.source as SourceDescriptor);
+    resolved = await resolveSources(userId, body);
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : "Source error" }, 400);
   }
@@ -90,7 +107,7 @@ study.post("/flashcards", zValidator("json", flashcardsSchema), async (c) => {
   try {
     result = await generateJson<{ cards: CitedFlashcardSpec[] }>(
       loaded.model,
-      flashcardsCitedPrompt([{ index: 1, name: resolved.name, text: resolved.text }], body.count, body.mode),
+      flashcardsCitedPrompt(resolved.map((r) => ({ index: r.index!, name: r.name, text: r.text })), body.count, body.mode),
       flashcardsCitedSchemaHint()
     );
   } catch (e) {
@@ -104,7 +121,8 @@ study.post("/flashcards", zValidator("json", flashcardsSchema), async (c) => {
     return c.json({ error: "The AI did not generate any valid flashcards." }, 502);
   }
 
-  const deckName = body.deckName?.trim() || `Flashcards: ${resolved.name}`;
+  const primaryName = resolved.map((r) => r.name).join(", ");
+  const deckName = body.deckName?.trim() || `Flashcards: ${primaryName}`;
   let deckId: string | null = null;
   if (body.create) {
     const deck = await prisma.flashcardDeck.create({
@@ -119,13 +137,13 @@ study.post("/flashcards", zValidator("json", flashcardsSchema), async (c) => {
       data: cards.map((card) => ({
         front: String(card.front).slice(0, 2000),
         back: String(card.back).slice(0, 2000),
-        sourceRef: resolved.name.slice(0, 200),
+        sourceRef: (card.source != null ? resolved.find((r) => r.index === card.source)?.name ?? primaryName : primaryName).slice(0, 200),
         deckId: deck.id,
       })),
     });
   }
 
-  const sessionId = await logSessionSafe(userId, "flashcards", deckName, resolved.ref, {
+  const sessionId = await logSessionSafe(userId, "flashcards", deckName, resolved[0].ref, {
     deckId,
     cardCount: cards.length,
     create: body.create,
@@ -136,13 +154,14 @@ study.post("/flashcards", zValidator("json", flashcardsSchema), async (c) => {
     deckName,
     cards: cards.map((card) => ({ front: card.front, back: card.back })),
     sessionId,
-    truncated: resolved.truncated,
+    truncated: resolved.some((r) => r.truncated),
   });
 });
 
 // ===== Summarize =====
 const summarizeSchema = z.object({
-  source: sourceSchema,
+  source: sourceSchema.optional(),
+  sources: z.array(sourceSchema).max(20).optional(),
   mode: z.enum(["tldr", "outline", "keypoints"]).optional().default("keypoints"),
   saveAsNote: z.boolean().optional().default(true),
   noteTitle: z.string().optional(),
@@ -154,18 +173,21 @@ study.post("/summarize", zValidator("json", summarizeSchema), async (c) => {
   const loaded = await loadModel(c, userId);
   if ("error" in loaded) return loaded.error;
 
-  let resolved;
+  let resolved: ResolvedSource[];
   try {
-    resolved = await resolveSource(userId, body.source as SourceDescriptor);
+    resolved = await resolveSources(userId, body);
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : "Source error" }, 400);
   }
+
+  const combinedText = resolved.map((r) => r.text).join("\n\n");
+  const combinedName = resolved.map((r) => r.name).join(", ");
 
   let summary: string;
   try {
     summary = await generateText(
       loaded.model,
-      summarizeCitedPrompt(resolved.text, body.mode, resolved.name),
+      summarizeCitedPrompt(combinedText, body.mode, combinedName),
       "You are a study assistant. Summarize accurately in clear Markdown. Do not invent information."
     );
   } catch (e) {
@@ -174,7 +196,7 @@ study.post("/summarize", zValidator("json", summarizeSchema), async (c) => {
 
   let noteId: string | null = null;
   if (body.saveAsNote && summary.trim()) {
-    const title = body.noteTitle?.trim() || `Summary: ${resolved.name}`;
+    const title = body.noteTitle?.trim() || `Summary: ${combinedName}`;
     const note = await prisma.note.create({
       data: {
         userId,
@@ -186,17 +208,18 @@ study.post("/summarize", zValidator("json", summarizeSchema), async (c) => {
     noteId = note.id;
   }
 
-  const sessionId = await logSessionSafe(userId, "summary", `Summary: ${resolved.name}`, resolved.ref, {
+  const sessionId = await logSessionSafe(userId, "summary", `Summary: ${combinedName}`, resolved[0].ref, {
     mode: body.mode,
     noteId,
   });
 
-  return c.json({ summary, noteId, sessionId, truncated: resolved.truncated });
+  return c.json({ summary, noteId, sessionId, truncated: resolved.some((r) => r.truncated) });
 });
 
 // ===== Explain =====
 const explainSchema = z.object({
-  source: sourceSchema,
+  source: sourceSchema.optional(),
+  sources: z.array(sourceSchema).max(20).optional(),
   depth: z.enum(["eli5", "standard", "expert"]).optional().default("standard"),
   saveAsNote: z.boolean().optional().default(true),
   noteTitle: z.string().optional(),
@@ -208,18 +231,21 @@ study.post("/explain", zValidator("json", explainSchema), async (c) => {
   const loaded = await loadModel(c, userId);
   if ("error" in loaded) return loaded.error;
 
-  let resolved;
+  let resolved: ResolvedSource[];
   try {
-    resolved = await resolveSource(userId, body.source as SourceDescriptor);
+    resolved = await resolveSources(userId, body);
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : "Source error" }, 400);
   }
+
+  const combinedText = resolved.map((r) => r.text).join("\n\n");
+  const combinedName = resolved.map((r) => r.name).join(", ");
 
   let explanation: string;
   try {
     explanation = await generateText(
       loaded.model,
-      explainCitedPrompt(resolved.text, body.depth, resolved.name),
+      explainCitedPrompt(combinedText, body.depth, combinedName),
       "You are a study assistant. Explain clearly and accurately in Markdown with examples. Do not invent information."
     );
   } catch (e) {
@@ -228,7 +254,7 @@ study.post("/explain", zValidator("json", explainSchema), async (c) => {
 
   let noteId: string | null = null;
   if (body.saveAsNote && explanation.trim()) {
-    const title = body.noteTitle?.trim() || `Explanation: ${resolved.name}`;
+    const title = body.noteTitle?.trim() || `Explanation: ${combinedName}`;
     const note = await prisma.note.create({
       data: {
         userId,
@@ -240,12 +266,12 @@ study.post("/explain", zValidator("json", explainSchema), async (c) => {
     noteId = note.id;
   }
 
-  const sessionId = await logSessionSafe(userId, "explain", `Explain: ${resolved.name}`, resolved.ref, {
+  const sessionId = await logSessionSafe(userId, "explain", `Explain: ${combinedName}`, resolved[0].ref, {
     depth: body.depth,
     noteId,
   });
 
-  return c.json({ explanation, noteId, sessionId, truncated: resolved.truncated });
+  return c.json({ explanation, noteId, sessionId, truncated: resolved.some((r) => r.truncated) });
 });
 
 // ===== Study Guide (multiple notes / sources) =====
@@ -333,7 +359,8 @@ study.post("/study-guide", zValidator("json", studyGuideSchema), async (c) => {
 
 // ===== Syllabus → Tasks =====
 const syllabusSchema = z.object({
-  source: sourceSchema,
+  source: sourceSchema.optional(),
+  sources: z.array(sourceSchema).max(20).optional(),
   create: z.boolean().optional().default(true),
 });
 
@@ -343,18 +370,20 @@ study.post("/syllabus-tasks", zValidator("json", syllabusSchema), async (c) => {
   const loaded = await loadModel(c, userId);
   if ("error" in loaded) return loaded.error;
 
-  let resolved;
+  let resolved: ResolvedSource[];
   try {
-    resolved = await resolveSource(userId, body.source as SourceDescriptor);
+    resolved = await resolveSources(userId, body);
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : "Source error" }, 400);
   }
+
+  const combinedText = resolved.map((r) => r.text).join("\n\n");
 
   let result;
   try {
     result = await generateJson<{ tasks: SyllabusTaskSpec[] }>(
       loaded.model,
-      syllabusTasksPrompt(resolved.text),
+      syllabusTasksPrompt(combinedText),
       syllabusTasksSchemaHint()
     );
   } catch (e) {
@@ -389,7 +418,7 @@ study.post("/syllabus-tasks", zValidator("json", syllabusSchema), async (c) => {
     }
   }
 
-  const sessionId = await logSessionSafe(userId, "syllabus", "Syllabus → Tasks", resolved.ref, {
+  const sessionId = await logSessionSafe(userId, "syllabus", "Syllabus → Tasks", resolved[0].ref, {
     created: createdCount,
     taskCount: tasks.length,
   });
@@ -402,13 +431,14 @@ study.post("/syllabus-tasks", zValidator("json", syllabusSchema), async (c) => {
     })),
     created: createdCount,
     sessionId,
-    truncated: resolved.truncated,
+    truncated: resolved.some((r) => r.truncated),
   });
 });
 
 // ===== Quiz Me: start =====
 const quizStartSchema = z.object({
-  source: sourceSchema,
+  source: sourceSchema.optional(),
+  sources: z.array(sourceSchema).max(20).optional(),
   questionCount: z.number().int().min(1).max(20).optional().default(5),
   types: z.array(z.enum(["mcq", "short"])).optional().default(["mcq", "short"]),
 });
@@ -419,18 +449,21 @@ study.post("/quiz/start", zValidator("json", quizStartSchema), async (c) => {
   const loaded = await loadModel(c, userId);
   if ("error" in loaded) return loaded.error;
 
-  let resolved;
+  let resolved: ResolvedSource[];
   try {
-    resolved = await resolveSource(userId, body.source as SourceDescriptor);
+    resolved = await resolveSources(userId, body);
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : "Source error" }, 400);
   }
+
+  const combinedText = resolved.map((r) => r.text).join("\n\n");
+  const combinedName = resolved.map((r) => r.name).join(", ");
 
   let result;
   try {
     result = await generateJson<{ questions: QuizQuestionSpec[] }>(
       loaded.model,
-      quizGeneratePrompt(resolved.text, body.questionCount, body.types),
+      quizGeneratePrompt(combinedText, body.questionCount, body.types),
       quizGenerateSchemaHint()
     );
   } catch (e) {
@@ -450,13 +483,13 @@ study.post("/quiz/start", zValidator("json", quizStartSchema), async (c) => {
     answer: String(q.answer),
   }));
 
-  const quiz = createQuiz(userId, resolved.name, resolved.ref, resolved.text, stored);
+  const quiz = createQuiz(userId, combinedName, resolved[0].ref, combinedText, stored);
 
   // Return questions WITHOUT answers (so the client can't peek).
   return c.json({
     quizId: quiz.id,
-    sourceName: resolved.name,
-    truncated: resolved.truncated,
+    sourceName: combinedName,
+    truncated: resolved.some((r) => r.truncated),
     questions: stored.map((q) => ({
       id: q.id,
       type: q.type,

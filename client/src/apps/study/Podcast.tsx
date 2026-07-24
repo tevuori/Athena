@@ -6,13 +6,12 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   Mic, Play, Pause, Square, SkipForward, SkipBack, Sparkles, Trash2,
-  FileText, Loader2, AlertCircle, Download, RefreshCw, Gauge,
+  FileText, Loader2, AlertCircle, Download, RefreshCw, Gauge, ChevronDown,
 } from "lucide-react";
 import { studyPodcastsApi, type Podcast as PodcastRow } from "../../services/study-podcasts";
 import { studySourcesApi, type StudySource } from "../../services/study-sources";
 import { studyWorkspacesApi } from "../../services/study-workspaces";
-import type { SourceDescriptor } from "../../services/study";
-import SourcePicker from "./SourcePicker";
+import WorkspaceSourceSelector from "./WorkspaceSourceSelector";
 import CitationMarkdown from "./CitationMarkdown";
 import { ActionButton, ErrorBanner, Loading, SuccessBanner } from "./ui";
 import { usePodcastTts } from "./usePodcastTts";
@@ -32,9 +31,7 @@ interface Props {
 export default function Podcast({ initialPodcastId, initialWorkspaceId }: Props) {
   const [library, setLibrary] = useState<StudySource[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [showPicker, setShowPicker] = useState(false);
-  const [pickerValue, setPickerValue] = useState<SourceDescriptor | null>(null);
-  const [addingSource, setAddingSource] = useState(false);
+  const [showSourcePanel, setShowSourcePanel] = useState(true);
 
   const [podcasts, setPodcasts] = useState<PodcastRow[]>([]);
   const [active, setActive] = useState<PodcastRow | null>(null);
@@ -80,12 +77,12 @@ export default function Podcast({ initialPodcastId, initialWorkspaceId }: Props)
     void (async () => {
       try {
         const { workspace } = await studyWorkspacesApi.get(initialWorkspaceId);
-        // Make sure all workspace sources are in the library list.
+        // Fetch any sources not already in the library (dedup-safe).
         const need = workspace.sourceIds.filter((sid) => !library.some((s) => s.id === sid));
         if (need.length > 0) {
           const fetched = await Promise.all(need.map((sid) => studySourcesApi.get(sid).catch(() => null)));
           const extra = fetched.filter((x): x is StudySource => x !== null);
-          setLibrary((prev) => [...prev, ...extra]);
+          setLibrary((prev) => [...prev, ...extra.filter((e) => !prev.some((p) => p.id === e.id))]);
         }
         setSelectedIds(new Set(workspace.sourceIds));
       } catch (e) {
@@ -94,22 +91,6 @@ export default function Podcast({ initialPodcastId, initialWorkspaceId }: Props)
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialWorkspaceId]);
-
-  const addPickerSource = async () => {
-    if (!pickerValue) return;
-    setAddingSource(true);
-    try {
-      const { source } = await studySourcesApi.create(pickerValue);
-      setLibrary((prev) => [source, ...prev.filter((s) => s.id !== source.id)]);
-      setSelectedIds((prev) => new Set([...prev, source.id]));
-      setPickerValue(null);
-      setShowPicker(false);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to add source");
-    } finally {
-      setAddingSource(false);
-    }
-  };
 
   const toggleSource = (id: string) => {
     setSelectedIds((prev) => {
@@ -180,53 +161,32 @@ export default function Podcast({ initialPodcastId, initialWorkspaceId }: Props)
         </div>
       )}
 
-      {/* Source selection */}
+      {/* Source selection — collapsible workspace selector */}
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Sources</span>
           <button
-            onClick={() => setShowPicker(true)}
-            className="flex items-center gap-1 rounded-md border border-edge px-2 py-1 text-[11px] text-ink-muted hover:bg-surface-2 hover:text-ink"
+            onClick={() => setShowSourcePanel((v) => !v)}
+            className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-ink-muted hover:text-ink"
           >
-            <Sparkles size={11} /> Add source
+            <ChevronDown size={12} className={`transition ${showSourcePanel ? "" : "-rotate-90"}`} />
+            Sources {selectedIds.size > 0 && `(${selectedIds.size} selected)`}
           </button>
+          {selectedIds.size > 0 && (
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="text-[10px] text-ink-muted hover:text-ink"
+            >
+              Clear
+            </button>
+          )}
         </div>
-        {library.length === 0 ? (
-          <p className="rounded-md border border-edge bg-surface-2 p-3 text-xs text-ink-muted">
-            No sources in your library yet. Add a note, file (incl. PDF), URL, or paste text.
-          </p>
-        ) : (
-          <div className="flex flex-col gap-1">
-            {library.map((s) => {
-              const checked = selectedIds.has(s.id);
-              return (
-                <button
-                  key={s.id}
-                  onClick={() => toggleSource(s.id)}
-                  className={`flex items-center gap-2 rounded-md border px-3 py-2 text-left text-xs transition ${
-                    checked ? "border-accent bg-accent/10 text-accent" : "border-edge bg-surface-2 text-ink hover:bg-surface-3"
-                  }`}
-                >
-                  <FileText size={13} className="shrink-0 opacity-70" />
-                  <span className="flex-1 truncate">{s.name}</span>
-                  <span className="shrink-0 text-[10px] uppercase opacity-60">{s.kind}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-        {showPicker && (
-          <div className="flex flex-col gap-2 rounded-lg border border-edge bg-surface-2 p-3">
-            <SourcePicker value={pickerValue} onChange={setPickerValue} />
-            <div className="flex justify-end gap-2">
-              <ActionButton onClick={() => { setShowPicker(false); setPickerValue(null); }} variant="ghost">
-                Cancel
-              </ActionButton>
-              <ActionButton onClick={addPickerSource} disabled={!pickerValue} loading={addingSource}>
-                Add
-              </ActionButton>
-            </div>
-          </div>
+        {showSourcePanel && (
+          <WorkspaceSourceSelector
+            selectedIds={selectedIds}
+            onToggle={toggleSource}
+            disabled={generating}
+            onSourceAdded={(s) => setLibrary((prev) => [s, ...prev.filter((x) => x.id !== s.id)])}
+          />
         )}
       </div>
 

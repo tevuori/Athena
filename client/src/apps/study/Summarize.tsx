@@ -2,13 +2,29 @@
 
 import { useState } from "react";
 import { Sparkles, FileText, GraduationCap } from "lucide-react";
-import SourcePicker from "./SourcePicker";
+import WorkspaceSourceSelector, { studySourceToDescriptor } from "./WorkspaceSourceSelector";
+import { studySourcesApi, type StudySource } from "../../services/study-sources";
 import { ActionButton, ErrorBanner, Loading, MarkdownView, SuccessBanner, TruncationNote } from "./ui";
 import { studyApi, type SourceDescriptor } from "../../services/study";
 import { useWindows } from "../../store/windows";
 
 export default function Summarize({ initialSource }: { initialSource?: SourceDescriptor | null }) {
-  const [source, setSource] = useState<SourceDescriptor | null>(initialSource ?? null);
+  const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(new Set());
+  const toggleSource = (id: string) => {
+    setSelectedSourceIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const getSources = async (): Promise<SourceDescriptor[]> => {
+    const { sources: lib } = await studySourcesApi.list();
+    return [...selectedSourceIds].map((id) => {
+      const s = lib.find((x) => x.id === id);
+      return s ? studySourceToDescriptor(s) : null;
+    }).filter((x): x is SourceDescriptor => x !== null);
+  };
   const [mode, setMode] = useState<"tldr" | "outline" | "keypoints">("keypoints");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -19,14 +35,15 @@ export default function Summarize({ initialSource }: { initialSource?: SourceDes
   const openWindow = useWindows((s) => s.open);
 
   const run = async () => {
-    if (!source) return;
+    if (selectedSourceIds.size === 0) return;
     setLoading(true);
     setError("");
     setSuccess("");
     setSummary("");
     setNoteId(null);
     try {
-      const res = await studyApi.summarize({ source, mode, saveAsNote: true });
+      const sources = await getSources();
+      const res = await studyApi.summarize({ sources, mode, saveAsNote: true });
       setSummary(res.summary);
       setNoteId(res.noteId);
       setTruncated(res.truncated);
@@ -55,7 +72,7 @@ export default function Summarize({ initialSource }: { initialSource?: SourceDes
 
   return (
     <div className="flex flex-col gap-3">
-      <SourcePicker value={source} onChange={setSource} />
+      <WorkspaceSourceSelector selectedIds={selectedSourceIds} onToggle={toggleSource} disabled={loading} />
       <div className="flex flex-wrap items-end gap-3">
         <label className="flex flex-col gap-1 text-xs text-ink-muted">
           Style
@@ -69,7 +86,7 @@ export default function Summarize({ initialSource }: { initialSource?: SourceDes
             <option value="tldr">TL;DR</option>
           </select>
         </label>
-        <ActionButton onClick={run} disabled={!source} loading={loading}>
+        <ActionButton onClick={run} disabled={selectedSourceIds.size === 0} loading={loading}>
           <Sparkles size={13} /> Summarize
         </ActionButton>
       </div>

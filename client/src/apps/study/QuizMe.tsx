@@ -4,7 +4,8 @@
 
 import { useState, useEffect } from "react";
 import { Sparkles, CheckCircle2, XCircle, RotateCcw, Award, Brain, Save, Filter } from "lucide-react";
-import SourcePicker from "./SourcePicker";
+import WorkspaceSourceSelector, { studySourceToDescriptor } from "./WorkspaceSourceSelector";
+import { studySourcesApi, type StudySource } from "../../services/study-sources";
 import { ActionButton, ErrorBanner, Loading, MarkdownView, SuccessBanner, TruncationNote } from "./ui";
 import {
   studyApi,
@@ -29,7 +30,22 @@ export default function QuizMe({
   initialSource?: SourceDescriptor | null;
   preloadedQuizId?: string | null;
 }) {
-  const [source, setSource] = useState<SourceDescriptor | null>(initialSource ?? null);
+  const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(new Set());
+  const toggleSource = (id: string) => {
+    setSelectedSourceIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const getSources = async (): Promise<SourceDescriptor[]> => {
+    const { sources: lib } = await studySourcesApi.list();
+    return [...selectedSourceIds].map((id) => {
+      const s = lib.find((x) => x.id === id);
+      return s ? studySourceToDescriptor(s) : null;
+    }).filter((x): x is SourceDescriptor => x !== null);
+  };
   const [count, setCount] = useState(5);
   const [types, setTypes] = useState<Set<"mcq" | "short">>(new Set(["mcq", "short"]));
   const [phase, setPhase] = useState<Phase>("setup");
@@ -89,7 +105,7 @@ export default function QuizMe({
   };
 
   const start = async () => {
-    if (!source) return;
+    if (selectedSourceIds.size === 0) return;
     setLoading(true);
     setError("");
     setQuestions([]);
@@ -97,8 +113,9 @@ export default function QuizMe({
     setAnswer("");
     setFeedback(null);
     try {
+      const sources = await getSources();
       const res = await studyApi.quizStart({
-        source,
+        sources,
         questionCount: count,
         types: [...types],
       });
@@ -237,7 +254,7 @@ export default function QuizMe({
   if (phase === "setup") {
     return (
       <div className="flex flex-col gap-3">
-        <SourcePicker value={source} onChange={setSource} />
+        <WorkspaceSourceSelector selectedIds={selectedSourceIds} onToggle={toggleSource} disabled={loading} />
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1 text-xs text-ink-muted">
             Questions
@@ -268,7 +285,7 @@ export default function QuizMe({
               ))}
             </div>
           </div>
-          <ActionButton onClick={start} disabled={!source} loading={loading}>
+          <ActionButton onClick={start} disabled={selectedSourceIds.size === 0} loading={loading}>
             <Sparkles size={13} /> Start quiz
           </ActionButton>
         </div>
