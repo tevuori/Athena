@@ -82,6 +82,9 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         // The main JS bundle is ~3MB; allow precaching up to 4MB.
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+        // Take over immediately when a new SW is deployed.
+        skipWaiting: true,
+        clientsClaim: true,
       },
       devOptions: {
         enabled: false,

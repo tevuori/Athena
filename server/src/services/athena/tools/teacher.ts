@@ -97,19 +97,31 @@ export const teacherTools: ToolDef[] = [
       // Resolve the source → determine app + open payload.
       let kind: SourceKind;
       let refId: string;
-      let name: string;
+      let name: string | undefined;
       let file: { name: string; mimeType: string } | null = null;
 
       const sourceId = args.sourceId ? String(args.sourceId) : undefined;
       if (sourceId) {
         const ss = await prisma.studySource.findFirst({ where: { id: sourceId, userId } });
-        if (!ss) return { error: "StudySource not found" };
-        kind = ss.kind as SourceKind;
-        refId = ss.refId;
-        name = ss.name;
-        if (kind === "file") {
-          const f = await prisma.vFile.findFirst({ where: { id: refId, userId } });
-          if (f) file = { name: f.name, mimeType: f.mimeType };
+        if (!ss) {
+          // Fallback: LLM may pass a numeric sourceId (the [n] index).
+          // Try kind+refId instead if provided.
+          const k = String(args.kind ?? "") as SourceKind;
+          const r = String(args.refId ?? "");
+          if (k && r) {
+            kind = k;
+            refId = r;
+          } else {
+            return { error: "StudySource not found. Use kind+refId from the SOURCE labels." };
+          }
+        } else {
+          kind = ss.kind as SourceKind;
+          refId = ss.refId;
+          name = ss.name;
+          if (kind === "file") {
+            const f = await prisma.vFile.findFirst({ where: { id: refId, userId } });
+            if (f) file = { name: f.name, mimeType: f.mimeType };
+          }
         }
       } else {
         const k = String(args.kind ?? "") as SourceKind;
@@ -117,7 +129,9 @@ export const teacherTools: ToolDef[] = [
         kind = k;
         refId = String(args.refId ?? "");
         if (!refId) return { error: "refId is required when sourceId is not given." };
-        // Resolve to get a display name + verify access.
+      }
+      // Resolve to get a display name + verify access (for kind+refId path).
+      if (!name) {
         try {
           const resolved = await resolveSource(userId, descriptorFor(kind, refId, String(args.label ?? "")));
           name = resolved.name;
