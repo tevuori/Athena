@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Database, Download, Trash2, AlertTriangle, Loader2, HardDrive } from "lucide-react";
 import { filesApi } from "../../../services/files";
 import { useAuth } from "../../../store/auth";
-import { getToken } from "../../../services/api";
+import { getToken, apiUrl } from "../../../services/api";
 import { SectionHeader, Card, MsgBox, inputClass } from "../ui";
 
 function fmtSize(bytes: number): string {
@@ -30,7 +30,7 @@ export default function DataStorageSection() {
     try {
       // The export endpoint returns a JSON attachment; fetch as blob and download.
       const token = getToken();
-      const res = await fetch("/api/auth/export", {
+      const res = await fetch(apiUrl("/api/auth/export"), {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!res.ok) throw new Error("Export failed");

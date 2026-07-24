@@ -1,8 +1,10 @@
 import { useState, useEffect } from "react";
-import { Info, RefreshCw, Loader2, Heart, Sparkles, DownloadCloud, CheckCircle2 } from "lucide-react";
+import { Info, RefreshCw, Loader2, Heart, Sparkles, DownloadCloud, CheckCircle2, Server, Save } from "lucide-react";
+import { Capacitor } from "@capacitor/core";
 import { useSettings } from "../../../store/settings";
 import { SectionHeader, Card, StatusPill } from "../ui";
 import { isAutoUpdateAvailable, checkForUpdate, getInstalledVersion } from "../../../services/updater";
+import { apiUrl, getBaseUrl, setBaseUrl } from "../../../services/api";
 import { useUpdater } from "../../../store/updater";
 
 interface HealthInfo {
@@ -22,9 +24,31 @@ export default function AboutSection() {
   const [appVersion, setAppVersion] = useState<string>(__APP_VERSION__);
   const [checking, setChecking] = useState(false);
   const [updateMsg, setUpdateMsg] = useState<string | null>(null);
+  const [serverUrlInput, setServerUrlInput] = useState(getBaseUrl());
+  const [serverMsg, setServerMsg] = useState<string | null>(null);
+
+  const isNative = Capacitor.isNativePlatform();
+
+  const saveServerUrl = () => {
+    const trimmed = serverUrlInput.trim().replace(/\/+$/, "");
+    if (!trimmed) {
+      setServerMsg("Server address cannot be empty.");
+      return;
+    }
+    try {
+      new URL(trimmed);
+    } catch {
+      setServerMsg("That doesn't look like a valid URL.");
+      return;
+    }
+    setBaseUrl(trimmed);
+    setServerUrlInput(trimmed);
+    setServerMsg("Server address saved. Reload the app for all changes to take effect.");
+    setTimeout(() => setServerMsg(null), 4000);
+  };
 
   useEffect(() => {
-    fetch("/health")
+    fetch(apiUrl("/health"))
       .then((r) => r.json())
       .then(setHealth)
       .catch(() => setHealth(null));
@@ -79,6 +103,36 @@ export default function AboutSection() {
           <Heart size={16} className="text-accent" />
         </div>
       </Card>
+
+      {isNative && (
+        <Card className="mb-3">
+          <h4 className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-ink">
+            <Server size={14} /> Server address
+          </h4>
+          <p className="mb-3 text-xs text-ink-muted">
+            The backend Athena server to connect to (including port). Change this if your
+            server moves. Reload the app after changing.
+          </p>
+          <div className="flex gap-2">
+            <input
+              value={serverUrlInput}
+              onChange={(e) => setServerUrlInput(e.target.value)}
+              placeholder="http://192.168.1.100:3001"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              className="flex-1 rounded-lg border border-edge bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+            />
+            <button
+              onClick={saveServerUrl}
+              className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-fg hover:opacity-90"
+            >
+              <Save size={14} /> Save
+            </button>
+          </div>
+          {serverMsg && <p className="mt-2 text-xs text-ink-muted">{serverMsg}</p>}
+        </Card>
+      )}
 
       {isAutoUpdateAvailable() && (
         <Card className="mb-3">

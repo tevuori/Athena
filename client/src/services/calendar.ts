@@ -1,4 +1,4 @@
-import { api } from "./api";
+import { api, apiUrl } from "./api";
 import type { CalendarEvent } from "../types";
 
 export const calendarApi = {
@@ -14,5 +14,5 @@ export const calendarApi = {
   delete: (id: string) => api.delete(`/api/calendar/${id}`),
   importIcs: (ics: string, from?: string, to?: string) =>
     api.post<{ imported: number }>("/api/calendar/ics/import", { ics, from, to }),
-  exportUrl: () => "/api/calendar/ics/export",
+  exportUrl: () => apiUrl("/api/calendar/ics/export"),
 };
