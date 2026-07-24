@@ -440,7 +440,7 @@ export default function FlashcardsApp({ win }: { win: WindowInstance }) {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 10 }}
-                className="mt-6 grid w-full max-w-md grid-cols-4 gap-2"
+                className="mt-6 grid w-full max-w-md grid-cols-2 @3xl:grid-cols-4 gap-2"
               >
                 <button
                   onClick={() => reviewCard(0)}

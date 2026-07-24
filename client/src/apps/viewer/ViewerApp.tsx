@@ -1,18 +1,21 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Loader2, Download, ZoomIn, ZoomOut, Maximize, Minimize, Expand,
-  AlertCircle, File as FileIcon,
+  AlertCircle, File as FileIcon, ChevronLeft,
 } from "lucide-react";
 import {
   filesApi, isImageFile, isPdfFile, isAudioFile, isVideoFile, formatBytes,
 } from "../../services/files";
 import { useWindows } from "../../store/windows";
+import { useFormFactor } from "../../store/formfactor";
 import type { WindowInstance } from "../../store/windows";
 import type { VFile } from "../../types";
 
 export default function ViewerApp({ win }: { win: WindowInstance }) {
   const fileId = win.payload?.fileId as string | undefined;
   const setTitle = useWindows((s) => s.setTitle);
+  const mobileBack = useWindows((s) => s.mobileBack);
+  const isPhone = useFormFactor((s) => s.mode === "phone");
   const [file, setFile] = useState<VFile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -81,20 +84,29 @@ export default function ViewerApp({ win }: { win: WindowInstance }) {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Toolbar */}
-      <div className="flex items-center gap-2 border-b border-edge bg-surface-2 px-3 py-1.5">
+      {/* Toolbar / mobile header */}
+      <div className={`flex items-center gap-2 border-b border-edge bg-surface-2 px-3 ${isPhone ? "safe-top py-2.5" : "py-1.5"}`}>
+        {isPhone && (
+          <button
+            onClick={() => mobileBack()}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-ink hover:bg-surface-3"
+            title="Back"
+          >
+            <ChevronLeft size={22} />
+          </button>
+        )}
         <span className="line-clamp-1 text-xs font-medium text-ink">{file.name}</span>
-        <span className="text-[11px] text-ink-muted">{formatBytes(file.size)}</span>
+        {!isPhone && <span className="text-[11px] text-ink-muted">{formatBytes(file.size)}</span>}
         <button
           onClick={download}
           className="ml-auto flex items-center gap-1.5 rounded-lg border border-edge px-2 py-1 text-xs text-ink-muted hover:bg-surface-3 hover:text-ink"
         >
-          <Download size={13} /> Download
+          <Download size={13} /> {!isPhone && "Download"}
         </button>
       </div>
 
       <div className="flex-1 overflow-hidden">
-        {isImageFile(file) && <ImageViewer file={file} />}
+        {isImageFile(file) && <ImageViewer file={file} isPhone={isPhone} />}
         {isPdfFile(file) && (
           <iframe
             src={filesApi.downloadUrl(file.id)}
@@ -122,13 +134,19 @@ export default function ViewerApp({ win }: { win: WindowInstance }) {
   );
 }
 
-function ImageViewer({ file }: { file: VFile }) {
+function ImageViewer({ file, isPhone }: { file: VFile; isPhone?: boolean }) {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [fit, setFit] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
+  const [controlsVisible, setControlsVisible] = useState(true);
   const dragRef = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Touch pinch-to-zoom state
+  const pointers = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchStart = useRef<{ dist: number; zoom: number } | null>(null);
+  const lastTap = useRef<number>(0);
 
   const onWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
@@ -137,21 +155,72 @@ function ImageViewer({ file }: { file: VFile }) {
   }, []);
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
+    // Track all active pointers for pinch detection.
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (pointers.current.size === 2) {
+      // Start pinch — record initial distance + zoom.
+      const pts = [...pointers.current.values()];
+      const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      pinchStart.current = { dist, zoom: fit ? 1 : zoom };
+      setFit(false);
+      dragRef.current = null; // cancel single-finger pan during pinch
+      return;
+    }
+
     if (zoom <= 1 && fit) return;
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
     dragRef.current = { x: e.clientX, y: e.clientY, px: pan.x, py: pan.y };
   }, [pan, zoom, fit]);
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
+    if (pointers.current.has(e.pointerId)) {
+      pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    }
+
+    // Pinch zoom
+    if (pointers.current.size === 2 && pinchStart.current) {
+      const pts = [...pointers.current.values()];
+      const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      const newZoom = Math.max(0.1, Math.min(8, (pinchStart.current.zoom * dist) / pinchStart.current.dist));
+      setZoom(newZoom);
+      return;
+    }
+
     const d = dragRef.current;
     if (!d) return;
     setPan({ x: d.px + (e.clientX - d.x), y: d.py + (e.clientY - d.y) });
   }, []);
 
   const onPointerUp = useCallback((e: React.PointerEvent) => {
-    dragRef.current = null;
-    (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
+    pointers.current.delete(e.pointerId);
+    if (pointers.current.size < 2) pinchStart.current = null;
+    if (pointers.current.size === 0) {
+      dragRef.current = null;
+      (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
+    }
   }, []);
+
+  // Double-tap to toggle zoom (mobile)
+  const onContainerClick = useCallback(() => {
+    if (!isPhone) return;
+    const now = Date.now();
+    if (now - lastTap.current < 300) {
+      // Double tap → toggle between fit and 2x
+      if (fit || zoom <= 1) {
+        setFit(false);
+        setZoom(2);
+        setPan({ x: 0, y: 0 });
+      } else {
+        resetView();
+      }
+      lastTap.current = 0;
+    } else {
+      lastTap.current = now;
+      // Single tap → toggle controls visibility
+      setControlsVisible((v) => !v);
+    }
+  }, [isPhone, fit, zoom]);
 
   const resetView = () => {
     setZoom(1);
@@ -176,7 +245,8 @@ function ImageViewer({ file }: { file: VFile }) {
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
-      className="relative flex h-full w-full items-center justify-center overflow-hidden bg-surface-3"
+      onClick={onContainerClick}
+      className="relative flex h-full w-full touch-none items-center justify-center overflow-hidden bg-surface-3"
       style={{ cursor: zoom > 1 && !fit ? "grab" : "default" }}
     >
       <img
@@ -187,32 +257,35 @@ function ImageViewer({ file }: { file: VFile }) {
         style={{
           transform: `translate(${pan.x}px, ${pan.y}px) scale(${fit ? 1 : zoom})`,
           transformOrigin: "center",
+          touchAction: "none",
         }}
         onError={(e) => {
           (e.currentTarget.style.display = "none");
         }}
       />
-      {/* Zoom controls */}
-      <div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-lg border border-edge bg-surface-2 p-1 shadow-window">
-        <ViewerBtn onClick={() => { setFit(false); setZoom((z) => Math.max(0.1, z / 1.2)); }} title="Zoom out">
-          <ZoomOut size={15} />
-        </ViewerBtn>
-        <span className="w-14 text-center text-xs text-ink-muted">
-          {fit ? "Fit" : `${Math.round(zoom * 100)}%`}
-        </span>
-        <ViewerBtn onClick={() => { setFit(false); setZoom((z) => Math.min(8, z * 1.2)); }} title="Zoom in">
-          <ZoomIn size={15} />
-        </ViewerBtn>
-        <ViewerBtn onClick={resetView} title="Fit to screen">
-          <Expand size={15} />
-        </ViewerBtn>
-        <ViewerBtn onClick={() => { setFit(false); setZoom(1); setPan({ x: 0, y: 0 }); }} title="Actual size">
-          1:1
-        </ViewerBtn>
-        <ViewerBtn onClick={toggleFullscreen} title={fullscreen ? "Exit fullscreen" : "Fullscreen"}>
-          {fullscreen ? <Minimize size={15} /> : <Maximize size={15} />}
-        </ViewerBtn>
-      </div>
+      {/* Zoom controls — auto-hide on mobile after tap */}
+      {(!isPhone || controlsVisible) && (
+        <div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-lg border border-edge bg-surface-2 p-1 shadow-window">
+          <ViewerBtn onClick={() => { setFit(false); setZoom((z) => Math.max(0.1, z / 1.2)); }} title="Zoom out">
+            <ZoomOut size={15} />
+          </ViewerBtn>
+          <span className="w-14 text-center text-xs text-ink-muted">
+            {fit ? "Fit" : `${Math.round(zoom * 100)}%`}
+          </span>
+          <ViewerBtn onClick={() => { setFit(false); setZoom((z) => Math.min(8, z * 1.2)); }} title="Zoom in">
+            <ZoomIn size={15} />
+          </ViewerBtn>
+          <ViewerBtn onClick={resetView} title="Fit to screen">
+            <Expand size={15} />
+          </ViewerBtn>
+          <ViewerBtn onClick={() => { setFit(false); setZoom(1); setPan({ x: 0, y: 0 }); }} title="Actual size">
+            1:1
+          </ViewerBtn>
+          <ViewerBtn onClick={toggleFullscreen} title={fullscreen ? "Exit fullscreen" : "Fullscreen"}>
+            {fullscreen ? <Minimize size={15} /> : <Maximize size={15} />}
+          </ViewerBtn>
+        </div>
+      )}
     </div>
   );
 }

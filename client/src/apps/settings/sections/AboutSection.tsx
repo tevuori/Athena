@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
-import { Info, RefreshCw, Loader2, Heart, Sparkles } from "lucide-react";
+import { Info, RefreshCw, Loader2, Heart, Sparkles, DownloadCloud, CheckCircle2 } from "lucide-react";
 import { useSettings } from "../../../store/settings";
 import { SectionHeader, Card, StatusPill } from "../ui";
-
-const APP_VERSION = "0.1.0";
+import { isAutoUpdateAvailable, checkForUpdate, getInstalledVersion } from "../../../services/updater";
+import { useUpdater } from "../../../store/updater";
 
 interface HealthInfo {
   ok: boolean;
@@ -15,16 +15,41 @@ interface HealthInfo {
 export default function AboutSection() {
   const { setTheme, setAccent, setWallpaper, setAnimatedBg, setVolume, setNotificationsEnabled, setDoNotDisturb, setHasOnboarded } =
     useSettings();
+  const promptUpdate = useUpdater((s) => s.promptUpdate);
   const [health, setHealth] = useState<HealthInfo | null>(null);
   const [resetting, setResetting] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [appVersion, setAppVersion] = useState<string>(__APP_VERSION__);
+  const [checking, setChecking] = useState(false);
+  const [updateMsg, setUpdateMsg] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/health")
       .then((r) => r.json())
       .then(setHealth)
       .catch(() => setHealth(null));
+    // On native builds, read the real installed version from the OS.
+    void getInstalledVersion().then(setAppVersion);
   }, []);
+
+  const checkUpdates = async () => {
+    setChecking(true);
+    setUpdateMsg(null);
+    try {
+      // Pass includeSkipped so the manual button ignores the auto-skip flag.
+      const info = await checkForUpdate({ includeSkipped: true });
+      if (info) {
+        promptUpdate(info);
+        setUpdateMsg(null);
+      } else {
+        setUpdateMsg("You’re on the latest version.");
+      }
+    } catch {
+      setUpdateMsg("Couldn’t check for updates. Check your connection and try again.");
+    } finally {
+      setChecking(false);
+    }
+  };
 
   const resetDefaults = () => {
     if (!confirm("Reset all appearance, wallpaper, and notification settings to defaults?")) return;
@@ -49,11 +74,38 @@ export default function AboutSection() {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-medium text-ink">Athena — Student OS</p>
-            <p className="text-xs text-ink-muted">Client v{APP_VERSION}</p>
+            <p className="text-xs text-ink-muted">Client v{appVersion}</p>
           </div>
           <Heart size={16} className="text-accent" />
         </div>
       </Card>
+
+      {isAutoUpdateAvailable() && (
+        <Card className="mb-3">
+          <h4 className="mb-1 text-sm font-semibold text-ink">App updates</h4>
+          <p className="mb-3 text-xs text-ink-muted">
+            Check for a newer APK release on GitHub. If one is found, you can download and
+            install it directly — Android will ask you to confirm.
+          </p>
+          <button
+            onClick={checkUpdates}
+            disabled={checking}
+            className="flex items-center gap-1.5 rounded-lg border border-edge px-3 py-2 text-sm text-ink hover:bg-surface-3 disabled:opacity-40"
+          >
+            {checking ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <DownloadCloud size={14} />
+            )}{" "}
+            Check for updates
+          </button>
+          {updateMsg && (
+            <p className="mt-2 flex items-center gap-1.5 text-xs text-ink-muted">
+              <CheckCircle2 size={12} className="text-accent" /> {updateMsg}
+            </p>
+          )}
+        </Card>
+      )}
 
       <Card className="mb-3">
         <h4 className="mb-2 text-sm font-semibold text-ink">Server status</h4>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <external-path name="my_images" path="." />
+    <cache-path name="my_cache_images" path="." />
+    <!-- Directory used by ApkUpdaterPlugin to stage downloaded update APKs.
+         Maps to getExternalFilesDir(null)/updates/ — shared via FileProvider
+         to the system package installer. -->
+    <external-files-path name="updates" path="updates/" />
+</paths>

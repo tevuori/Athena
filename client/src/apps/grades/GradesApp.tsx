@@ -180,13 +180,13 @@ export default function GradesApp() {
             title="Sync grades from VUT Studis"
           >
             {syncing ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}
-            Sync from VUT
+            <span className="@3xl:inline hidden">Sync from VUT</span>
           </button>
           <button
             onClick={() => setShowCourseForm(true)}
             className="flex items-center gap-1 rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white transition hover:bg-accent/90"
           >
-            <Plus size={14} /> Add Course
+            <Plus size={14} /> <span className="@3xl:inline hidden">Add Course</span>
           </button>
         </div>
       </div>
@@ -196,7 +196,7 @@ export default function GradesApp() {
 
       {/* GPA summary */}
       {courses.length > 0 && (
-        <div className="flex items-center gap-4 border-b border-edge bg-surface-2 px-4 py-3">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-edge bg-surface-2 px-4 py-3">
           <div className="flex items-center gap-2">
             <Award size={20} className="text-amber-400" />
             <div>
@@ -204,12 +204,12 @@ export default function GradesApp() {
               <p className="text-[10px] uppercase tracking-wide text-ink-muted">GPA</p>
             </div>
           </div>
-          <div className="h-10 w-px bg-edge" />
+          <div className="h-10 w-px bg-edge @3xl:block hidden" />
           <div>
             <p className="text-lg font-semibold text-ink">{courses.length}</p>
             <p className="text-[10px] uppercase tracking-wide text-ink-muted">Courses</p>
           </div>
-          <div className="h-10 w-px bg-edge" />
+          <div className="h-10 w-px bg-edge @3xl:block hidden" />
           <div>
             <p className="text-lg font-semibold text-ink">
               {courses.reduce((s, c) => s + c.credits, 0)}

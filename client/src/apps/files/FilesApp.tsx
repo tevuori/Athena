@@ -75,6 +75,11 @@ export default function FilesApp(_: { win: WindowInstance }) {
   // file-area click handler doesn't wipe the selection we just made.
   const suppressNextClick = useRef(false);
 
+  // Touch long-press state for mobile context menus (delegated on file area).
+  const touchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
+  const touchLongPressed = useRef(false);
+
   // ---- Data loading ----
   const loadTree = useCallback(async () => {
     try {
@@ -606,6 +611,28 @@ export default function FilesApp(_: { win: WindowInstance }) {
     setContextMenu({ x: e.clientX, y: e.clientY, items });
   }, [selected, openFile, openWindow, download, duplicateFile, toggleStar, deleteFile]);
 
+  // Long-press variant: open file context menu at a given screen position
+  // (used by mobile touch long-press via delegated handler on file area).
+  const openFileMenuAt = useCallback((pos: { x: number; y: number }, file: VFile) => {
+    if (!selected.has(file.id)) {
+      setSelected(new Set([file.id]));
+      setLastSelected(file.id);
+    }
+    const items: MenuItem[] = [
+      { label: "Open", icon: <FileSymlink size={14} />, onClick: () => openFile(file) },
+      ...(isTextFile(file) ? [{ label: "Open in Editor", icon: <FileCode size={14} />, onClick: () => openWindow({ appId: "editor", title: file.name, icon: "Code2", payload: { fileId: file.id } }) }] : []),
+      ...(isImageFile(file) || isPdfFile(file) || isAudioFile(file) || isVideoFile(file) ? [{ label: "Open in Viewer", icon: <ImageIcon size={14} />, onClick: () => openWindow({ appId: "viewer", title: file.name, icon: "Eye", payload: { fileId: file.id } }) }] : []),
+      { separator: true },
+      { label: "Download", icon: <Download size={14} />, onClick: () => download(file) },
+      { label: "Rename", icon: <Pencil size={14} />, onClick: () => setRenaming({ type: "file", id: file.id, value: file.name }) },
+      { label: "Duplicate", icon: <Copy size={14} />, onClick: () => duplicateFile(file) },
+      { label: file.starred ? "Unstar" : "Star", icon: <Star size={14} />, onClick: () => toggleStar(file) },
+      { separator: true },
+      { label: "Delete", icon: <Trash2 size={14} />, danger: true, onClick: () => deleteFile(file) },
+    ];
+    setContextMenu({ x: pos.x, y: pos.y, items });
+  }, [selected, openFile, openWindow, download, duplicateFile, toggleStar, deleteFile]);
+
   const showFolderContextMenu = useCallback((e: React.MouseEvent, folder: VFolder) => {
     e.preventDefault();
     e.stopPropagation();
@@ -617,6 +644,18 @@ export default function FilesApp(_: { win: WindowInstance }) {
       { label: "Delete", icon: <Trash2 size={14} />, danger: true, onClick: () => deleteFolder(folder) },
     ];
     setContextMenu({ x: e.clientX, y: e.clientY, items });
+  }, [navigateToFolder, downloadFolderZip, deleteFolder]);
+
+  // Long-press variant for folders.
+  const openFolderMenuAt = useCallback((pos: { x: number; y: number }, folder: VFolder) => {
+    const items: MenuItem[] = [
+      { label: "Open", icon: <Folder size={14} />, onClick: () => navigateToFolder(folder) },
+      { label: "Rename", icon: <Pencil size={14} />, onClick: () => setRenaming({ type: "folder", id: folder.id, value: folder.name }) },
+      { label: "Download as ZIP", icon: <Archive size={14} />, onClick: () => downloadFolderZip(folder) },
+      { separator: true },
+      { label: "Delete", icon: <Trash2 size={14} />, danger: true, onClick: () => deleteFolder(folder) },
+    ];
+    setContextMenu({ x: pos.x, y: pos.y, items });
   }, [navigateToFolder, downloadFolderZip, deleteFolder]);
 
   const showEmptyContextMenu = useCallback((e: React.MouseEvent) => {
@@ -942,7 +981,48 @@ export default function FilesApp(_: { win: WindowInstance }) {
           onMouseDown={onFileAreaMouseDown}
           onMouseMove={onFileAreaMouseMove}
           onMouseUp={onFileAreaMouseUp}
+          onPointerDown={(e) => {
+            if (e.pointerType !== "touch") return;
+            touchStart.current = { x: e.clientX, y: e.clientY };
+            touchLongPressed.current = false;
+            if (touchTimer.current) clearTimeout(touchTimer.current);
+            touchTimer.current = setTimeout(() => {
+              touchLongPressed.current = true;
+              // Find the closest file/folder item from the touch target.
+              const target = e.target as HTMLElement;
+              const fileEl = target.closest("[data-file-id]") as HTMLElement | null;
+              const folderEl = target.closest("[data-folder-id]") as HTMLElement | null;
+              const pos = touchStart.current ?? { x: e.clientX, y: e.clientY };
+              if (fileEl) {
+                const fid = fileEl.dataset.fileId;
+                const file = files.find((f) => f.id === fid);
+                if (file) openFileMenuAt(pos, file);
+              } else if (folderEl) {
+                const gfid = folderEl.dataset.folderId;
+                const folder = folders.find((f) => f.id === gfid) ?? allFolders.find((f) => f.id === gfid);
+                if (folder) openFolderMenuAt(pos, folder);
+              }
+            }, 500);
+          }}
+          onPointerMove={(e) => {
+            if (e.pointerType !== "touch" || !touchStart.current) return;
+            const dx = Math.abs(e.clientX - touchStart.current.x);
+            const dy = Math.abs(e.clientY - touchStart.current.y);
+            if (dx > 10 || dy > 10) {
+              if (touchTimer.current) { clearTimeout(touchTimer.current); touchTimer.current = null; }
+              touchStart.current = null;
+            }
+          }}
+          onPointerUp={(e) => {
+            if (e.pointerType !== "touch") return;
+            if (touchTimer.current) { clearTimeout(touchTimer.current); touchTimer.current = null; }
+            touchStart.current = null;
+          }}
           onClick={() => {
+            if (touchLongPressed.current) {
+              touchLongPressed.current = false;
+              return;
+            }
             if (suppressNextClick.current) {
               suppressNextClick.current = false;
               return;
@@ -988,6 +1068,7 @@ export default function FilesApp(_: { win: WindowInstance }) {
                 <div
                   key={folder.id}
                   data-folder-item
+                  data-folder-id={folder.id}
                   onDoubleClick={() => navigateToFolder(folder)}
                   onClick={(e) => { e.stopPropagation(); setSelected(new Set()); }}
                   onContextMenu={(e) => showFolderContextMenu(e, folder)}
@@ -1092,6 +1173,7 @@ export default function FilesApp(_: { win: WindowInstance }) {
                   <tr
                     key={folder.id}
                     data-folder-item
+                    data-folder-id={folder.id}
                     onDoubleClick={() => navigateToFolder(folder)}
                     onClick={(e) => { e.stopPropagation(); setSelected(new Set()); }}
                     onContextMenu={(e) => showFolderContextMenu(e, folder)}

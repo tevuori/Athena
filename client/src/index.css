@@ -33,6 +33,40 @@ body,
   overflow: hidden;
 }
 
+/* Mobile: use dynamic viewport height so iOS URL-bar resize + Android
+   browser chrome don't cause jumps. Falls back to 100% on desktop. */
+@supports (height: 100dvh) {
+  html, body, #root {
+    height: 100dvh;
+  }
+}
+
+/* Prevent pull-to-refresh / rubber-banding inside the app on touch devices. */
+html {
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Safe-area helpers (notch / home indicator). Applied by MobileShell. */
+.safe-top { padding-top: env(safe-area-inset-top); }
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+.safe-left { padding-left: env(safe-area-inset-left); }
+.safe-right { padding-right: env(safe-area-inset-right); }
+
+/* On touch devices there is no hover. Reveal hover-gated controls so they
+   remain accessible via tap. Targets the common `group-hover:opacity-*`
+   reveal pattern used across apps. */
+@media (hover: none) {
+  .group:active .group-hover\:opacity-0,
+  .group:hover .group-hover\:opacity-0 {
+    opacity: 1 !important;
+  }
+  /* Also reveal any element that only shows on group-hover. */
+  .group .group-hover\:opacity-100 {
+    opacity: 1 !important;
+  }
+}
+
 body {
   font-family: theme("fontFamily.sans");
   background: rgb(var(--surface));

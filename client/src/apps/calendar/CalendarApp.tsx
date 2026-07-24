@@ -21,7 +21,7 @@ import { setLinkPayload } from "../links/linkDnd";
 import LinkBadge from "../links/LinkBadge";
 import { useLinkDrop } from "../links/useLinkDrop";
 
-type ViewMode = "month" | "week" | "day";
+type ViewMode = "month" | "week" | "day" | "agenda";
 
 interface LayerToggles {
   events: boolean;
@@ -85,7 +85,13 @@ interface DisplayEvent {
 
 export default function CalendarApp({ win }: { win: WindowInstance }) {
   const openWindow = useWindows((s) => s.open);
-  const [view, setView] = useState<ViewMode>("month");
+  const [view, setView] = useState<ViewMode>(() =>
+    typeof window !== "undefined" &&
+    window.matchMedia("(pointer: coarse)").matches &&
+    window.innerWidth <= 820
+      ? "agenda"
+      : "month"
+  );
   const [cursor, setCursor] = useState<Date>(() => {
     const p = win?.payload as { date?: string } | undefined;
     return p?.date ? new Date(p.date) : new Date();
@@ -445,7 +451,7 @@ export default function CalendarApp({ win }: { win: WindowInstance }) {
         </div>
 
         <div className="mx-1 flex rounded-md border border-edge">
-          {(["month", "week", "day"] as ViewMode[]).map((v) => (
+          {(["month", "week", "day", "agenda"] as ViewMode[]).map((v) => (
             <button
               key={v}
               onClick={() => setView(v)}
@@ -530,6 +536,7 @@ export default function CalendarApp({ win }: { win: WindowInstance }) {
         {view === "month" && <MonthView cursor={cursor} events={displayEvents} onDrop={onDrop} onEventClick={(ev) => openEditor(events.find((e) => e.id === ev.id) ?? displayToPartial(ev))} onSlotClick={(d) => openEditor(undefined, d)} />}
         {view === "week" && <WeekView cursor={cursor} events={displayEvents} onDrop={onDrop} onEventClick={(ev) => openEditor(events.find((e) => e.id === ev.id) ?? displayToPartial(ev))} onSlotClick={(d) => openEditor(undefined, d)} />}
         {view === "day" && <DayView cursor={cursor} events={displayEvents} onDrop={onDrop} onEventClick={(ev) => openEditor(events.find((e) => e.id === ev.id) ?? displayToPartial(ev))} onSlotClick={(d) => openEditor(undefined, d)} />}
+        {view === "agenda" && <AgendaView cursor={cursor} events={displayEvents} onEventClick={(ev) => openEditor(events.find((e) => e.id === ev.id) ?? displayToPartial(ev))} />}
       </div>
 
       {/* Event editor modal */}
@@ -839,6 +846,73 @@ function DayView({
             })}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ===== Agenda view (mobile-friendly scrollable list) =====
+function AgendaView({
+  cursor, events, onEventClick,
+}: {
+  cursor: Date;
+  events: DisplayEvent[];
+  onEventClick: (ev: DisplayEvent) => void;
+}) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  // Show 14 days starting from the cursor's week start.
+  const start = startOfWeek(cursor);
+  const days = Array.from({ length: 14 }, (_, i) => addDays(start, i));
+
+  return (
+    <div className="h-full overflow-y-auto p-3">
+      <div className="space-y-4">
+        {days.map((date) => {
+          const dayEvents = events
+            .filter((e) => sameDay(e.start, date))
+            .sort((a, b) => a.start.getTime() - b.start.getTime());
+          const isToday = sameDay(date, today);
+          const isPast = date < today && !isToday;
+
+          return (
+            <div key={date.toISOString()}>
+              <div className={`mb-1.5 flex items-baseline gap-2 ${isPast ? "opacity-50" : ""}`}>
+                <span className={`text-sm font-semibold ${isToday ? "text-accent" : "text-ink"}`}>
+                  {date.toLocaleDateString(undefined, { weekday: "short" })}
+                </span>
+                <span className="text-xs text-ink-muted">
+                  {date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                </span>
+                {isToday && <span className="rounded bg-accent/20 px-1.5 text-[10px] font-bold text-accent">TODAY</span>}
+              </div>
+              {dayEvents.length === 0 ? (
+                <p className="py-1 text-xs text-ink-muted/50">—</p>
+              ) : (
+                <div className="space-y-1">
+                  {dayEvents.map((ev) => (
+                    <button
+                      key={ev.id}
+                      onClick={() => onEventClick(ev)}
+                      className="flex w-full items-start gap-2.5 rounded-lg border border-edge bg-surface-2 p-2.5 text-left transition active:bg-surface-3"
+                    >
+                      <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: ev.color }} />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-ink">{ev.title}</p>
+                        <p className="text-[11px] text-ink-muted">
+                          {ev.allDay
+                            ? "All day"
+                            : `${ev.start.getHours().toString().padStart(2, "0")}:${ev.start.getMinutes().toString().padStart(2, "0")} – ${ev.end.getHours().toString().padStart(2, "0")}:${ev.end.getMinutes().toString().padStart(2, "0")}`}
+                          {ev.location && <span className="ml-1.5 inline-flex items-center gap-0.5"><MapPin size={9} />{ev.location}</span>}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

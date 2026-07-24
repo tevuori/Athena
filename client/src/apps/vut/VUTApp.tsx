@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { vutApi } from "../../services/vut";
 import { gradesApi } from "../../services/grades";
+import { useFormFactor } from "../../store/formfactor";
 import type { VutGrade, VutTimetableSlot, VutSubjectUpdate } from "../../types";
 
 type Tab = "overview" | "grades" | "timetable" | "updates" | "webview";
@@ -25,6 +26,7 @@ function colorForCourse(code: string, index: number): string {
 }
 
 export default function VUTApp() {
+  const isPhone = useFormFactor((s) => s.mode === "phone");
   const [tab, setTab] = useState<Tab>("overview");
   const [authState, setAuthState] = useState<AuthState>("loading");
   const [username, setUsername] = useState("");
@@ -373,40 +375,64 @@ export default function VUTApp() {
                     <Download size={14} /> Import to Grade Tracker
                   </button>
                 </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-edge text-left text-xs text-ink-muted">
-                        <th className="py-2 pr-3 font-medium">Code</th>
-                        <th className="py-2 pr-3 font-medium">Course</th>
-                        <th className="py-2 pr-3 font-medium">Cr.</th>
-                        <th className="py-2 pr-3 font-medium">Type</th>
-                        <th className="py-2 pr-3 font-medium">Completion</th>
-                        <th className="py-2 pr-3 font-medium">Score</th>
-                        <th className="py-2 pr-3 font-medium">Grade</th>
-                        <th className="py-2 pr-3 font-medium">Attempt</th>
-                        <th className="py-2 pr-3 font-medium">Semester</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {grades.map((g, i) => (
-                        <tr key={i} className="border-b border-edge/50 hover:bg-surface-2">
-                          <td className="py-2 pr-3 font-medium text-ink">{g.courseCode}</td>
-                          <td className="py-2 pr-3 text-ink">{g.courseName}</td>
-                          <td className="py-2 pr-3 text-ink-muted">{g.credits}</td>
-                          <td className="py-2 pr-3 text-ink-muted">{g.completionType}</td>
-                          <td className="py-2 pr-3 text-ink-muted">{g.completionType}</td>
-                          <td className="py-2 pr-3 text-ink-muted">{g.score || "—"}</td>
-                          <td className="py-2 pr-3">
-                            <span className={`font-bold ${gradeColor(g.grade)}`}>{g.grade || "—"}</span>
-                          </td>
-                          <td className="py-2 pr-3 text-ink-muted">{g.attempt || "—"}</td>
-                          <td className="py-2 pr-3 text-xs text-ink-muted">{g.semester}</td>
+                {isPhone ? (
+                  /* Mobile: card list */
+                  <div className="space-y-2">
+                    {grades.map((g, i) => (
+                      <div key={i} className="rounded-lg border border-edge bg-surface-2 p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-ink">{g.courseName}</p>
+                            <p className="text-xs text-ink-muted">{g.courseCode} · {g.credits} cr</p>
+                          </div>
+                          <span className={`text-lg font-bold ${gradeColor(g.grade)}`}>{g.grade || "—"}</span>
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-ink-muted">
+                          <span>{g.completionType}</span>
+                          {g.score && <span>Score: {g.score}</span>}
+                          {g.attempt && <span>Attempt: {g.attempt}</span>}
+                          <span>{g.semester}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  /* Desktop: table */
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-edge text-left text-xs text-ink-muted">
+                          <th className="py-2 pr-3 font-medium">Code</th>
+                          <th className="py-2 pr-3 font-medium">Course</th>
+                          <th className="py-2 pr-3 font-medium">Cr.</th>
+                          <th className="py-2 pr-3 font-medium">Type</th>
+                          <th className="py-2 pr-3 font-medium">Completion</th>
+                          <th className="py-2 pr-3 font-medium">Score</th>
+                          <th className="py-2 pr-3 font-medium">Grade</th>
+                          <th className="py-2 pr-3 font-medium">Attempt</th>
+                          <th className="py-2 pr-3 font-medium">Semester</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {grades.map((g, i) => (
+                          <tr key={i} className="border-b border-edge/50 hover:bg-surface-2">
+                            <td className="py-2 pr-3 font-medium text-ink">{g.courseCode}</td>
+                            <td className="py-2 pr-3 text-ink">{g.courseName}</td>
+                            <td className="py-2 pr-3 text-ink-muted">{g.credits}</td>
+                            <td className="py-2 pr-3 text-ink-muted">{g.completionType}</td>
+                            <td className="py-2 pr-3 text-ink-muted">{g.completionType}</td>
+                            <td className="py-2 pr-3 text-ink-muted">{g.score || "—"}</td>
+                            <td className="py-2 pr-3">
+                              <span className={`font-bold ${gradeColor(g.grade)}`}>{g.grade || "—"}</span>
+                            </td>
+                            <td className="py-2 pr-3 text-ink-muted">{g.attempt || "—"}</td>
+                            <td className="py-2 pr-3 text-xs text-ink-muted">{g.semester}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -573,6 +599,7 @@ function gradeColor(grade: string): string {
 // ===== Timetable Grid Component =====
 
 function TimetableGrid({ slots }: { slots: VutTimetableSlot[] }) {
+  const isPhone = useFormFactor((s) => s.mode === "phone");
   // Group slots by day
   const byDay: Record<number, VutTimetableSlot[]> = {};
   for (const s of slots) {
@@ -594,6 +621,46 @@ function TimetableGrid({ slots }: { slots: VutTimetableSlot[] }) {
     }
   }
 
+  // ===== Mobile: day-by-day list =====
+  if (isPhone) {
+    return (
+      <div className="space-y-4">
+        {weekDays.map((d) => {
+          const daySlots = (byDay[d] || []).sort((a, b) => a.startTime.localeCompare(b.startTime));
+          if (daySlots.length === 0) return null;
+          return (
+            <div key={d}>
+              <h4 className="mb-2 text-sm font-semibold text-ink">{DAYS_FULL[d]}</h4>
+              <div className="space-y-2">
+                {daySlots.map((slot, i) => {
+                  const color = slot.courseCode && courseColors[slot.courseCode] ? courseColors[slot.courseCode] : "#6366f1";
+                  return (
+                    <div
+                      key={i}
+                      className="rounded-lg p-3"
+                      style={{ backgroundColor: color + "20", borderLeft: `3px solid ${color}` }}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-sm font-medium text-ink">{slot.courseName}</p>
+                        <span className="shrink-0 text-xs text-ink-muted">{slot.startTime}–{slot.endTime}</span>
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-ink-muted">
+                        {slot.type && <span>{slot.type}</span>}
+                        {slot.room && <span className="flex items-center gap-0.5"><MapPin size={9} /> {slot.room}</span>}
+                        {slot.teacher && <span>{slot.teacher}</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // ===== Desktop: weekly grid table =====
   return (
     <div className="overflow-x-auto">
       <table className="w-full border-collapse text-xs">

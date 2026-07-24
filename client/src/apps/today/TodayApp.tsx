@@ -20,6 +20,7 @@ import {
   Calendar,
   Flame,
   Check,
+  Loader2,
 } from "lucide-react";
 import { useWindows, type AppId } from "../../store/windows";
 import { useAuth } from "../../store/auth";
@@ -28,6 +29,7 @@ import { flashcardsApi } from "../../services/flashcards";
 import { vutApi } from "../../services/vut";
 import { calendarApi } from "../../services/calendar";
 import { habitsApi } from "../../services/habits";
+import { usePullToRefresh } from "../../shell/mobile/usePullToRefresh";
 import type { Task, TaskPriority, VutTimetableSlot, CalendarEvent, Habit, HabitStats } from "../../types";
 
 const DAYS_FULL = ["Pondělí", "Úterý", "Středa", "Čtvrtek", "Pátek", "Sobota", "Neděle"];
@@ -163,6 +165,9 @@ export default function TodayApp() {
     return () => clearInterval(id);
   }, [refresh]);
 
+  // Pull-to-refresh (mobile-native gesture)
+  const ptr = usePullToRefresh(refresh);
+
   const openApp = (appId: AppId, title: string, icon: string, payload?: Record<string, unknown>) => {
     openWindow({ appId, title, icon, payload });
   };
@@ -194,7 +199,23 @@ export default function TodayApp() {
   });
 
   return (
-    <div className="h-full overflow-y-auto bg-surface">
+    <div ref={ptr.ref} {...ptr.bind} className="h-full overflow-y-auto bg-surface">
+      {/* Pull-to-refresh indicator */}
+      {(ptr.distance > 0 || ptr.refreshing) && (
+        <div
+          className="flex items-center justify-center py-2 text-accent"
+          style={{ height: ptr.distance }}
+        >
+          {ptr.refreshing ? (
+            <Loader2 size={20} className="animate-spin" />
+          ) : (
+            <RefreshCw
+              size={20}
+              style={{ opacity: ptr.progress, transform: `rotate(${ptr.progress * 360}deg)` }}
+            />
+          )}
+        </div>
+      )}
       <div className="mx-auto max-w-none @5xl:max-w-3xl p-6">
         {/* Header */}
         <div className="mb-6 flex items-start justify-between gap-4">
@@ -220,7 +241,7 @@ export default function TodayApp() {
         </div>
 
         {/* Hero — start focus */}
-        <div className="mb-5 flex items-center justify-between gap-4 rounded-xl border border-edge bg-gradient-to-br from-accent/10 to-surface-2 p-4">
+        <div className="mb-5 flex flex-col gap-3 rounded-xl border border-edge bg-gradient-to-br from-accent/10 to-surface-2 p-4 @5xl:flex-row @5xl:items-center @5xl:justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-accent/15 text-accent">
               <Timer size={20} />
@@ -234,7 +255,7 @@ export default function TodayApp() {
           </div>
           <button
             onClick={() => openApp("pomodoro", "Pomodoro", "Timer", { autoStart: true, phase: "focus" })}
-            className="flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
+            className="flex items-center justify-center gap-1.5 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 @5xl:py-2"
           >
             <Play size={15} />
             Start focus

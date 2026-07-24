@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   DndContext, DragEndEvent, DragOverlay, DragStartEvent,
-  PointerSensor, useSensor, useSensors,
+  PointerSensor, TouchSensor, useSensor, useSensors,
 } from "@dnd-kit/core";
 import { useDroppable } from "@dnd-kit/core";
 import { useSortable, SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
@@ -23,7 +23,10 @@ export default function TasksApp(_: { win: WindowInstance }) {
   const [newTitle, setNewTitle] = useState("");
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    // Touch: require a deliberate press-and-hold before drag starts so a tap
+    // doesn't accidentally begin a drag. delay 200ms + tolerance 8px.
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } })
   );
 
   const load = useCallback(async () => {
@@ -121,7 +124,7 @@ export default function TasksApp(_: { win: WindowInstance }) {
       </div>
 
       <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
-        <div className="flex flex-1 gap-3 overflow-x-auto p-3">
+        <div className="flex flex-1 gap-3 overflow-x-auto p-3 snap-x snap-mandatory">
           {STATUS_ORDER.map((status) => (
             <Column
               key={status}
@@ -160,7 +163,7 @@ function Column({
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
   return (
-    <div className="flex w-72 shrink-0 flex-col rounded-xl border border-edge bg-surface-2">
+    <div className="flex w-72 shrink-0 snap-center flex-col rounded-xl border border-edge bg-surface-2">
       <div className="flex items-center justify-between px-3 py-2.5">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-ink">{STATUS_LABELS[status]}</span>

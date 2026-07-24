@@ -180,7 +180,7 @@ function SetupTab({ status, onSaved }: { status: NtfyStatus | null; onSaved: () 
   const inboxUrl = `${serverUrl.replace(/\/+$/, "")}/${inboxTopic}`;
 
   return (
-    <div className="p-5 max-w-2xl mx-auto space-y-5">
+    <div className="p-5 max-w-full @5xl:max-w-2xl mx-auto space-y-5">
       <div className="space-y-1">
         <h2 className="text-lg font-semibold flex items-center gap-2"><Bell size={18} /> Ntfy Setup</h2>
         <p className="text-sm text-zinc-500 dark:text-zinc-400">
