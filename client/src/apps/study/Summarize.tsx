@@ -8,7 +8,7 @@ import { ActionButton, ErrorBanner, Loading, MarkdownView, SuccessBanner, Trunca
 import { studyApi, type SourceDescriptor } from "../../services/study";
 import { useWindows } from "../../store/windows";
 
-export default function Summarize({ initialSource }: { initialSource?: SourceDescriptor | null }) {
+export default function Summarize({ initialSource, language }: { initialSource?: SourceDescriptor | null; language?: "en" | "cs" }) {
   const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(new Set());
   const toggleSource = (id: string) => {
     setSelectedSourceIds((prev) => {
@@ -43,7 +43,7 @@ export default function Summarize({ initialSource }: { initialSource?: SourceDes
     setNoteId(null);
     try {
       const sources = await getSources();
-      const res = await studyApi.summarize({ sources, mode, saveAsNote: true });
+      const res = await studyApi.summarize({ sources, mode, saveAsNote: true, language });
       setSummary(res.summary);
       setNoteId(res.noteId);
       setTruncated(res.truncated);

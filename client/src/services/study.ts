@@ -4,6 +4,8 @@ import { api } from "./api";
 
 export type SourceKind = "note" | "file" | "paste" | "moodle" | "url";
 
+export type StudyLanguage = "en" | "cs";
+
 export interface SourceDescriptor {
   kind: SourceKind;
   id?: string;
@@ -97,6 +99,7 @@ export const studyApi = {
     count?: number;
     mode?: "concept" | "factual" | "mixed" | "cloze";
     create?: boolean;
+    language?: StudyLanguage;
   }) => api.post<FlashcardsResult>("/api/study/flashcards", data),
 
   summarize: (data: {
@@ -105,6 +108,7 @@ export const studyApi = {
     mode?: "tldr" | "outline" | "keypoints";
     saveAsNote?: boolean;
     noteTitle?: string;
+    language?: StudyLanguage;
   }) => api.post<SummarizeResult>("/api/study/summarize", data),
 
   explain: (data: {
@@ -113,6 +117,7 @@ export const studyApi = {
     depth?: "eli5" | "standard" | "expert";
     saveAsNote?: boolean;
     noteTitle?: string;
+    language?: StudyLanguage;
   }) => api.post<ExplainResult>("/api/study/explain", data),
 
   studyGuide: (data: {
@@ -120,9 +125,10 @@ export const studyApi = {
     sources?: SourceDescriptor[];
     saveAsNote?: boolean;
     noteTitle?: string;
+    language?: StudyLanguage;
   }) => api.post<StudyGuideResult>("/api/study/study-guide", data),
 
-  syllabusTasks: (data: { source?: SourceDescriptor; sources?: SourceDescriptor[]; create?: boolean }) =>
+  syllabusTasks: (data: { source?: SourceDescriptor; sources?: SourceDescriptor[]; create?: boolean; language?: StudyLanguage }) =>
     api.post<SyllabusResult>("/api/study/syllabus-tasks", data),
 
   quizStart: (data: {
@@ -130,12 +136,13 @@ export const studyApi = {
     sources?: SourceDescriptor[];
     questionCount?: number;
     types?: ("mcq" | "short")[];
+    language?: StudyLanguage;
   }) => api.post<QuizStartResult>("/api/study/quiz/start", data),
 
   quizGet: (quizId: string) =>
     api.get<QuizStartResult>(`/api/study/quiz/${quizId}`),
 
-  quizAnswer: (quizId: string, data: { questionId: number; answer: string }) =>
+  quizAnswer: (quizId: string, data: { questionId: number; answer: string; language?: StudyLanguage }) =>
     api.post<QuizGradeResult>(`/api/study/quiz/${quizId}/answer`, data),
 
   quizFinish: (

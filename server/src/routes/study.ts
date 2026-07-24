@@ -18,6 +18,7 @@ import {
   studyGuidePrompt,
   syllabusTasksPrompt,
   syllabusTasksSchemaHint,
+  type StudyLanguage,
   quizGeneratePrompt,
   quizGenerateSchemaHint,
   quizGradePrompt,
@@ -45,6 +46,8 @@ const sourceSchema = z.object({
   url: z.string().optional(),
   name: z.string().optional(),
 });
+
+const languageSchema = z.enum(["en", "cs"]).optional().default("en");
 
 /** Resolve either a single `source` or an array of `sources` into a list of
  *  ResolvedSource (with 1-based index for cited prompts). */
@@ -87,6 +90,7 @@ const flashcardsSchema = z.object({
   mode: z.enum(["concept", "factual", "mixed", "cloze"]).optional().default("mixed"),
   /** If true, create the deck + cards in DB. If false, just return the cards. */
   create: z.boolean().optional().default(true),
+  language: languageSchema,
 });
 
 study.post("/flashcards", zValidator("json", flashcardsSchema), async (c) => {
@@ -107,7 +111,7 @@ study.post("/flashcards", zValidator("json", flashcardsSchema), async (c) => {
   try {
     result = await generateJson<{ cards: CitedFlashcardSpec[] }>(
       loaded.model,
-      flashcardsCitedPrompt(resolved.map((r) => ({ index: r.index!, name: r.name, text: r.text })), body.count, body.mode),
+      flashcardsCitedPrompt(resolved.map((r) => ({ index: r.index!, name: r.name, text: r.text })), body.count, body.mode, body.language as StudyLanguage),
       flashcardsCitedSchemaHint()
     );
   } catch (e) {
@@ -165,6 +169,7 @@ const summarizeSchema = z.object({
   mode: z.enum(["tldr", "outline", "keypoints"]).optional().default("keypoints"),
   saveAsNote: z.boolean().optional().default(true),
   noteTitle: z.string().optional(),
+  language: languageSchema,
 });
 
 study.post("/summarize", zValidator("json", summarizeSchema), async (c) => {
@@ -187,7 +192,7 @@ study.post("/summarize", zValidator("json", summarizeSchema), async (c) => {
   try {
     summary = await generateText(
       loaded.model,
-      summarizeCitedPrompt(combinedText, body.mode, combinedName),
+      summarizeCitedPrompt(combinedText, body.mode, combinedName, body.language as StudyLanguage),
       "You are a study assistant. Summarize accurately in clear Markdown. Do not invent information."
     );
   } catch (e) {
@@ -223,6 +228,7 @@ const explainSchema = z.object({
   depth: z.enum(["eli5", "standard", "expert"]).optional().default("standard"),
   saveAsNote: z.boolean().optional().default(true),
   noteTitle: z.string().optional(),
+  language: languageSchema,
 });
 
 study.post("/explain", zValidator("json", explainSchema), async (c) => {
@@ -245,7 +251,7 @@ study.post("/explain", zValidator("json", explainSchema), async (c) => {
   try {
     explanation = await generateText(
       loaded.model,
-      explainCitedPrompt(combinedText, body.depth, combinedName),
+      explainCitedPrompt(combinedText, body.depth, combinedName, body.language as StudyLanguage),
       "You are a study assistant. Explain clearly and accurately in Markdown with examples. Do not invent information."
     );
   } catch (e) {
@@ -280,6 +286,7 @@ const studyGuideSchema = z.object({
   sources: z.array(sourceSchema).max(10).optional(),
   saveAsNote: z.boolean().optional().default(true),
   noteTitle: z.string().optional(),
+  language: languageSchema,
 });
 
 study.post("/study-guide", zValidator("json", studyGuideSchema), async (c) => {
@@ -320,7 +327,7 @@ study.post("/study-guide", zValidator("json", studyGuideSchema), async (c) => {
   try {
     guide = await generateText(
       loaded.model,
-      studyGuideCitedPrompt(citedMaterials),
+      studyGuideCitedPrompt(citedMaterials, body.language as StudyLanguage),
       "You are a study assistant. Create a clear, comprehensive study guide in Markdown. Do not invent information."
     );
   } catch (e) {
@@ -362,6 +369,7 @@ const syllabusSchema = z.object({
   source: sourceSchema.optional(),
   sources: z.array(sourceSchema).max(20).optional(),
   create: z.boolean().optional().default(true),
+  language: languageSchema,
 });
 
 study.post("/syllabus-tasks", zValidator("json", syllabusSchema), async (c) => {
@@ -383,7 +391,7 @@ study.post("/syllabus-tasks", zValidator("json", syllabusSchema), async (c) => {
   try {
     result = await generateJson<{ tasks: SyllabusTaskSpec[] }>(
       loaded.model,
-      syllabusTasksPrompt(combinedText),
+      syllabusTasksPrompt(combinedText, body.language as StudyLanguage),
       syllabusTasksSchemaHint()
     );
   } catch (e) {
@@ -441,6 +449,7 @@ const quizStartSchema = z.object({
   sources: z.array(sourceSchema).max(20).optional(),
   questionCount: z.number().int().min(1).max(20).optional().default(5),
   types: z.array(z.enum(["mcq", "short"])).optional().default(["mcq", "short"]),
+  language: languageSchema,
 });
 
 study.post("/quiz/start", zValidator("json", quizStartSchema), async (c) => {
@@ -463,7 +472,7 @@ study.post("/quiz/start", zValidator("json", quizStartSchema), async (c) => {
   try {
     result = await generateJson<{ questions: QuizQuestionSpec[] }>(
       loaded.model,
-      quizGeneratePrompt(combinedText, body.questionCount, body.types),
+      quizGeneratePrompt(combinedText, body.questionCount, body.types, body.language as StudyLanguage),
       quizGenerateSchemaHint()
     );
   } catch (e) {
@@ -523,6 +532,7 @@ study.get("/quiz/:id", async (c) => {
 const quizAnswerSchema = z.object({
   questionId: z.number().int(),
   answer: z.string(),
+  language: languageSchema,
 });
 
 study.post("/quiz/:id/answer", zValidator("json", quizAnswerSchema), async (c) => {
@@ -543,7 +553,7 @@ study.post("/quiz/:id/answer", zValidator("json", quizAnswerSchema), async (c) =
   try {
     result = await generateJson<{ correct: boolean; explanation: string; modelAnswer: string }>(
       loaded.model,
-      quizGradePrompt(quiz.sourceText, question, body.answer),
+      quizGradePrompt(quiz.sourceText, question, body.answer, body.language as StudyLanguage),
       quizGradeSchemaHint()
     );
   } catch (e) {

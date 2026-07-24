@@ -13,7 +13,7 @@ import { Message } from "multi-llm-ts";
 import prisma from "../db/client";
 import { authMiddleware } from "../middleware/auth";
 import { getUserConfig, buildModel, isLlmConfiguredFor } from "../services/athena/llm";
-import { groundedQaSystemPrompt, type GroundedSource } from "../services/study/prompts";
+import { groundedQaSystemPrompt, type GroundedSource, type StudyLanguage } from "../services/study/prompts";
 import { logSessionSafe } from "../services/study/logSession";
 import { canonicalPair } from "../db/links";
 
@@ -234,6 +234,7 @@ chat.delete("/:id", async (c) => {
 
 const streamSchema = z.object({
   message: z.string().min(1).max(20000),
+  language: z.enum(["en", "cs"]).optional().default("en"),
 });
 
 /** POST /:id/stream — stream a grounded answer for the chat.
@@ -258,7 +259,7 @@ chat.post("/:id/stream", zValidator("json", streamSchema), async (c) => {
   }
 
   const cfg = await getUserConfig(userId);
-  const systemPrompt = groundedQaSystemPrompt(sources);
+  const systemPrompt = groundedQaSystemPrompt(sources, body.language as StudyLanguage);
 
   // Build the message thread from stored history + the new user message.
   const history = parseMessages(row.messages);
@@ -293,6 +294,7 @@ chat.post("/:id/stream", zValidator("json", streamSchema), async (c) => {
   return streamSSE(c, async (stream) => {
     const model = buildModel(cfg);
     let full = "";
+    let errored = false;
     try {
       for await (const chunk of model.generate(thread, { tools: false, abortSignal: abort.signal })) {
         if (chunk.type === "content" && chunk.text) {
@@ -300,15 +302,17 @@ chat.post("/:id/stream", zValidator("json", streamSchema), async (c) => {
           await stream.writeSSE({ event: "content", data: JSON.stringify({ text: chunk.text }) });
         }
       }
-      await stream.writeSSE({ event: "done", data: JSON.stringify({ done: true }) });
     } catch (e) {
+      errored = true;
       const msg = e instanceof Error ? e.message : "Generation failed";
       await stream.writeSSE({ event: "error", data: JSON.stringify({ error: msg }) });
       // If we got partial content, still persist it so the user doesn't lose it.
       if (!full.trim()) return;
     }
 
-    // Persist the assistant message (with extracted citations).
+    // Persist the assistant message (with extracted citations) BEFORE sending
+    // the done event — otherwise the client reloads the chat before citations
+    // are stored, and [n] markers aren't clickable.
     const citations = extractCitations(full, sources);
     const assistantMsg: StoredMessage = {
       role: "assistant",
@@ -329,6 +333,11 @@ chat.post("/:id/stream", zValidator("json", streamSchema), async (c) => {
       chatId: row.id,
       citations: citations.length,
     });
+
+    // Send done AFTER persistence so the client reload picks up citations.
+    if (!errored) {
+      await stream.writeSSE({ event: "done", data: JSON.stringify({ done: true }) });
+    }
   });
 });
 

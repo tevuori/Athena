@@ -8,7 +8,7 @@ import { studySourcesApi, type StudySource } from "../../services/study-sources"
 import WorkspaceSourceSelector, { studySourceToDescriptor } from "./WorkspaceSourceSelector";
 import { useWindows } from "../../store/windows";
 
-export default function StudyGuide() {
+export default function StudyGuide({ language }: { language?: "en" | "cs" }) {
   const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(new Set());
   const [title, setTitle] = useState("");
   const [genLoading, setGenLoading] = useState(false);
@@ -50,6 +50,7 @@ export default function StudyGuide() {
         sources,
         saveAsNote: true,
         noteTitle: title.trim() || undefined,
+        language,
       });
       setGuide(res.guide);
       setNoteId(res.noteId);
