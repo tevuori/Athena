@@ -8,13 +8,16 @@ import AltTabSwitcher from "../wm/AltTabSwitcher";
 import CommandPalette from "./CommandPalette";
 import QuickCapture from "./QuickCapture";
 import AthenaQuickPanel from "./AthenaQuickPanel";
+import OnboardingOverlay from "./OnboardingOverlay";
 import { useWindows } from "../store/windows";
 import { useAthenaQuick } from "../store/athenaQuick";
+import { useSettings } from "../store/settings";
 import { useEffect } from "react";
 
 export default function DesktopEnvironment() {
   const { open, focusedId, snap, toggleMaximize, close } = useWindows();
   const toggleAthenaQuick = useAthenaQuick((s) => s.toggle);
+  const hasOnboarded = useSettings((s) => s.hasOnboarded);
 
   // Win + Y → toggle Athena quick panel (rolls in from the selected edge)
   useEffect(() => {
@@ -113,6 +116,7 @@ export default function DesktopEnvironment() {
       <AltTabSwitcher />
       <CommandPalette />
       <QuickCapture />
+      {!hasOnboarded && <OnboardingOverlay />}
     </div>
   );
 }

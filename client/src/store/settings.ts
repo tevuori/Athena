@@ -39,6 +39,8 @@ interface SettingsState {
   athenaQuickSize: AthenaQuickSize | null;
   /** Auto-enter Spotify fullscreen chill mode after 10 min of inactivity while music plays. */
   autoChillOnIdle: boolean;
+  /** Whether the user has completed the first-run onboarding tour. */
+  hasOnboarded: boolean;
   setTheme: (t: ThemeMode) => void;
   setAccent: (hex: string) => void;
   setWallpaper: (w: WallpaperId) => void;
@@ -49,6 +51,7 @@ interface SettingsState {
   setAthenaRollEdge: (e: AthenaRollEdge) => void;
   setAthenaQuickSize: (s: AthenaQuickSize) => void;
   setAutoChillOnIdle: (b: boolean) => void;
+  setHasOnboarded: (b: boolean) => void;
 }
 
 const STORAGE_KEY = "athena.settings";
@@ -64,6 +67,7 @@ interface PersistedSettings {
   athenaRollEdge: AthenaRollEdge;
   athenaQuickSize: AthenaQuickSize | null;
   autoChillOnIdle: boolean;
+  hasOnboarded: boolean;
 }
 
 function load(): Partial<PersistedSettings> {
@@ -99,6 +103,7 @@ const defaults: PersistedSettings = {
   athenaRollEdge: "bottom",
   athenaQuickSize: null,
   autoChillOnIdle: false,
+  hasOnboarded: false,
 };
 
 const loaded = { ...defaults, ...load() };
@@ -158,5 +163,9 @@ export const useSettings = create<SettingsState>((set, get) => ({
   setAutoChillOnIdle: (autoChillOnIdle) => {
     set({ autoChillOnIdle });
     persist({ ...get(), autoChillOnIdle } as PersistedSettings);
+  },
+  setHasOnboarded: (hasOnboarded) => {
+    set({ hasOnboarded });
+    persist({ ...get(), hasOnboarded } as PersistedSettings);
   },
 }));
