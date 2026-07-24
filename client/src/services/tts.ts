@@ -1,17 +1,27 @@
-// ===== TTS client API (ElevenLabs via server, Web Speech API fallback) =====
-// The server proxies ElevenLabs requests (keeping the API key server-side).
-// If TTS isn't configured, the client falls back to the Web Speech API.
+// ===== TTS client API (Edge TTS via server, Web Speech API fallback) =====
+// The server proxies TTS requests — Edge TTS (free, no key) is the default,
+// ElevenLabs is an optional premium upgrade. If server TTS fails entirely,
+// the client falls back to the Web Speech API.
 
 import { api, getToken, apiUrl } from "./api";
 
 export interface TtsConfig {
   configured: boolean;
   hasUserKey: boolean;
+  provider: "edge" | "elevenlabs";
   voiceId: string;
   modelId: string;
-  provider: string;
+  edgeAvailable: boolean;
 }
 
+/** Word boundary from Edge TTS (offset/duration in seconds). */
+export interface TtsWordBoundary {
+  offset: number;
+  duration: number;
+  text: string;
+}
+
+/** ElevenLabs character alignment. */
 export interface TtsAlignment {
   characters: string[];
   character_start_times_seconds: number[];
@@ -21,7 +31,12 @@ export interface TtsAlignment {
 export interface TtsTimedResult {
   audio_base64: string;
   contentType: string;
+  /** Edge TTS word boundaries for speech-synced highlighting. */
+  wordBoundaries?: TtsWordBoundary[];
+  /** ElevenLabs character alignment (when using ElevenLabs). */
   alignment?: TtsAlignment;
+  /** Which provider was used. */
+  provider?: "edge" | "elevenlabs";
 }
 
 export const ttsApi = {
@@ -35,7 +50,7 @@ export const ttsApi = {
     return api.delete("/api/tts/credential");
   },
   /** Synthesize text → audio Blob (audio/mpeg). Returns null on error. */
-  async synthesize(text: string, opts?: { stability?: number; similarityBoost?: number; speed?: number }): Promise<Blob | null> {
+  async synthesize(text: string, opts?: { language?: string; voice?: string; speed?: number }): Promise<Blob | null> {
     const token = getToken();
     const res = await fetch(apiUrl("/api/tts/synthesize"), {
       method: "POST",
@@ -48,8 +63,11 @@ export const ttsApi = {
     if (!res.ok) return null;
     return res.blob();
   },
-  /** Synthesize with character-level timestamps. Returns null on error. */
-  async synthesizeTimed(text: string, opts?: { stability?: number; similarityBoost?: number; speed?: number }): Promise<TtsTimedResult | null> {
+  /** Synthesize with word boundaries / timestamps. Returns null on error. */
+  async synthesizeTimed(
+    text: string,
+    opts?: { language?: string; voice?: string; speed?: number }
+  ): Promise<TtsTimedResult | null> {
     const res = await api.post<TtsTimedResult>("/api/tts/synthesize/timed", { text, ...opts });
     return res ?? null;
   },

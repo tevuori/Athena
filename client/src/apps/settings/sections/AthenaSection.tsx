@@ -22,7 +22,7 @@ export default function AthenaSection() {
   );
 }
 
-// ===== TTS (ElevenLabs) config for Interactive Teacher voice =====
+// ===== TTS config for Interactive Teacher voice =====
 
 function TtsConfigCard() {
   const [cfg, setCfg] = useState<TtsConfig | null>(null);
@@ -57,7 +57,7 @@ function TtsConfigCard() {
       });
       setKeyInput("");
       await refresh();
-      setMsg("ElevenLabs TTS key saved. The Teach Me mode will now use ElevenLabs voice.");
+      setMsg("ElevenLabs key saved. Teach Me will use ElevenLabs as the premium voice.");
     } catch (e) {
       setErr(true);
       setMsg(e instanceof Error ? e.message : "Failed to save");
@@ -74,7 +74,7 @@ function TtsConfigCard() {
     try {
       await ttsApi.deleteCredential();
       await refresh();
-      setMsg("TTS key removed. Teach Me will fall back to browser Web Speech API.");
+      setMsg("ElevenLabs key removed. Teach Me will use Edge TTS (free, neural voices).");
     } catch (e) {
       setErr(true);
       setMsg(e instanceof Error ? e.message : "Failed to remove");
@@ -83,72 +83,82 @@ function TtsConfigCard() {
     }
   };
 
+  const usingElevenLabs = cfg?.provider === "elevenlabs";
+
   return (
     <Card>
       <div className="mb-3 flex items-center gap-2">
         <Volume2 size={16} className="text-accent" />
-        <h3 className="text-sm font-semibold text-ink">Voice (ElevenLabs TTS)</h3>
+        <h3 className="text-sm font-semibold text-ink">Voice (Teach Me mode)</h3>
         {cfg && (
           <StatusPill
-            on={cfg.configured}
-            onLabel={cfg.hasUserKey ? "User key" : "Server key"}
-            offLabel="Not configured"
+            on={true}
+            onLabel={usingElevenLabs ? "ElevenLabs" : "Edge TTS"}
+            offLabel="Off"
           />
         )}
       </div>
       <p className="mb-3 text-xs text-ink-muted">
-        Connect an ElevenLabs API key to give Athena a natural voice in the Teach Me mode.
-        Without a key, the browser&apos;s built-in Web Speech API is used as a fallback.
-        Get a key at{" "}
-        <a href="https://elevenlabs.io" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
-          elevenlabs.io
-        </a>
-        .
+        Athena uses <strong className="text-ink">Microsoft Edge TTS</strong> by default — free,
+        high-quality neural voices with Czech support (Antonin, Vlasta) and no API key needed.
+        Optionally add an ElevenLabs key for premium voice quality.
       </p>
-      <Field label="ElevenLabs API Key">
-        <input
-          type="password"
-          value={keyInput}
-          onChange={(e) => setKeyInput(e.target.value)}
-          placeholder={cfg?.hasUserKey ? "•••••••• (enter a new key to replace)" : "Enter your ElevenLabs API key"}
-          className={inputClass}
-          autoComplete="off"
-        />
-      </Field>
-      <div className="mt-2 grid grid-cols-2 gap-2">
-        <Field label="Voice ID (optional)">
-          <input
-            type="text"
-            value={voiceId}
-            onChange={(e) => setVoiceId(e.target.value)}
-            placeholder="Default: Rachel"
-            className={inputClass}
-          />
-        </Field>
-        <Field label="Model ID (optional)">
-          <input
-            type="text"
-            value={modelId}
-            onChange={(e) => setModelId(e.target.value)}
-            placeholder="eleven_turbo_v2_5"
-            className={inputClass}
-          />
-        </Field>
+      <div className="mb-3 rounded-md border border-edge bg-surface-2 px-3 py-2 text-xs text-ink-muted">
+        <strong className="text-ink">Current provider:</strong>{" "}
+        {usingElevenLabs ? "ElevenLabs (premium)" : "Edge TTS (free)"}
+        {cfg?.hasUserKey && " — your ElevenLabs key is active"}
       </div>
-      <div className="mt-3 flex items-center gap-2">
-        <SaveButton onClick={save} busy={busy} disabled={!keyInput.trim()}>
-          Save TTS Key
-        </SaveButton>
-        {cfg?.hasUserKey && (
-          <button
-            onClick={remove}
-            disabled={busy}
-            className="flex items-center gap-1.5 rounded-md border border-edge px-3 py-1.5 text-xs text-ink-muted transition hover:text-red-400 disabled:opacity-40"
-          >
-            <Trash2 size={13} /> Remove
-          </button>
-        )}
-      </div>
+      <details className="mb-3">
+        <summary className="cursor-pointer text-xs font-medium text-ink-muted hover:text-ink">
+          ElevenLabs premium key (optional)
+        </summary>
+        <div className="mt-2">
+          <Field label="ElevenLabs API Key">
+            <input
+              type="password"
+              value={keyInput}
+              onChange={(e) => setKeyInput(e.target.value)}
+              placeholder={cfg?.hasUserKey ? "•••••••• (enter a new key to replace)" : "Enter your ElevenLabs API key"}
+              className={inputClass}
+              autoComplete="off"
+            />
+          </Field>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <Field label="Voice ID (optional)">
+              <input
+                type="text"
+                value={voiceId}
+                onChange={(e) => setVoiceId(e.target.value)}
+                placeholder="Default: Rachel"
+                className={inputClass}
+              />
+            </Field>
+            <Field label="Model ID (optional)">
+              <input
+                type="text"
+                value={modelId}
+                onChange={(e) => setModelId(e.target.value)}
+                placeholder="eleven_turbo_v2_5"
+                className={inputClass}
+              />
+            </Field>
+          </div>
+          <div className="mt-3 flex items-center gap-2">
+            <SaveButton onClick={save} busy={busy} disabled={!keyInput.trim()}>
+              Save ElevenLabs Key
+            </SaveButton>
+            {cfg?.hasUserKey && (
+              <button
+                onClick={remove}
+                disabled={busy}
+                className="flex items-center gap-1.5 rounded-md border border-edge px-3 py-1.5 text-xs text-ink-muted transition hover:text-red-400 disabled:opacity-40"
+              >
+                <Trash2 size={13} /> Remove
+              </button>
+            )}
+          </div>
+        </div>
+      </details>
       {msg && <MsgBox msg={msg} error={err} />}
     </Card>
   );
