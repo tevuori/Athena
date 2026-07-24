@@ -1,10 +1,10 @@
 /**
- * Microsoft Graph Calendar service — server-side token management + Graph API.
+ * Microsoft Graph Calendar service — per-user token management + Graph API.
  *
- * The server holds the OAuth2 credentials (from env) and a long-lived refresh
- * token. Microsoft may rotate the refresh token on each exchange, so the latest
- * token is persisted in the Setting table (key="ms_refresh_token", userId=null)
- * to survive restarts. On first run, the env var MS_REFRESH_TOKEN seeds the DB.
+ * Each user stores their own Microsoft OAuth2 credentials (client id, secret,
+ * tenant id, refresh token) encrypted in the DB. The refresh token may rotate
+ * on each exchange, so the latest is persisted back to the DB. Server-wide
+ * MS_* env vars serve as an optional fallback.
  *
  * Token endpoint: https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token
  * Graph API base:  https://graph.microsoft.com/v1.0
@@ -13,17 +13,17 @@
  */
 
 import prisma from "../db/client";
+import { encryptSecret, decryptSecret } from "./crypto";
 
 const TOKEN_URL = (tenant: string) =>
   `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/token`;
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 
-const CLIENT_ID = process.env.MS_CLIENT_ID ?? "";
-const CLIENT_SECRET = process.env.MS_CLIENT_SECRET ?? "";
-const TENANT_ID = process.env.MS_TENANT_ID ?? "common";
+// Server-wide fallback (env vars)
+const ENV_CLIENT_ID = process.env.MS_CLIENT_ID ?? "";
+const ENV_CLIENT_SECRET = process.env.MS_CLIENT_SECRET ?? "";
+const ENV_TENANT_ID = process.env.MS_TENANT_ID ?? "common";
 const ENV_REFRESH_TOKEN = process.env.MS_REFRESH_TOKEN ?? "";
-
-const SETTING_KEY = "ms_refresh_token";
 
 export interface MsTokens {
   access_token: string;
@@ -49,46 +49,72 @@ export interface MsGraphEvent {
   showAs?: string;
 }
 
-let cachedToken: { accessToken: string; expiresAt: number } | null = null;
-
-export function isMicrosoftConfigured(): boolean {
-  return Boolean(CLIENT_ID && CLIENT_SECRET && ENV_REFRESH_TOKEN);
+export interface MsUserConfig {
+  clientId: string;
+  clientSecret: string;
+  tenantId: string;
+  refreshToken: string;
+  /** True if using per-user DB credentials (vs env fallback). */
+  perUser: boolean;
 }
 
-/** Read the current refresh token from the DB, falling back to the env var. */
-async function getStoredRefreshToken(): Promise<string> {
-  const setting = await prisma.setting.findFirst({
-    where: { key: SETTING_KEY, userId: null },
-  });
-  return setting?.value || ENV_REFRESH_TOKEN;
-}
-
-/** Persist a (possibly rotated) refresh token to the DB. */
-async function storeRefreshToken(token: string): Promise<void> {
-  const existing = await prisma.setting.findFirst({
-    where: { key: SETTING_KEY, userId: null },
-  });
-  if (existing) {
-    await prisma.setting.update({ where: { id: existing.id }, data: { value: token } });
-  } else {
-    await prisma.setting.create({ data: { key: SETTING_KEY, value: token } });
+function decryptSafe(enc: string): string {
+  try {
+    return decryptSecret(enc);
+  } catch {
+    return "";
   }
 }
+
+/** Load a user's Microsoft config: per-user DB → env fallback. */
+export async function getUserMsConfig(userId: string): Promise<MsUserConfig | null> {
+  const cred = await prisma.microsoftCredential.findUnique({ where: { userId } });
+  if (cred) {
+    const clientId = decryptSafe(cred.clientIdEnc);
+    const clientSecret = decryptSafe(cred.clientSecretEnc);
+    const refreshToken = decryptSafe(cred.refreshTokenEnc);
+    if (clientId && clientSecret && refreshToken) {
+      return {
+        clientId,
+        clientSecret,
+        tenantId: cred.tenantId || "common",
+        refreshToken,
+        perUser: true,
+      };
+    }
+  }
+  // Fallback to server env vars
+  if (ENV_CLIENT_ID && ENV_CLIENT_SECRET && ENV_REFRESH_TOKEN) {
+    return {
+      clientId: ENV_CLIENT_ID,
+      clientSecret: ENV_CLIENT_SECRET,
+      tenantId: ENV_TENANT_ID,
+      refreshToken: ENV_REFRESH_TOKEN,
+      perUser: false,
+    };
+  }
+  return null;
+}
+
+/** Check if Microsoft Calendar is configured for a given user. */
+export async function isMicrosoftConfiguredFor(userId: string): Promise<boolean> {
+  const config = await getUserMsConfig(userId);
+  return config !== null;
+}
+
+// Per-user token cache: userId → { accessToken, expiresAt }
+const tokenCache = new Map<string, { accessToken: string; expiresAt: number }>();
 
 /** Exchange the refresh token for a fresh access token. Handles rotation. */
-export async function refreshAccessToken(): Promise<MsTokens> {
-  const refreshToken = await getStoredRefreshToken();
-  if (!refreshToken) {
-    throw { status: 500, message: "Microsoft not configured: missing MS_REFRESH_TOKEN" } as MsApiError;
-  }
+async function refreshAccessToken(userId: string, config: MsUserConfig): Promise<MsTokens> {
   const body = new URLSearchParams({
     grant_type: "refresh_token",
-    refresh_token: refreshToken,
-    client_id: CLIENT_ID,
-    client_secret: CLIENT_SECRET,
+    refresh_token: config.refreshToken,
+    client_id: config.clientId,
+    client_secret: config.clientSecret,
     scope: "offline_access Calendars.ReadWrite",
   });
-  const res = await fetch(TOKEN_URL(TENANT_ID), {
+  const res = await fetch(TOKEN_URL(config.tenantId), {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
@@ -98,31 +124,39 @@ export async function refreshAccessToken(): Promise<MsTokens> {
     throw { status: res.status, message: `MS token refresh failed: ${text}` } as MsApiError;
   }
   const data = (await res.json()) as MsTokens;
-  cachedToken = {
+  tokenCache.set(userId, {
     accessToken: data.access_token,
     expiresAt: Date.now() + data.expires_in * 1000,
-  };
+  });
   // Persist the rotated refresh token if a new one was returned.
-  if (data.refresh_token && data.refresh_token !== refreshToken) {
-    await storeRefreshToken(data.refresh_token);
+  if (data.refresh_token && data.refresh_token !== config.refreshToken && config.perUser) {
+    await prisma.microsoftCredential.update({
+      where: { userId },
+      data: { refreshTokenEnc: encryptSecret(data.refresh_token) },
+    });
   }
   return data;
 }
 
-/** Get a valid access token, refreshing if the cached one is near expiry. */
-export async function getAccessToken(): Promise<string> {
-  const margin = 60_000;
-  if (cachedToken && Date.now() < cachedToken.expiresAt - margin) {
-    return cachedToken.accessToken;
+/** Get a valid access token for a user, refreshing if the cached one is near expiry. */
+export async function getAccessToken(userId: string): Promise<string> {
+  const config = await getUserMsConfig(userId);
+  if (!config) {
+    throw { status: 500, message: "Microsoft not configured for this user" } as MsApiError;
   }
-  const tokens = await refreshAccessToken();
+  const margin = 60_000;
+  const cached = tokenCache.get(userId);
+  if (cached && Date.now() < cached.expiresAt - margin) {
+    return cached.accessToken;
+  }
+  const tokens = await refreshAccessToken(userId, config);
   return tokens.access_token;
 }
 
 // ===== Graph API helpers =====
 
-async function graphFetch(path: string, init?: RequestInit): Promise<Response> {
-  const token = await getAccessToken();
+async function graphFetch(userId: string, path: string, init?: RequestInit): Promise<Response> {
+  const token = await getAccessToken(userId);
   const res = await fetch(`${GRAPH_BASE}${path}`, {
     ...init,
     headers: {
@@ -136,6 +170,7 @@ async function graphFetch(path: string, init?: RequestInit): Promise<Response> {
 
 /** List events in a time range from the user's default calendar. */
 export async function listEvents(
+  userId: string,
   startDateTime: string,
   endDateTime: string
 ): Promise<MsGraphEvent[]> {
@@ -146,7 +181,7 @@ export async function listEvents(
     $top: "250",
     $orderby: "start/dateTime",
   });
-  const res = await graphFetch(`/me/calendar/calendarView?${params}`);
+  const res = await graphFetch(userId, `/me/calendar/calendarView?${params}`);
   if (!res.ok) {
     const text = await res.text();
     throw { status: res.status, message: `MS listEvents failed: ${text}` } as MsApiError;
@@ -156,14 +191,17 @@ export async function listEvents(
 }
 
 /** Create an event in the user's default calendar. */
-export async function createEvent(event: {
-  subject: string;
-  body?: string;
-  start: string; // ISO
-  end: string; // ISO
-  isAllDay?: boolean;
-  location?: string;
-}): Promise<MsGraphEvent> {
+export async function createEvent(
+  userId: string,
+  event: {
+    subject: string;
+    body?: string;
+    start: string; // ISO
+    end: string; // ISO
+    isAllDay?: boolean;
+    location?: string;
+  }
+): Promise<MsGraphEvent> {
   const body = {
     subject: event.subject,
     body: event.body ? { contentType: "Text", content: event.body } : undefined,
@@ -172,7 +210,7 @@ export async function createEvent(event: {
     isAllDay: event.isAllDay ?? false,
     location: event.location ? { displayName: event.location } : undefined,
   };
-  const res = await graphFetch("/me/events", {
+  const res = await graphFetch(userId, "/me/events", {
     method: "POST",
     body: JSON.stringify(body),
   });
@@ -185,6 +223,7 @@ export async function createEvent(event: {
 
 /** Update an event in the user's default calendar. */
 export async function updateEvent(
+  userId: string,
   id: string,
   event: {
     subject?: string;
@@ -202,7 +241,7 @@ export async function updateEvent(
   if (event.end !== undefined) body.end = { dateTime: event.end, timeZone: "UTC" };
   if (event.isAllDay !== undefined) body.isAllDay = event.isAllDay;
   if (event.location !== undefined) body.location = { displayName: event.location };
-  const res = await graphFetch(`/me/events/${id}`, {
+  const res = await graphFetch(userId, `/me/events/${id}`, {
     method: "PATCH",
     body: JSON.stringify(body),
   });
@@ -214,8 +253,8 @@ export async function updateEvent(
 }
 
 /** Delete an event from the user's default calendar. */
-export async function deleteEvent(id: string): Promise<void> {
-  const res = await graphFetch(`/me/events/${id}`, { method: "DELETE" });
+export async function deleteEvent(userId: string, id: string): Promise<void> {
+  const res = await graphFetch(userId, `/me/events/${id}`, { method: "DELETE" });
   if (!res.ok && res.status !== 404) {
     const text = await res.text();
     throw { status: res.status, message: `MS deleteEvent failed: ${text}` } as MsApiError;

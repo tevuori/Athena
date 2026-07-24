@@ -42,6 +42,8 @@ model User {
   memories      AthenaMemory[]
   itemLinks     ItemLink[]
   refreshTokens RefreshToken[]
+  spotifyCredential  SpotifyCredential?
+  microsoftCredential MicrosoftCredential?
 }
 
 // ===== Refresh tokens (device-remembering) =====
@@ -430,6 +432,38 @@ model AiCredential {
   modelId    String?  // optional model id override
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+}
+
+// ===== Spotify credentials (per-user) =====
+// Each user connects their own Spotify account. All fields encrypted.
+// Server-wide SPOTIFY_* env vars serve as an optional fallback.
+
+model SpotifyCredential {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientIdEnc     String   // AES-256-GCM encrypted
+  clientSecretEnc String   // AES-256-GCM encrypted
+  refreshTokenEnc String   // AES-256-GCM encrypted
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ===== Microsoft Calendar credentials (per-user) =====
+// Each user connects their own Outlook calendar via Graph API.
+// The refresh token may rotate on each exchange — the latest is persisted
+// back here. Server-wide MS_* env vars serve as an optional fallback.
+
+model MicrosoftCredential {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientIdEnc     String   // AES-256-GCM encrypted
+  clientSecretEnc String   // AES-256-GCM encrypted
+  tenantId        String   @default("common")
+  refreshTokenEnc String   // AES-256-GCM encrypted (rotated in-place)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 // ===== Athena Workspaces (saved window layouts) =====

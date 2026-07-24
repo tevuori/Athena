@@ -51,7 +51,20 @@ export interface SpotifyPlayerState {
 
 // ===== API proxy calls (server holds token) =====
 
+export interface SpotifyCredentialStatus {
+  hasCredentials: boolean;
+  configured: boolean;
+  usingEnvFallback: boolean;
+}
+
 export const spotifyApi = {
+  // ---------- Credential management (per-user) ----------
+  getCredentials: () => api.get<SpotifyCredentialStatus>("/api/spotify/credentials"),
+  setCredentials: (clientId: string, clientSecret: string, refreshToken: string) =>
+    api.put<{ ok: boolean }>("/api/spotify/credentials", { clientId, clientSecret, refreshToken }),
+  deleteCredentials: () => api.delete<{ ok: boolean }>("/api/spotify/credentials"),
+
+  // ---------- Spotify Web API ----------
   status: () => api.get<{ configured: boolean }>("/api/spotify/status"),
   token: () => api.get<{ access_token: string }>("/api/spotify/token"),
   me: () => api.get<{ id: string; display_name: string; product: string }>("/api/spotify/me"),
