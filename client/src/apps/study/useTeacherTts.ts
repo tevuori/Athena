@@ -60,7 +60,9 @@ function splitIntoChunks(text: string): string[] {
 
 export function useTeacherTts(opts: UseTeacherTtsOpts = {}): UseTeacherTtsResult {
   const webSpeechSupported = typeof window !== "undefined" && "speechSynthesis" in window;
-  const [provider, setProvider] = useState<"server" | "webspeech" | "none">("none");
+  // Default to "server" — Edge TTS is always available (no key needed).
+  // If the server is unreachable, speakServer throws and falls back to Web Speech.
+  const [provider, setProvider] = useState<"server" | "webspeech" | "none">("server");
   const [playing, setPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const cancelRef = useRef(false);
@@ -72,12 +74,11 @@ export function useTeacherTts(opts: UseTeacherTtsOpts = {}): UseTeacherTtsResult
   const refreshConfig = useCallback(async () => {
     try {
       const cfg = await ttsApi.getConfig();
-      // Server TTS is always available now (Edge TTS needs no key).
       if (cfg.configured || cfg.edgeAvailable) setProvider("server");
       else if (webSpeechSupported) setProvider("webspeech");
       else setProvider("none");
     } catch {
-      setProvider(webSpeechSupported ? "webspeech" : "none");
+      // Keep "server" — speakServer will fall back to Web Speech on error.
     }
   }, [webSpeechSupported]);
 
