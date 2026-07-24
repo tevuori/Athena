@@ -93,6 +93,7 @@ export function useTeacherTts(opts: UseTeacherTtsOpts = {}): UseTeacherTtsResult
     cancelRef.current = false;
     setPlaying(true);
     let charOffset = 0;
+    let hadError = false;
     for (const chunk of chunks) {
       if (cancelRef.current) break;
       try {
@@ -111,11 +112,13 @@ export function useTeacherTts(opts: UseTeacherTtsOpts = {}): UseTeacherTtsResult
         });
         charOffset += chunk.length + 1; // +1 for the space between chunks
       } catch {
+        hadError = true;
         break;
       }
     }
     audioRef.current = null;
     setPlaying(false);
+    if (hadError) throw new Error("ElevenLabs synthesis failed");
   }, []);
 
   const speakWebSpeech = useCallback(async (text: string) => {

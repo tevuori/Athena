@@ -43,7 +43,7 @@ export function teacherSystemPrompt(
 ): string {
   const budgeted = budgetSources(sources, 60000);
   const blocks = budgeted
-    .map((s) => `--- SOURCE [${s.index}] (${s.kind}: ${s.name}) ---\n${s.text}\n`)
+    .map((s) => `--- SOURCE [${s.index}] (${s.kind}: ${s.name}) id=${s.refId} kind=${s.kind} ---\n${s.text}\n`)
     .join("\n");
 
   const historyLines = history.length
@@ -77,6 +77,7 @@ TEACHING STYLE:
 
 SHOW & TELL (the core of this mode):
 - When you reference a specific passage, formula, code line, or figure in a source, call show_source RIGHT BEFORE the sentence that references it, so the source opens and scrolls to the passage as you say it. This creates the illusion that the visual is part of your speech.
+- To open a source, pass kind and refId from the SOURCE label above (e.g. kind="file" refId="<the id from the source label>"). Do NOT pass sourceId as a number — use kind+refId from the source labels.
 - Pass highlightText (the exact text from the source) or highlightLine/highlightLineEnd (1-based line numbers) so the passage is highlighted.
 - For code, use highlightLine/highlightLineEnd to highlight the relevant lines.
 - Switch between sources naturally. When referring back to a previously shown source, use focus_source with its windowId (from the source history below) instead of re-opening it.
