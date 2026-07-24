@@ -2,7 +2,7 @@
 // Streams a /api/athena/chat turn via fetch + ReadableStream (EventSource can't
 // POST with an Authorization header). Parses SSE events and invokes callbacks.
 
-import { getToken, api } from "./api";
+import { getToken, api, apiUrl } from "./api";
 
 export interface AthenaMessage {
   role: "user" | "assistant";
@@ -60,7 +60,7 @@ export function streamAthenaChat(
   const done = (async () => {
     let res: Response;
     try {
-      res = await fetch("/api/athena/chat", {
+      res = await fetch(apiUrl("/api/athena/chat"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -180,7 +180,7 @@ export interface AthenaToolManifestEntry {
 
 export async function fetchAthenaTools(): Promise<AthenaToolManifestEntry[]> {
   const token = getToken();
-  const res = await fetch("/api/athena/tools", {
+  const res = await fetch(apiUrl("/api/athena/tools"), {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
   if (!res.ok) return [];
@@ -205,7 +205,7 @@ export async function attachFile(file: File): Promise<AthenaAttachment> {
   const token = getToken();
   const fd = new FormData();
   fd.append("file", file);
-  const res = await fetch("/api/athena/attach", {
+  const res = await fetch(apiUrl("/api/athena/attach"), {
     method: "POST",
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: fd,
@@ -224,7 +224,7 @@ export async function saveAttachedFile(
   name?: string
 ): Promise<{ file: { id: string; name: string } }> {
   const token = getToken();
-  const res = await fetch("/api/athena/save-attached", {
+  const res = await fetch(apiUrl("/api/athena/save-attached"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -250,7 +250,7 @@ export async function suggestFolder(
   confidence: number;
 }> {
   const token = getToken();
-  const res = await fetch("/api/athena/suggest-folder", {
+  const res = await fetch(apiUrl("/api/athena/suggest-folder"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

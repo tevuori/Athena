@@ -1,10 +1,14 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { LogIn, Loader2 } from "lucide-react";
+import { LogIn, Loader2, Server } from "lucide-react";
 import { useAuth } from "../store/auth";
+import { Capacitor } from "@capacitor/core";
+import { getBaseUrl, setBaseUrl } from "../services/api";
 
 export default function LoginScreen() {
   const { login } = useAuth();
+  const isNative = Capacitor.isNativePlatform();
+  const [serverUrl, setServerUrl] = useState(getBaseUrl());
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
@@ -14,6 +18,24 @@ export default function LoginScreen() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    // On native, persist the server URL before attempting login so the api
+    // client picks it up. Validate it looks like a URL.
+    if (isNative) {
+      const trimmed = serverUrl.trim().replace(/\/+$/, "");
+      if (!trimmed) {
+        setError("Please enter the server address (e.g. http://192.168.1.100:3001).");
+        return;
+      }
+      try {
+        new URL(trimmed);
+      } catch {
+        setError("Server address doesn't look like a valid URL.");
+        return;
+      }
+      setBaseUrl(trimmed);
+    }
+
     setBusy(true);
     try {
       await login(username, password, rememberMe);
@@ -42,11 +64,31 @@ export default function LoginScreen() {
         </div>
 
         <form onSubmit={submit} className="space-y-3">
+          {isNative && (
+            <div className="space-y-1">
+              <label className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-ink-muted">
+                <Server size={11} /> Server address
+              </label>
+              <input
+                value={serverUrl}
+                onChange={(e) => setServerUrl(e.target.value)}
+                placeholder="http://192.168.1.100:3001"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                className="w-full rounded-lg border border-edge bg-surface-2 px-3 py-2.5 text-sm text-ink outline-none focus:border-accent"
+              />
+              <p className="text-[11px] text-ink-muted">
+                The address of your Athena server (including port).
+              </p>
+            </div>
+          )}
+
           <input
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             placeholder="Username"
-            autoFocus
+            autoFocus={!isNative}
             className="w-full rounded-lg border border-edge bg-surface-2 px-3 py-2.5 text-sm text-ink outline-none focus:border-accent"
           />
           <input

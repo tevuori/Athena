@@ -13,6 +13,7 @@ import { tasksApi } from "../../services/tasks";
 import { vutApi } from "../../services/vut";
 import { gradesApi } from "../../services/grades";
 import { microsoftApi } from "../../services/microsoft";
+import { apiUrl } from "../../services/api";
 import { useWindows } from "../../store/windows";
 import type { WindowInstance } from "../../store/windows";
 import type { CalendarEvent, Task, VutTimetableSlot, Course } from "../../types";
@@ -309,7 +310,7 @@ export default function CalendarApp({ win }: { win: WindowInstance }) {
 
   const exportIcs = () => {
     const token = localStorage.getItem("athena.token");
-    fetch("/api/calendar/ics/export", { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+    fetch(apiUrl("/api/calendar/ics/export"), { headers: token ? { Authorization: `Bearer ${token}` } : {} })
       .then((r) => r.blob())
       .then((blob) => {
         const url = URL.createObjectURL(blob);

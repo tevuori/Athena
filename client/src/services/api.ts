@@ -4,11 +4,18 @@
  * - On 401, attempts a single refresh-token rotation (using the stored
  *   refresh token + device fingerprint) and retries the original request.
  * - On refresh failure, clears tokens (the auth store will redirect to login).
- * - All paths are relative ("/api/...") and proxied by Vite in dev / nginx in prod.
+ * - On web, all paths are relative ("/api/...") and proxied by Vite in dev /
+ *   nginx in prod. On the Capacitor native app, the web content is served
+ *   from https://localhost so relative paths would hit the local WebView —
+ *   instead we prepend a base URL that the user configures (stored in
+ *   localStorage as athena.serverUrl).
  */
+
+import { Capacitor } from "@capacitor/core";
 
 const TOKEN_KEY = "athena.token";
 const REFRESH_KEY = "athena.refresh";
+const SERVER_URL_KEY = "athena.serverUrl";
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
@@ -26,6 +33,36 @@ export function getRefreshToken(): string | null {
 export function setRefreshToken(token: string | null) {
   if (token) localStorage.setItem(REFRESH_KEY, token);
   else localStorage.removeItem(REFRESH_KEY);
+}
+
+/**
+ * Returns the backend base URL for API calls.
+ * - On web: "" (empty string — relative paths are proxied by Vite/nginx).
+ * - On Capacitor native: the user-configured server URL from localStorage
+ *   (e.g. "http://192.168.1.100:3001"), with trailing slash stripped.
+ *   Falls back to "" if not yet configured (the login screen will prompt).
+ */
+export function getBaseUrl(): string {
+  if (!Capacitor.isNativePlatform()) return "";
+  const url = localStorage.getItem(SERVER_URL_KEY);
+  if (!url) return "";
+  return url.replace(/\/+$/, "");
+}
+
+/** Sets the backend server URL (used by the Capacitor native app). */
+export function setBaseUrl(url: string | null) {
+  if (url) localStorage.setItem(SERVER_URL_KEY, url);
+  else localStorage.removeItem(SERVER_URL_KEY);
+}
+
+/** Returns true if the server URL has been configured (native only). */
+export function isServerUrlConfigured(): boolean {
+  return !!localStorage.getItem(SERVER_URL_KEY);
+}
+
+/** Prepends the base URL to a path if running natively. */
+export function apiUrl(path: string): string {
+  return getBaseUrl() + path;
 }
 
 export class ApiError extends Error {
@@ -48,7 +85,7 @@ async function doRefresh(): Promise<boolean> {
     const { getFingerprint } = await import("./fingerprint");
     const fingerprint = await getFingerprint();
     try {
-      const res = await fetch("/api/auth/refresh", {
+      const res = await fetch(apiUrl("/api/auth/refresh"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refreshToken, deviceFingerprint: fingerprint }),
@@ -86,7 +123,7 @@ async function request<T>(
     if (init.body && !(init.body instanceof FormData) && !headers["Content-Type"]) {
       headers["Content-Type"] = "application/json";
     }
-    return fetch(path, { ...init, headers });
+    return fetch(apiUrl(path), { ...init, headers });
   };
 
   let res = await doFetch();
@@ -144,6 +181,6 @@ export const api = {
     const token = getToken();
     const headers = { ...(init.headers as Record<string, string>) };
     if (token) headers["Authorization"] = `Bearer ${token}`;
-    return fetch(path, { ...init, headers });
+    return fetch(apiUrl(path), { ...init, headers });
   },
 };
