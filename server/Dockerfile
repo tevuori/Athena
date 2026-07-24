@@ -1,4 +1,4 @@
-FROM oven/bun:1.1 AS base
+FROM oven/bun:1.3 AS base
 WORKDIR /app
 
 # Install the Docker CLI so the Athena sandbox (run_code tool) can spawn
