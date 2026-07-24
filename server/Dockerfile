@@ -1,6 +1,11 @@
 FROM oven/bun:1.1 AS base
 WORKDIR /app
 
+# Install the Docker CLI so the Athena sandbox (run_code tool) can spawn
+# isolated containers via the mounted Docker socket. Only the CLI is needed —
+# the daemon runs on the host. gVisor (runsc) runtime provides kernel isolation.
+RUN apt-get update -qq && apt-get install -y -qq docker.io && rm -rf /var/lib/apt/lists/*
+
 # Install deps
 COPY package.json bunfig.toml ./
 COPY prisma ./prisma
