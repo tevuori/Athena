@@ -6,7 +6,7 @@ import { Message } from "multi-llm-ts";
 import path from "node:path";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { authMiddleware } from "../middleware/auth";
-import { buildModel, getUserConfig, LlmError } from "../services/athena/llm";
+import { buildModel, getUserConfig, LlmError, acquireLlmModel } from "../services/athena/llm";
 import { buildSystemPrompt } from "../services/athena/context";
 import {
   AthenaToolsPlugin,
@@ -129,6 +129,13 @@ athena.post("/chat", zValidator("json", chatSchema, (result, c) => {
       400
     );
   }
+  let acquired;
+  try {
+    acquired = await acquireLlmModel(userId);
+  } catch (e) {
+    if (e instanceof LlmError) return c.json({ error: e.message }, e.status as 400 | 402 | 429 | 500);
+    return c.json({ error: e instanceof Error ? e.message : "LLM error" }, 500);
+  }
 
   const clientWindows: ClientWindowInfo[] = body.windows ?? [];
   const systemPrompt = await buildSystemPrompt(userId, clientWindows);
@@ -164,7 +171,7 @@ athena.post("/chat", zValidator("json", chatSchema, (result, c) => {
   return streamSSE(
     c,
     async (stream) => {
-      const model = buildModel(cfg);
+      const model = acquired.model;
       const plugin = new AthenaToolsPlugin(ALL_TOOLS, {
         userId,
         windows: clientWindows,
@@ -525,8 +532,13 @@ athena.post("/suggest-folder", zValidator("json", suggestFolderSchema), async (c
       confidence: 0.0,
     });
   }
-
-  const model = buildModel(cfg);
+  let model;
+  try {
+    model = (await acquireLlmModel(userId)).model;
+  } catch (e) {
+    if (e instanceof LlmError) return c.json({ error: e.message }, e.status as 400 | 402 | 429 | 500);
+    return c.json({ error: e instanceof Error ? e.message : "LLM error" }, 500);
+  }
   const prompt = `You are helping organize a student's files. Given a file and the user's folder structure, suggest the BEST folder to save it in.
 
 File name: ${body.fileName}

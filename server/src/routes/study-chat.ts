@@ -12,7 +12,7 @@ import { streamSSE } from "hono/streaming";
 import { Message } from "multi-llm-ts";
 import prisma from "../db/client";
 import { authMiddleware } from "../middleware/auth";
-import { getUserConfig, buildModel, isLlmConfiguredFor } from "../services/athena/llm";
+import { acquireLlmModel, isLlmConfiguredFor } from "../services/athena/llm";
 import { groundedQaSystemPrompt, type GroundedSource, type StudyLanguage } from "../services/study/prompts";
 import { logSessionSafe } from "../services/study/logSession";
 import { canonicalPair } from "../db/links";
@@ -258,7 +258,7 @@ chat.post("/:id/stream", zValidator("json", streamSchema), async (c) => {
     return c.json({ error: "This chat has no sources. Add at least one source first." }, 400);
   }
 
-  const cfg = await getUserConfig(userId);
+  const { model } = await acquireLlmModel(userId);
   const systemPrompt = groundedQaSystemPrompt(sources, body.language as StudyLanguage);
 
   // Build the message thread from stored history + the new user message.
@@ -292,7 +292,6 @@ chat.post("/:id/stream", zValidator("json", streamSchema), async (c) => {
   c.req.raw.signal?.addEventListener("abort", () => abort.abort());
 
   return streamSSE(c, async (stream) => {
-    const model = buildModel(cfg);
     let full = "";
     let errored = false;
     try {

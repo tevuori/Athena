@@ -10,7 +10,7 @@ import { zValidator } from "@hono/zod-validator";
 import { Message } from "multi-llm-ts";
 import prisma from "../db/client";
 import { authMiddleware } from "../middleware/auth";
-import { buildModel, getUserConfig } from "../services/athena/llm";
+import { acquireLlmModel, getUserConfig } from "../services/athena/llm";
 import { generateJson } from "../services/study/llm-json";
 
 const conversations = new Hono();
@@ -134,7 +134,7 @@ conversations.post("/:id/generate-title", async (c) => {
   }
 
   try {
-    const model = buildModel(cfg);
+    const { model } = await acquireLlmModel(userId);
     const title = await generateJson<{ title: string }>(
       model,
       `Based on this conversation, generate a very short descriptive title (max 5 words). The title should describe what the chat was about.\n\nConversation:\n${transcript}\n\nRespond with JSON: { "title": "short title here" }`,

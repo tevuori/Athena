@@ -7,7 +7,7 @@ import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
 import prisma from "../db/client";
 import { authMiddleware } from "../middleware/auth";
-import { getUserConfig, buildModel, isLlmConfiguredFor } from "../services/athena/llm";
+import { getUserConfig, buildModel, isLlmConfiguredFor, acquireLlmModel, LlmError } from "../services/athena/llm";
 import { resolveSource, type SourceDescriptor, type ResolvedSource } from "../services/study/source";
 import { generateJson, generateText } from "../services/study/llm-json";
 import {
@@ -76,8 +76,19 @@ async function loadModel(c: any, userId: string) {
       ),
     } as const;
   }
-  const cfg = await getUserConfig(userId);
-  return { model: buildModel(cfg) } as const;
+  try {
+    const { model } = await acquireLlmModel(userId);
+    return { model } as const;
+  } catch (e) {
+    if (e instanceof LlmError) {
+      return {
+        error: c.json({ error: e.message }, e.status as 400 | 402 | 429 | 500),
+      } as const;
+    }
+    return {
+      error: c.json({ error: e instanceof Error ? e.message : "LLM error" }, 500),
+    } as const;
+  }
 }
 
 // ===== Generate Flashcards =====

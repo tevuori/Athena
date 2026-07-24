@@ -9,7 +9,7 @@ import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
 import prisma from "../db/client";
 import { authMiddleware } from "../middleware/auth";
-import { getUserConfig, buildModel, isLlmConfiguredFor } from "../services/athena/llm";
+import { acquireLlmModel, isLlmConfiguredFor } from "../services/athena/llm";
 import { generateText } from "../services/study/llm-json";
 import { podcastScriptPrompt, type StudyLanguage } from "../services/study/prompts";
 import { logSessionSafe } from "../services/study/logSession";
@@ -82,11 +82,11 @@ podcasts.post("/generate", zValidator("json", generateSchema), async (c) => {
   const host1Label = body.host1Label?.trim() || "Host A";
   const host2Label = body.host2Label?.trim() || "Host B";
 
-  const cfg = await getUserConfig(userId);
+  const { model: llmModel } = await acquireLlmModel(userId);
   let script: string;
   try {
     script = await generateText(
-      buildModel(cfg),
+      llmModel,
       podcastScriptPrompt(sources, host1Label, host2Label, body.language as StudyLanguage),
       "You are a podcast scriptwriter. Output ONLY the dialogue lines in the exact 'Host: text' format requested. No preamble, no commentary, no markdown fences."
     );

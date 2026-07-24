@@ -4,7 +4,7 @@
 // which then presents it in its response. The client renders sources as chips.
 
 import type { ToolDef } from "./plugin";
-import { getUserConfig, buildModel } from "../llm";
+import { getUserConfig, buildModel, acquireLlmModel } from "../llm";
 import { generateText } from "../../study/llm-json";
 import { duckDuckGoSearch } from "../../../services/search";
 import { fetchUrl } from "../../../services/fetcher";
@@ -36,6 +36,7 @@ export const researchTools: ToolDef[] = [
     handler: async (args, { userId }) => {
       const cfg = await getUserConfig(userId);
       if (!cfg.apiKey) return { error: "No AI provider configured." };
+      const { model } = await acquireLlmModel(userId);
 
       const query = String(args.query ?? "").trim();
       if (!query) return { error: "query is required" };
@@ -57,7 +58,7 @@ export const researchTools: ToolDef[] = [
       if (depth === "deep") {
         try {
           const refined = await generateText(
-            buildModel(cfg),
+            model,
             researchRefinePrompt(query),
             "Return only the query text."
           );
@@ -112,7 +113,7 @@ export const researchTools: ToolDef[] = [
       let answer: string;
       try {
         answer = await generateText(
-          buildModel(cfg),
+          model,
           researchSynthesizePrompt(query, sources),
           "You are a research assistant. Synthesize an accurate, well-cited answer using only the provided sources."
         );

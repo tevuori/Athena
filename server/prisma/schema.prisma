@@ -438,6 +438,18 @@ model AiCredential {
   provider   String   @default("openai") // multi-llm-ts engine id (openai|deepseek|anthropic|openrouter|ollama|...)
   baseUrl    String?  // optional custom base URL (e.g. OpenCode Zen: https://opencode.ai/zen/v1)
   modelId    String?  // optional model id override
+
+  // Rate limit protection (for free-tier models like OpenRouter :free)
+  rateLimitEnabled  Boolean @default(false)
+  rateLimitRpd      Int     @default(50)  // requests per day (OpenRouter free: 50 without $10 credits)
+  rateLimitRpm      Int     @default(20)  // requests per minute (OpenRouter free: 20)
+
+  // Fallback LLM — used when the primary model hits rate limits
+  fallbackApiKeyEnc String?  // encrypted fallback API key
+  fallbackProvider  String?  // fallback provider engine id
+  fallbackBaseUrl   String?  // fallback base URL
+  fallbackModelId   String?  // fallback model id
+
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }

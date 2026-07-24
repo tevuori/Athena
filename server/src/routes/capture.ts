@@ -9,7 +9,7 @@ import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
 import prisma from "../db/client";
 import { authMiddleware } from "../middleware/auth";
-import { getUserConfig, buildModel, isLlmConfiguredFor } from "../services/athena/llm";
+import { acquireLlmModel, isLlmConfiguredFor } from "../services/athena/llm";
 import { generateJson } from "../services/study/llm-json";
 
 const capture = new Hono();
@@ -42,8 +42,7 @@ capture.post("/", zValidator("json", captureSchema), async (c) => {
 
   if (await isLlmConfiguredFor(userId)) {
     try {
-      const cfg = await getUserConfig(userId);
-      const model = buildModel(cfg);
+      const { model } = await acquireLlmModel(userId);
       classification = await generateJson<CaptureClassification>(
         model,
         `Classify this student input and extract structured fields:\n\n"${text}"`,

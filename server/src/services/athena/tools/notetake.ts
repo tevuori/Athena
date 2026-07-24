@@ -6,7 +6,7 @@ import path from "node:path";
 import { readFile } from "node:fs/promises";
 import type { ToolDef } from "./plugin";
 import prisma from "../../../db/client";
-import { getUserConfig, buildModel } from "../llm";
+import { getUserConfig, buildModel, acquireLlmModel } from "../llm";
 import { fetchUrl } from "../../../services/fetcher";
 import { generateText } from "../../study/llm-json";
 import { notetakingPrompt, type NoteStyle } from "../../study/prompts";
@@ -53,6 +53,7 @@ export const notetakeTools: ToolDef[] = [
     handler: async (args, { userId }) => {
       const cfg = await getUserConfig(userId);
       if (!cfg.apiKey) return { error: "No AI provider configured." };
+      const { model } = await acquireLlmModel(userId);
 
       const url = String(args.url ?? "").trim();
       if (!url) return { error: "url is required" };
@@ -71,7 +72,7 @@ export const notetakeTools: ToolDef[] = [
       let notes: string;
       try {
         notes = await generateText(
-          buildModel(cfg),
+          model,
           notetakingPrompt(page.content, style, page.title || page.finalUrl),
           "You are a study assistant. Take accurate, well-organized notes in Markdown. Do not invent information."
         );
@@ -126,6 +127,7 @@ export const notetakeTools: ToolDef[] = [
     handler: async (args, { userId }) => {
       const cfg = await getUserConfig(userId);
       if (!cfg.apiKey) return { error: "No AI provider configured." };
+      const { model } = await acquireLlmModel(userId);
 
       const fileId = String(args.fileId ?? "").trim();
       if (!fileId) return { error: "fileId is required" };
@@ -162,7 +164,7 @@ export const notetakeTools: ToolDef[] = [
       let notes: string;
       try {
         notes = await generateText(
-          buildModel(cfg),
+          model,
           notetakingPrompt(text, style, file.name),
           "You are a study assistant. Take accurate, well-organized notes in Markdown. Do not invent information."
         );
