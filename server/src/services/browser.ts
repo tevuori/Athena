@@ -374,6 +374,158 @@ const INTERCEPT_SCRIPT = `<script>(function(){
   } else { setTimeout(report, 50); }
 })();<\/script>`;
 
+// ===== Teacher show-control content script =====
+// Injected into every proxied HTML page. Listens for postMessage commands from
+// the BrowserApp (forwarded from the show-control store) and performs scroll /
+// highlight / clear-highlight on the page DOM. This lets the Interactive
+// Teacher point at passages in web pages just like it does in Notes/Editor.
+const TEACHER_SHOW_SCRIPT = `<script>(function(){
+  "use strict";
+  var HL_CLASS = "athena-teacher-highlight";
+  // Inject the highlight style (the proxied page can't access our app CSS).
+  var style = document.createElement("style");
+  style.textContent = "mark." + HL_CLASS + "{background:rgba(99,102,241,0.4);border-radius:3px;box-shadow:0 0 0 1.5px rgba(99,102,241,0.6);color:inherit;transition:background 0.2s ease;scroll-margin-block:40vh;}";
+  (document.head || document.documentElement).appendChild(style);
+  var currentMarks = [];
+
+  function clearHighlights() {
+    for (var i = 0; i < currentMarks.length; i++) {
+      var m = currentMarks[i];
+      var parent = m.parentNode;
+      if (parent) {
+        while (m.firstChild) parent.insertBefore(m.firstChild, m);
+        parent.removeChild(m);
+        parent.normalize();
+      }
+    }
+    currentMarks = [];
+  }
+
+  // Highlight the first occurrence of text in the page body by wrapping it
+  // in mark elements. Uses a TreeWalker to find text nodes containing the
+  // search text, then splits the text node and wraps the match.
+  function highlightText(text) {
+    clearHighlights();
+    if (!text || !text.trim()) return;
+    var needle = text.trim();
+    var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+      acceptNode: function(node) {
+        if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+        var parent = node.parentElement;
+        if (!parent) return NodeFilter.FILTER_REJECT;
+        var tag = parent.tagName.toLowerCase();
+        if (tag === "script" || tag === "style" || tag === "noscript") return NodeFilter.FILTER_REJECT;
+        return node.nodeValue.indexOf(needle) >= 0 ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+      }
+    });
+    var node = walker.nextNode();
+    if (!node) {
+      // Try a case-insensitive search as a fallback.
+      var lower = needle.toLowerCase();
+      walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+        acceptNode: function(n) {
+          if (!n.nodeValue || !n.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+          var p = n.parentElement;
+          if (!p) return NodeFilter.FILTER_REJECT;
+          var t = p.tagName.toLowerCase();
+          if (t === "script" || t === "style" || t === "noscript") return NodeFilter.FILTER_REJECT;
+          return n.nodeValue.toLowerCase().indexOf(lower) >= 0 ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+        }
+      });
+      node = walker.nextNode();
+      if (!node) return;
+      // Wrap the case-insensitive match.
+      var val = node.nodeValue;
+      var idx = val.toLowerCase().indexOf(lower);
+      var matchLen = lower.length;
+      var range = document.createRange();
+      range.setStart(node, idx);
+      range.setEnd(node, idx + matchLen);
+      var mark = document.createElement("mark");
+      mark.className = HL_CLASS;
+      range.surroundContents(mark);
+      currentMarks.push(mark);
+      mark.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    var val = node.nodeValue;
+    var idx = val.indexOf(needle);
+    var matchLen = needle.length;
+    var range = document.createRange();
+    range.setStart(node, idx);
+    range.setEnd(node, idx + matchLen);
+    var mark = document.createElement("mark");
+    mark.className = HL_CLASS;
+    range.surroundContents(mark);
+    currentMarks.push(mark);
+    mark.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  // Scroll to the first occurrence of text without highlighting.
+  function scrollToText(text) {
+    if (!text || !text.trim()) {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+    var needle = text.trim();
+    var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+      acceptNode: function(node) {
+        if (!node.nodeValue) return NodeFilter.FILTER_REJECT;
+        var p = node.parentElement;
+        if (!p) return NodeFilter.FILTER_REJECT;
+        var t = p.tagName.toLowerCase();
+        if (t === "script" || t === "style") return NodeFilter.FILTER_REJECT;
+        return node.nodeValue.indexOf(needle) >= 0 ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+      }
+    });
+    var node = walker.nextNode();
+    if (node) {
+      node.parentElement.scrollIntoView({ behavior: "smooth", block: "center" });
+    } else {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }
+
+  // Highlight a CSS selector match.
+  function highlightSelector(selector) {
+    clearHighlights();
+    if (!selector) return;
+    var el = document.querySelector(selector);
+    if (!el) return;
+    var mark = document.createElement("mark");
+    mark.className = HL_CLASS;
+    // Wrap the element's contents.
+    while (el.firstChild) mark.appendChild(el.firstChild);
+    el.appendChild(mark);
+    currentMarks.push(mark);
+    mark.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  window.addEventListener("message", function(e) {
+    if (!e.data || !e.data.__athenaTeacherShow) return;
+    var d = e.data;
+    try {
+      if (d.kind === "clear_highlight") {
+        clearHighlights();
+      } else if (d.kind === "highlight") {
+        if (d.selector) highlightSelector(d.selector);
+        else if (d.text) highlightText(d.text);
+      } else if (d.kind === "scroll_to") {
+        if (d.selector) {
+          var el = document.querySelector(d.selector);
+          if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+        } else if (d.text) {
+          scrollToText(d.text);
+        } else {
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }
+      }
+    } catch(err) {
+      // Never let a highlight error break the page.
+    }
+  });
+})();<\/script>`;
+
 export type ProxiedPage =
   | { kind: "html"; html: string; finalUrl: string; title: string }
   | { kind: "raw"; buffer: Buffer; contentType: string; finalUrl: string };
@@ -441,6 +593,10 @@ export async function proxyPage(
     .replace("__ATHENA_FINAL_URL__", JSON.stringify(finalUrl))
     .replace("__ATHENA_TOKEN__", JSON.stringify(token ?? ""));
   $("head").prepend(interceptScript);
+
+  // Inject the Teacher show-control content script (listens for postMessage
+  // commands from the BrowserApp and performs scroll/highlight on the page).
+  $("head").prepend(TEACHER_SHOW_SCRIPT);
 
   const title = $("title").first().text().trim() || finalUrl;
   return { kind: "html", html: $.html(), finalUrl, title };

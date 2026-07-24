@@ -48,6 +48,8 @@ model User {
   studyChats    StudyChat[]
   podcasts      Podcast[]
   studyWorkspaces LearningWorkspace[]
+  teacherSessions TeacherSession[]
+  ttsCredential   TtsCredential?
 }
 
 // ===== Refresh tokens (device-remembering) =====
@@ -655,6 +657,46 @@ model LearningWorkspace {
   sourceIds   String   @default("[]")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([userId, updatedAt])
+}
+
+// ===== TTS credentials (per-user, for Interactive Teacher voice) =====
+// ElevenLabs is the primary provider (character-level timestamps for
+// speech-synced highlighting). Server-wide ELEVENLABS_API_KEY env var is the
+// fallback. If neither is set, the client falls back to Web Speech API.
+model TtsCredential {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  apiKeyEnc  String   // AES-256-GCM encrypted ElevenLabs API key
+  voiceId    String?  // optional voice id override
+  modelId    String?  // optional model id (e.g. "eleven_turbo_v2")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+// ===== Interactive Teacher ("Teach Me" mode) sessions =====
+// A persisted live-tutoring session: source-grounded, with an ordered
+// source-history (which sources were shown, in what order, what was
+// highlighted), a comprehension log, and the chat messages. Reuses the
+// StudySource cache for grounding and the [n] citation convention. Resumable
+// from the Study Hub Recent Activity list.
+model TeacherSession {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String   @default("Teach Me session")
+  // JSON array of StudySource ids this session is grounded on.
+  sourceIds String   @default("[]")
+  // JSON array of { role: "user"|"assistant", content: string, tools?: [], timestamp: string }.
+  messages  String   @default("[]")
+  // JSON: { studentLevel, sourceHistory: [{ windowId, index, name, kind, refId, lastHighlight }], coveredConcepts: [], comprehensionLog: [] }
+  state     String   @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lastMessageAt DateTime @default(now())
 
   @@index([userId])
   @@index([userId, updatedAt])

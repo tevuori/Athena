@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
-import { Sparkles, Trash2, Loader2, Check, Gauge, Shield } from "lucide-react";
+import { Sparkles, Trash2, Loader2, Check, Gauge, Shield, Volume2 } from "lucide-react";
 import { aiApi, type AiKeyStatus } from "../../../services/ai";
 import { getAthenaInstructions, setAthenaInstructions } from "../../../services/athena";
+import { ttsApi, type TtsConfig } from "../../../services/tts";
 import { SectionHeader, Card, Field, StatusPill, SaveButton, MsgBox, inputClass } from "../ui";
 
 export default function AthenaSection() {
@@ -15,8 +16,141 @@ export default function AthenaSection() {
       <LlmConfigCard />
       <RateLimitCard />
       <FallbackCard />
+      <TtsConfigCard />
       <InstructionsCard />
     </section>
+  );
+}
+
+// ===== TTS (ElevenLabs) config for Interactive Teacher voice =====
+
+function TtsConfigCard() {
+  const [cfg, setCfg] = useState<TtsConfig | null>(null);
+  const [keyInput, setKeyInput] = useState("");
+  const [voiceId, setVoiceId] = useState("");
+  const [modelId, setModelId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState(false);
+
+  const refresh = useCallback(async () => {
+    try {
+      const c = await ttsApi.getConfig();
+      setCfg(c);
+      setVoiceId(c.voiceId || "");
+      setModelId(c.modelId || "");
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  const save = async () => {
+    if (!keyInput.trim()) return;
+    setBusy(true);
+    setErr(false);
+    setMsg(null);
+    try {
+      await ttsApi.saveCredential({
+        apiKey: keyInput.trim(),
+        voiceId: voiceId.trim() || undefined,
+        modelId: modelId.trim() || undefined,
+      });
+      setKeyInput("");
+      await refresh();
+      setMsg("ElevenLabs TTS key saved. The Teach Me mode will now use ElevenLabs voice.");
+    } catch (e) {
+      setErr(true);
+      setMsg(e instanceof Error ? e.message : "Failed to save");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async () => {
+    if (!confirm("Remove your stored ElevenLabs API key?")) return;
+    setBusy(true);
+    setErr(false);
+    setMsg(null);
+    try {
+      await ttsApi.deleteCredential();
+      await refresh();
+      setMsg("TTS key removed. Teach Me will fall back to browser Web Speech API.");
+    } catch (e) {
+      setErr(true);
+      setMsg(e instanceof Error ? e.message : "Failed to remove");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card>
+      <div className="mb-3 flex items-center gap-2">
+        <Volume2 size={16} className="text-accent" />
+        <h3 className="text-sm font-semibold text-ink">Voice (ElevenLabs TTS)</h3>
+        {cfg && (
+          <StatusPill
+            on={cfg.configured}
+            onLabel={cfg.hasUserKey ? "User key" : "Server key"}
+            offLabel="Not configured"
+          />
+        )}
+      </div>
+      <p className="mb-3 text-xs text-ink-muted">
+        Connect an ElevenLabs API key to give Athena a natural voice in the Teach Me mode.
+        Without a key, the browser&apos;s built-in Web Speech API is used as a fallback.
+        Get a key at{" "}
+        <a href="https://elevenlabs.io" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
+          elevenlabs.io
+        </a>
+        .
+      </p>
+      <Field label="ElevenLabs API Key">
+        <input
+          type="password"
+          value={keyInput}
+          onChange={(e) => setKeyInput(e.target.value)}
+          placeholder={cfg?.hasUserKey ? "•••••••• (enter a new key to replace)" : "Enter your ElevenLabs API key"}
+          className={inputClass}
+          autoComplete="off"
+        />
+      </Field>
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <Field label="Voice ID (optional)">
+          <input
+            type="text"
+            value={voiceId}
+            onChange={(e) => setVoiceId(e.target.value)}
+            placeholder="Default: Rachel"
+            className={inputClass}
+          />
+        </Field>
+        <Field label="Model ID (optional)">
+          <input
+            type="text"
+            value={modelId}
+            onChange={(e) => setModelId(e.target.value)}
+            placeholder="eleven_turbo_v2_5"
+            className={inputClass}
+          />
+        </Field>
+      </div>
+      <div className="mt-3 flex items-center gap-2">
+        <SaveButton onClick={save} busy={busy} disabled={!keyInput.trim()}>
+          Save TTS Key
+        </SaveButton>
+        {cfg?.hasUserKey && (
+          <button
+            onClick={remove}
+            disabled={busy}
+            className="flex items-center gap-1.5 rounded-md border border-edge px-3 py-1.5 text-xs text-ink-muted transition hover:text-red-400 disabled:opacity-40"
+          >
+            <Trash2 size={13} /> Remove
+          </button>
+        )}
+      </div>
+      {msg && <MsgBox msg={msg} error={err} />}
+    </Card>
   );
 }
 

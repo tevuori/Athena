@@ -188,3 +188,30 @@ body {
   from { opacity: 0; }
   to { opacity: 1; }
 }
+
+/* ===== Interactive Teacher: CodeMirror highlight decorations ===== */
+/* Transient highlight applied by the show-control channel when Athena points
+   at a passage while teaching. Mark = inline text range; line = full line. */
+.cm-teacher-highlight {
+  background: rgb(var(--accent) / 0.35);
+  border-radius: 3px;
+  box-shadow: 0 0 0 1.5px rgb(var(--accent) / 0.5);
+  transition: background 0.2s ease;
+}
+.cm-teacher-highlight-line {
+  background: rgb(var(--accent) / 0.18);
+  border-left: 3px solid rgb(var(--accent));
+  transition: background 0.2s ease;
+}
+
+/* ===== Interactive Teacher: browser page highlight overlay ===== */
+/* Injected into proxied pages by the content script (see services/browser.ts).
+   Defined here too so the same class works if a page reuses our styles. */
+mark.athena-teacher-highlight {
+  background: rgba(99, 102, 241, 0.4);
+  border-radius: 3px;
+  box-shadow: 0 0 0 1.5px rgba(99, 102, 241, 0.6);
+  color: inherit;
+  transition: background 0.2s ease;
+  scroll-margin-block: 40vh;
+}

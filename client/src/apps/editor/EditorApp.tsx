@@ -14,6 +14,8 @@ import { filesApi, isMarkdownFile, formatBytes } from "../../services/files";
 import { languageForFile } from "./languages";
 import { useSettings } from "../../store/settings";
 import { useWindows } from "../../store/windows";
+import { useShowControl } from "../../store/showControl";
+import { useCodemirrorShowControl } from "../shared/useCodemirrorShowControl";
 import type { WindowInstance } from "../../store/windows";
 import type { VFile } from "../../types";
 
@@ -191,6 +193,13 @@ export default function EditorApp({ win }: { win: WindowInstance }) {
     [lang, wrap]
   );
 
+  // Interactive Teacher: wire this editor window to the show-control channel.
+  const { extensions: showExtensions, onCreateEditor } = useCodemirrorShowControl(win.id);
+  const removeShowWindow = useShowControl((s) => s.removeWindow);
+  useEffect(() => {
+    return () => { if (win.id) removeShowWindow(win.id); };
+  }, [win.id, removeShowWindow]);
+
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -274,7 +283,7 @@ export default function EditorApp({ win }: { win: WindowInstance }) {
             <CodeMirror
               value={content}
               onChange={(val) => setContent(val)}
-              extensions={extensions}
+              extensions={[...extensions, ...showExtensions]}
               theme={isDark ? oneDark : "light"}
               height="100%"
               className="h-full text-sm"
@@ -289,6 +298,7 @@ export default function EditorApp({ win }: { win: WindowInstance }) {
                 searchKeymap: true,
                 tabSize: 2,
               }}
+              onCreateEditor={onCreateEditor}
             />
           </div>
         )}

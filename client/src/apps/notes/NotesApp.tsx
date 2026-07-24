@@ -23,6 +23,8 @@ import type { Note, NoteFolder } from "../../types";
 import type { WindowInstance } from "../../store/windows";
 import { setLinkPayload, readLinkPayload, allowLinkDrop } from "../links/linkDnd";
 import LinkBadge from "../links/LinkBadge";
+import { useCodemirrorShowControl } from "../shared/useCodemirrorShowControl";
+import { useShowControl } from "../../store/showControl";
 
 type EditorMode = "edit" | "split" | "preview";
 
@@ -381,6 +383,14 @@ export default function NotesApp({ win }: { win: WindowInstance }) {
   }, [selectedId, flushSave]);
 
   const markdownExtensions = useMemo(() => [EditorView.lineWrapping], []);
+
+  // Interactive Teacher: wire this note window to the show-control channel so
+  // Athena can scroll to / highlight passages while teaching.
+  const { extensions: showExtensions, onCreateEditor } = useCodemirrorShowControl(win.id);
+  const removeShowWindow = useShowControl((s) => s.removeWindow);
+  useEffect(() => {
+    return () => { if (win.id) removeShowWindow(win.id); };
+  }, [win.id, removeShowWindow]);
 
   return (
     <div className="relative flex h-full">
@@ -812,6 +822,8 @@ export default function NotesApp({ win }: { win: WindowInstance }) {
               mode={mode}
               isDark={isDark}
               extensions={markdownExtensions}
+              showExtensions={showExtensions}
+              onCreateEditor={onCreateEditor}
               onChange={(content) => updateNote(selected.id, { content })}
               onBlur={() => void flushSave(selected.id)}
               onDrop={onEditorDrop}
@@ -878,6 +890,8 @@ function NoteEditor({
   mode,
   isDark,
   extensions,
+  showExtensions,
+  onCreateEditor,
   onChange,
   onBlur,
   onDrop,
@@ -886,6 +900,8 @@ function NoteEditor({
   mode: EditorMode;
   isDark: boolean;
   extensions: Extension[];
+  showExtensions?: Extension[];
+  onCreateEditor?: (view: EditorView) => void;
   onChange: (content: string) => void;
   onBlur: () => void;
   onDrop?: (e: React.DragEvent) => void;
@@ -904,7 +920,7 @@ function NoteEditor({
           <CodeMirror
             value={note.content}
             onChange={onChange}
-            extensions={[markdown(), ...extensions]}
+            extensions={[markdown(), ...extensions, ...(showExtensions ?? [])]}
             theme={isDark ? oneDark : "light"}
             height="100%"
             className="h-full text-sm"
@@ -918,6 +934,7 @@ function NoteEditor({
               searchKeymap: true,
               tabSize: 2,
             }}
+            onCreateEditor={onCreateEditor}
             onBlur={onBlur}
           />
         </div>

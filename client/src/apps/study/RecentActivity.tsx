@@ -1,7 +1,7 @@
 // ===== Study Hub: Recent Activity =====
 
 import { useState, useEffect } from "react";
-import { Brain, FileText, HelpCircle, Lightbulb, BookOpen, ListTodo, RefreshCw, ChevronRight, MessageSquare, Mic } from "lucide-react";
+import { Brain, FileText, HelpCircle, Lightbulb, BookOpen, ListTodo, RefreshCw, ChevronRight, MessageSquare, Mic, Presentation } from "lucide-react";
 import { studyApi, type StudySession } from "../../services/study";
 import { Loading, ErrorBanner } from "./ui";
 import { useWindows } from "../../store/windows";
@@ -15,6 +15,7 @@ const TYPE_META: Record<string, { label: string; icon: typeof Brain; color: stri
   syllabus: { label: "Tasks", icon: ListTodo, color: "text-rose-400" },
   chat: { label: "Study Chat", icon: MessageSquare, color: "text-violet-400" },
   podcast: { label: "Podcast", icon: Mic, color: "text-rose-400" },
+  teach: { label: "Teach Me", icon: Presentation, color: "text-indigo-400" },
 };
 
 function timeAgo(iso: string): string {
@@ -57,6 +58,8 @@ export default function RecentActivity() {
       openWindow({ appId: "study", title: "Study Hub", icon: "GraduationCap", payload: { mode: "chat", chatId: meta.chatId as string } });
     } else if (s.type === "podcast" && meta.podcastId) {
       openWindow({ appId: "study", title: "Study Hub", icon: "GraduationCap", payload: { mode: "podcast", podcastId: meta.podcastId as string } });
+    } else if (s.type === "teach" && meta.sessionId) {
+      openWindow({ appId: "study", title: "Study Hub", icon: "GraduationCap", payload: { mode: "teach", sessionId: meta.sessionId as string } });
     }
   };
 
@@ -69,6 +72,7 @@ export default function RecentActivity() {
     if (s.type === "syllabus") return true;
     if (s.type === "chat" && meta.chatId) return true;
     if (s.type === "podcast" && meta.podcastId) return true;
+    if (s.type === "teach" && meta.sessionId) return true;
     return false;
   };
 
