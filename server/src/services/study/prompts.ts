@@ -5,7 +5,7 @@ export type StudyLanguage = "en" | "cs";
 
 /** Returns a language instruction appended to prompts so the LLM outputs
  *  in the user's chosen language. English is the default (no instruction). */
-function langInstr(lang?: StudyLanguage): string {
+export function langInstr(lang?: StudyLanguage): string {
   if (lang === "cs") {
     return "\n\nIMPORTANT: Write your ENTIRE response in Czech (čeština) — all questions, answers, explanations, headings, and labels must be in Czech. Keep technical terms in their accepted Czech form.";
   }

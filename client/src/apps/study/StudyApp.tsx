@@ -15,6 +15,7 @@ import {
   MessageSquare,
   Mic,
   Languages,
+  Presentation,
 } from "lucide-react";
 import type { WindowInstance } from "../../store/windows";
 import type { SourceDescriptor, SourceKind, StudyLanguage } from "../../services/study";
@@ -29,10 +30,12 @@ import RecentActivity from "./RecentActivity";
 import StudyHome from "./StudyHome";
 import SourceChat from "./SourceChat";
 import Podcast from "./Podcast";
+import TeacherMode from "./TeacherMode";
 
 type Mode =
   | "home"
   | "chat"
+  | "teach"
   | "podcast"
   | "flashcards"
   | "summarize"
@@ -45,6 +48,7 @@ type Mode =
 const MODES: { id: Mode; label: string; icon: typeof Brain; desc: string }[] = [
   { id: "home", label: "Home", icon: Home, desc: "Overview & quick actions" },
   { id: "chat", label: "Ask (grounded)", icon: MessageSquare, desc: "Source-grounded Q&A with citations" },
+  { id: "teach", label: "Teach Me", icon: Presentation, desc: "Interactive live tutoring with sources" },
   { id: "podcast", label: "Podcast", icon: Mic, desc: "Audio overview from your sources" },
   { id: "flashcards", label: "Flashcards", icon: Brain, desc: "Generate Q/A cards from a source" },
   { id: "summarize", label: "Summarize", icon: FileText, desc: "TL;DR, outline, or key points" },
@@ -66,6 +70,7 @@ export default function StudyApp({ win }: { win: WindowInstance }) {
   const [initialChatId, setInitialChatId] = useState<string | null>(null);
   const [initialPodcastId, setInitialPodcastId] = useState<string | null>(null);
   const [initialWorkspaceId, setInitialWorkspaceId] = useState<string | null>(null);
+  const [initialSessionId, setInitialSessionId] = useState<string | null>(null);
 
   const toggleLanguage = () => {
     setLanguage((prev) => {
@@ -112,6 +117,10 @@ export default function StudyApp({ win }: { win: WindowInstance }) {
       if (typeof p.mode === "string" && (p.mode === "chat" || p.mode === "podcast")) {
         setMode(p.mode);
       }
+    }
+    if (typeof p.sessionId === "string") {
+      setInitialSessionId(p.sessionId);
+      setMode("teach");
     }
   }, [win.payload]);
 
@@ -166,6 +175,10 @@ export default function StudyApp({ win }: { win: WindowInstance }) {
         {mode === "chat" ? (
           <div className="h-full">
             <SourceChat initialChatId={initialChatId} initialWorkspaceId={initialWorkspaceId} language={language} />
+          </div>
+        ) : mode === "teach" ? (
+          <div className="h-full">
+            <TeacherMode initialSessionId={initialSessionId} language={language} />
           </div>
         ) : (
           <div className="mx-auto max-w-none @5xl:max-w-2xl">

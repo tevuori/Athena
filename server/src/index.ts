@@ -30,6 +30,8 @@ import voice from "./routes/voice";
 import links from "./routes/links";
 import proactiveAlerts from "./routes/proactive-alerts";
 import browser from "./routes/browser";
+import teacher from "./routes/teacher";
+import tts from "./routes/tts";
 import { startScheduler } from "./services/ntfy/scheduler";
 import { startAllSubscribers } from "./services/ntfy/subscriber";
 import { startProactiveScheduler } from "./services/ntfy/proactive-scheduler";
@@ -104,6 +106,8 @@ app.route("/api/voice", voice);
 app.route("/api/links", links);
 app.route("/api/proactive-alerts", proactiveAlerts);
 app.route("/api/browser", browser);
+app.route("/api/teacher", teacher);
+app.route("/api/tts", tts);
 
 // Start ntfy background workers (cron scheduler + per-user inbox subscribers).
 startScheduler();

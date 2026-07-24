@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import {
   Brain, FileText, HelpCircle, Lightbulb, BookOpen, ListTodo,
   History, Sparkles, ChevronRight, TrendingUp, Clock, MessageSquare, Mic, Plus, Trash2, Link2,
-  FolderOpen, Pencil,
+  FolderOpen, Pencil, Presentation,
 } from "lucide-react";
 import { studyApi, type StudySession } from "../../services/study";
 import { flashcardsApi } from "../../services/flashcards";
@@ -36,6 +36,7 @@ const TYPE_META: Record<string, { label: string; icon: typeof Brain; color: stri
   syllabus: { label: "Syllabus", icon: ListTodo, color: "text-orange-400" },
   chat: { label: "Study Chat", icon: MessageSquare, color: "text-violet-400" },
   podcast: { label: "Podcast", icon: Mic, color: "text-rose-400" },
+  teach: { label: "Teach Me", icon: Presentation, color: "text-indigo-400" },
 };
 
 export default function StudyHome({ onPickMode }: { onPickMode: (m: string, opts?: { workspaceId?: string }) => void }) {
@@ -90,6 +91,7 @@ export default function StudyHome({ onPickMode }: { onPickMode: (m: string, opts
   const studyCount = sessions.length;
 
   const quickActions: { mode: string; label: string; icon: typeof Brain; color: string; desc: string }[] = [
+    { mode: "teach", label: "Teach Me", icon: Presentation, color: "text-indigo-400", desc: "Interactive live tutoring — Athena teaches from your sources with voice" },
     { mode: "chat", label: "Ask (grounded)", icon: MessageSquare, color: "text-violet-400", desc: "Q&A grounded in your sources, with citations" },
     { mode: "podcast", label: "Podcast", icon: Mic, color: "text-rose-400", desc: "Audio overview from your sources" },
     { mode: "flashcards", label: "Generate Flashcards", icon: Brain, color: "text-indigo-400", desc: "AI Q/A cards from a note or text" },

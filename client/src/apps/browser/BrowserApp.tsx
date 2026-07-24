@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { useWindows } from "../../store/windows";
 import { useBrowser, type NavRequest } from "../../store/browser";
+import { useShowControl } from "../../store/showControl";
 import { browserApi } from "../../services/browser";
 import type { WindowInstance } from "../../store/windows";
 
@@ -200,6 +201,36 @@ export default function BrowserApp({ win }: { win: WindowInstance }) {
         break;
     }
   }, [currentReq, navigate, goBack, goForward, reload]);
+
+  // Interactive Teacher: consume show-control commands (scroll_to / highlight
+  // / clear_highlight) and forward them into the proxied iframe via
+  // postMessage. The injected content script (services/browser.ts) handles
+  // them by scrolling to / highlighting the target text or selector.
+  const showCommands = useShowControl((s) => s.commands);
+  const removeShowWindow = useShowControl((s) => s.removeWindow);
+  const lastShowSeq = useRef(0);
+  const showCmd = showCommands[win.id];
+  useEffect(() => {
+    if (!showCmd || showCmd.seq === lastShowSeq.current) return;
+    lastShowSeq.current = showCmd.seq;
+    const iframe = iframeRef.current;
+    if (!iframe || !iframe.contentWindow) return;
+    if (showCmd.kind === "scroll_to" || showCmd.kind === "highlight" || showCmd.kind === "clear_highlight") {
+      iframe.contentWindow.postMessage(
+        {
+          __athenaTeacherShow: true,
+          kind: showCmd.kind,
+          text: showCmd.text,
+          selector: showCmd.selector,
+          line: showCmd.line,
+        },
+        "*"
+      );
+    }
+  }, [showCmd]);
+  useEffect(() => {
+    return () => { if (win.id) removeShowWindow(win.id); };
+  }, [win.id, removeShowWindow]);
 
   // Set loading true when the iframe starts loading a new URL; the postMessage
   // handler clears it when the page reports back. Also clear on home.

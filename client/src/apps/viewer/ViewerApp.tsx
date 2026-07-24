@@ -8,6 +8,7 @@ import {
 } from "../../services/files";
 import { useWindows } from "../../store/windows";
 import { useFormFactor } from "../../store/formfactor";
+import { useShowControl, type ShowCommand } from "../../store/showControl";
 import type { WindowInstance } from "../../store/windows";
 import type { VFile } from "../../types";
 
@@ -19,6 +20,35 @@ export default function ViewerApp({ win }: { win: WindowInstance }) {
   const [file, setFile] = useState<VFile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Interactive Teacher: consume show-control commands for this window.
+  const showCommands = useShowControl((s) => s.commands);
+  const removeShowWindow = useShowControl((s) => s.removeWindow);
+  const lastShowSeq = useRef(0);
+  const activeShowCmd = showCommands[win.id];
+  const [pdfSearch, setPdfSearch] = useState<string | null>(null);
+  useEffect(() => {
+    if (!activeShowCmd || activeShowCmd.seq === lastShowSeq.current) return;
+    lastShowSeq.current = activeShowCmd.seq;
+    // For PDFs: use PDF Open Parameters (#search=) to jump to text in the
+    // native viewer. For audio/video: seek via the media element. For images:
+    // handled by the ImageViewer via the command prop below.
+    if (file && isPdfFile(file) && (activeShowCmd.kind === "scroll_to" || activeShowCmd.kind === "highlight")) {
+      const q = activeShowCmd.text ?? activeShowCmd.selector ?? "";
+      if (q) setPdfSearch(q);
+    }
+    if (file && (isAudioFile(file) || isVideoFile(file)) && activeShowCmd.kind === "scroll_to") {
+      // "scroll_to" on media = seek to a timestamp (pos in seconds, if numeric).
+      const t = activeShowCmd.pos;
+      if (typeof t === "number") {
+        const el = document.querySelector(`[data-viewer-win="${win.id}"] audio, [data-viewer-win="${win.id}"] video`) as HTMLMediaElement | null;
+        if (el) { try { el.currentTime = t; void el.play(); } catch { /* noop */ } }
+      }
+    }
+  }, [activeShowCmd, file, win.id]);
+  useEffect(() => {
+    return () => { if (win.id) removeShowWindow(win.id); };
+  }, [win.id, removeShowWindow]);
 
   useEffect(() => {
     if (!fileId) {
@@ -105,11 +135,16 @@ export default function ViewerApp({ win }: { win: WindowInstance }) {
         </button>
       </div>
 
-      <div className="flex-1 overflow-hidden">
-        {isImageFile(file) && <ImageViewer file={file} isPhone={isPhone} />}
+      <div className="flex-1 overflow-hidden" data-viewer-win={win.id}>
+        {isImageFile(file) && <ImageViewer file={file} isPhone={isPhone} command={activeShowCmd} />}
         {isPdfFile(file) && (
           <iframe
-            src={filesApi.downloadUrl(file.id)}
+            key={pdfSearch ?? "default"}
+            src={
+              pdfSearch
+                ? `${filesApi.downloadUrl(file.id)}#search=${encodeURIComponent(pdfSearch)}`
+                : filesApi.downloadUrl(file.id)
+            }
             className="h-full w-full border-0"
             title={file.name}
           />
@@ -134,7 +169,7 @@ export default function ViewerApp({ win }: { win: WindowInstance }) {
   );
 }
 
-function ImageViewer({ file, isPhone }: { file: VFile; isPhone?: boolean }) {
+function ImageViewer({ file, isPhone, command }: { file: VFile; isPhone?: boolean; command?: ShowCommand }) {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [fit, setFit] = useState(true);
@@ -147,6 +182,23 @@ function ImageViewer({ file, isPhone }: { file: VFile; isPhone?: boolean }) {
   const pointers = useRef<Map<number, { x: number; y: number }>>(new Map());
   const pinchStart = useRef<{ dist: number; zoom: number } | null>(null);
   const lastTap = useRef<number>(0);
+  const lastCmdSeq = useRef(0);
+
+  // Interactive Teacher: react to show-control commands. For images we can't
+  // highlight text, so a scroll_to/highlight triggers a brief focus pulse
+  // (zoom-in then back) to draw the student's eye to the image.
+  useEffect(() => {
+    if (!command || command.seq === lastCmdSeq.current) return;
+    lastCmdSeq.current = command.seq;
+    if (command.kind === "scroll_to" || command.kind === "highlight") {
+      setFit(false);
+      setZoom((z) => Math.min(8, Math.max(z, 2)));
+      setPan({ x: 0, y: 0 });
+      // Ease back to fit after 1.5s so the student sees the whole image again.
+      const t = setTimeout(() => { setFit(true); setZoom(1); }, 1500);
+      return () => clearTimeout(t);
+    }
+  }, [command]);
 
   const onWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
