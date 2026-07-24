@@ -26,9 +26,10 @@ function fmtDuration(sec: number): string {
 interface Props {
   initialPodcastId?: string | null;
   initialWorkspaceId?: string | null;
+  language?: "en" | "cs";
 }
 
-export default function Podcast({ initialPodcastId, initialWorkspaceId }: Props) {
+export default function Podcast({ initialPodcastId, initialWorkspaceId, language }: Props) {
   const [library, setLibrary] = useState<StudySource[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showSourcePanel, setShowSourcePanel] = useState(true);
@@ -110,6 +111,7 @@ export default function Podcast({ initialPodcastId, initialWorkspaceId }: Props)
     try {
       const { podcast, noteId } = await studyPodcastsApi.generate({
         sourceIds: [...selectedIds],
+        language,
       });
       setActive(podcast);
       tts.loadScript(podcast.script ?? "", podcast.host1Label, podcast.host2Label);

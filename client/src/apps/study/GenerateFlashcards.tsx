@@ -9,9 +9,10 @@ import { studyApi, type SourceDescriptor, type GeneratedCard } from "../../servi
 import { flashcardsApi } from "../../services/flashcards";
 import { useWindows } from "../../store/windows";
 
-export default function GenerateFlashcards({ initialSource, appendDeck }: {
+export default function GenerateFlashcards({ initialSource, appendDeck, language }: {
   initialSource?: SourceDescriptor | null;
   appendDeck?: { id: string; name: string } | null;
+  language?: "en" | "cs";
 }) {
   const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(new Set());
   const toggleSource = (id: string) => {
@@ -56,6 +57,7 @@ export default function GenerateFlashcards({ initialSource, appendDeck }: {
         mode,
         deckName: deckName.trim() || undefined,
         create: false, // preview first
+        language,
       });
       setCards(res.cards);
       setTruncated(res.truncated);

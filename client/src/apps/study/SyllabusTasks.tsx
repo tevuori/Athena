@@ -9,7 +9,7 @@ import { studyApi, type SourceDescriptor, type SyllabusTask } from "../../servic
 import { tasksApi } from "../../services/tasks";
 import { useWindows } from "../../store/windows";
 
-export default function SyllabusTasks({ initialSource }: { initialSource?: SourceDescriptor | null }) {
+export default function SyllabusTasks({ initialSource, language }: { initialSource?: SourceDescriptor | null; language?: "en" | "cs" }) {
   const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(new Set());
   const toggleSource = (id: string) => {
     setSelectedSourceIds((prev) => {
@@ -42,7 +42,7 @@ export default function SyllabusTasks({ initialSource }: { initialSource?: Sourc
     setTasks([]);
     try {
       const sources = await getSources();
-      const res = await studyApi.syllabusTasks({ sources, create: false });
+      const res = await studyApi.syllabusTasks({ sources, create: false, language });
       setTasks(res.tasks);
       setTruncated(res.truncated);
     } catch (e) {

@@ -1,6 +1,17 @@
 // ===== Study Hub prompt builders =====
 // Focused prompts for each study workflow. Used by routes/study.ts.
 
+export type StudyLanguage = "en" | "cs";
+
+/** Returns a language instruction appended to prompts so the LLM outputs
+ *  in the user's chosen language. English is the default (no instruction). */
+function langInstr(lang?: StudyLanguage): string {
+  if (lang === "cs") {
+    return "\n\nIMPORTANT: Write your ENTIRE response in Czech (čeština) — all questions, answers, explanations, headings, and labels must be in Czech. Keep technical terms in their accepted Czech form.";
+  }
+  return "";
+}
+
 export interface FlashcardSpec {
   front: string;
   back: string;
@@ -20,7 +31,7 @@ export interface SyllabusTaskSpec {
   priority?: "LOW" | "MEDIUM" | "HIGH";
 }
 
-export function flashcardsPrompt(sourceText: string, count: number, mode: string): string {
+export function flashcardsPrompt(sourceText: string, count: number, mode: string, lang?: StudyLanguage): string {
   const modeInstr =
     mode === "cloze"
       ? 'Cloze deletion style: the "front" is a sentence with a key term replaced by "_____", and the "back" is the missing term. Generate cards that test recall of specific terms within context.'
@@ -36,14 +47,14 @@ Return JSON: { "cards": [ { "front": "...", "back": "..." }, ... ] }
 Study material:
 """
 ${sourceText}
-"""`;
+"""${langInstr(lang)}`;
 }
 
 export function flashcardsSchemaHint(): string {
   return 'Schema: { "cards": [ { "front": string, "back": string } ] }';
 }
 
-export function summarizePrompt(sourceText: string, mode: string): string {
+export function summarizePrompt(sourceText: string, mode: string, lang?: StudyLanguage): string {
   const modeInstr =
     mode === "tldr"
       ? "a 2-3 sentence TL;DR"
@@ -55,10 +66,10 @@ export function summarizePrompt(sourceText: string, mode: string): string {
 Material:
 """
 ${sourceText}
-"""`;
+"""${langInstr(lang)}`;
 }
 
-export function explainPrompt(sourceText: string, depth: string): string {
+export function explainPrompt(sourceText: string, depth: string, lang?: StudyLanguage): string {
   const depthInstr =
     depth === "eli5"
       ? "as if explaining to a 5-year-old (simple words, analogies, no jargon)"
@@ -70,7 +81,7 @@ export function explainPrompt(sourceText: string, depth: string): string {
 Material:
 """
 ${sourceText}
-"""`;
+"""${langInstr(lang)}`;
 }
 
 export function studyGuidePrompt(notes: { title: string; content: string }[]): string {
@@ -85,7 +96,7 @@ ${combined}
 """`;
 }
 
-export function syllabusTasksPrompt(sourceText: string): string {
+export function syllabusTasksPrompt(sourceText: string, lang?: StudyLanguage): string {
   return `Extract actionable study tasks (assignments, readings, exams, deadlines) from the material below. For each task, provide a short title, an optional due date (ISO format YYYY-MM-DD if explicitly mentioned, otherwise null), and a priority.
 
 Return JSON: { "tasks": [ { "title": "...", "dueDate": "2025-01-31" | null, "priority": "LOW" | "MEDIUM" | "HIGH" }, ... ] }
@@ -93,7 +104,7 @@ Return JSON: { "tasks": [ { "title": "...", "dueDate": "2025-01-31" | null, "pri
 Material:
 """
 ${sourceText}
-"""`;
+"""${langInstr(lang)}`;
 }
 
 export function syllabusTasksSchemaHint(): string {
@@ -103,7 +114,8 @@ export function syllabusTasksSchemaHint(): string {
 export function quizGeneratePrompt(
   sourceText: string,
   count: number,
-  types: string[]
+  types: string[],
+  lang?: StudyLanguage
 ): string {
   const typeInstr = types.includes("mcq") && types.includes("short")
     ? "a mix of multiple-choice (mcq) and short-answer (short) questions"
@@ -119,7 +131,7 @@ Return JSON: { "questions": [ { "id": 1, "type": "mcq", "prompt": "...", "option
 Study material:
 """
 ${sourceText}
-"""`;
+"""${langInstr(lang)}`;
 }
 
 export function quizGenerateSchemaHint(): string {
@@ -129,7 +141,8 @@ export function quizGenerateSchemaHint(): string {
 export function quizGradePrompt(
   sourceText: string,
   question: { type: string; prompt: string; answer: string },
-  userAnswer: string
+  userAnswer: string,
+  lang?: StudyLanguage
 ): string {
   return `You are grading a quiz answer. Determine if the student's answer is correct relative to the model answer. Be lenient on wording but strict on correctness.
 
@@ -137,7 +150,7 @@ Question: ${question.prompt}
 Model answer: ${question.answer}
 Student's answer: ${userAnswer}
 
-Return JSON: { "correct": boolean, "explanation": "brief explanation of why it is correct or incorrect", "modelAnswer": "the ideal answer" }`;
+Return JSON: { "correct": boolean, "explanation": "brief explanation of why it is correct or incorrect", "modelAnswer": "the ideal answer" }${langInstr(lang)}`;
 }
 
 export function quizGradeSchemaHint(): string {
@@ -219,7 +232,7 @@ export function budgetSources(sources: GroundedSource[], totalBudget = 60000): G
   });
 }
 
-export function groundedQaSystemPrompt(sources: GroundedSource[]): string {
+export function groundedQaSystemPrompt(sources: GroundedSource[], lang?: StudyLanguage): string {
   const budgeted = budgetSources(sources);
   const blocks = budgeted
     .map(
@@ -237,7 +250,7 @@ CRITICAL CITATION RULES:
 - At the end of your answer, include a "## Sources" section listing each cited source as \`[n] <name>\` (one per line). Only list sources you actually cited.
 
 SOURCES:
-${blocks}`;
+${blocks}${langInstr(lang)}`;
 }
 
 // ===== Podcast / audio overview script =====
@@ -245,7 +258,8 @@ ${blocks}`;
 export function podcastScriptPrompt(
   sources: { index: number; name: string; text: string }[],
   host1Label: string,
-  host2Label: string
+  host2Label: string,
+  lang?: StudyLanguage
 ): string {
   const budgeted = budgetSources(
     sources.map((s) => ({ ...s, kind: "source", refId: String(s.index) })),
@@ -268,13 +282,14 @@ FORMAT RULES (follow exactly so a text-to-speech engine can read it):
 SOURCES:
 ${blocks}
 
-Write the full script now, starting with "${host1Label}:".`;
+Write the full script now, starting with "${host1Label}:".${langInstr(lang)}`;
 }
 
 // ===== Citation-aware variants for existing study materials =====
 
 export function studyGuideCitedPrompt(
-  notes: { index: number; name: string; content: string }[]
+  notes: { index: number; name: string; content: string }[],
+  lang?: StudyLanguage
 ): string {
   const combined = notes
     .map((n) => `### SOURCE [${n.index}]: ${n.name}\n\n${n.content}`)
@@ -289,10 +304,10 @@ CITATION RULES:
 Sources:
 """
 ${combined}
-"""`;
+"""${langInstr(lang)}`;
 }
 
-export function summarizeCitedPrompt(sourceText: string, mode: string, sourceLabel: string): string {
+export function summarizeCitedPrompt(sourceText: string, mode: string, sourceLabel: string, lang?: StudyLanguage): string {
   const modeInstr =
     mode === "tldr"
       ? "a 2-3 sentence TL;DR"
@@ -304,10 +319,10 @@ export function summarizeCitedPrompt(sourceText: string, mode: string, sourceLab
 Material:
 """
 ${sourceText}
-"""`;
+"""${langInstr(lang)}`;
 }
 
-export function explainCitedPrompt(sourceText: string, depth: string, sourceLabel: string): string {
+export function explainCitedPrompt(sourceText: string, depth: string, sourceLabel: string, lang?: StudyLanguage): string {
   const depthInstr =
     depth === "eli5"
       ? "as if explaining to a 5-year-old (simple words, analogies, no jargon)"
@@ -319,7 +334,7 @@ export function explainCitedPrompt(sourceText: string, depth: string, sourceLabe
 Material:
 """
 ${sourceText}
-"""`;
+"""${langInstr(lang)}`;
 }
 
 export interface CitedFlashcardSpec {
@@ -332,7 +347,8 @@ export interface CitedFlashcardSpec {
 export function flashcardsCitedPrompt(
   sources: { index: number; name: string; text: string }[],
   count: number,
-  mode: string
+  mode: string,
+  lang?: StudyLanguage
 ): string {
   const modeInstr =
     mode === "cloze"
@@ -350,7 +366,7 @@ export function flashcardsCitedPrompt(
 Return JSON: { "cards": [ { "front": "...", "back": "...", "source": 1 }, ... ] }
 
 Study material:
-${blocks}`;
+${blocks}${langInstr(lang)}`;
 }
 
 export function flashcardsCitedSchemaHint(): string {
@@ -360,7 +376,8 @@ export function flashcardsCitedSchemaHint(): string {
 export function quizCitedPrompt(
   sources: { index: number; name: string; text: string }[],
   count: number,
-  types: string[]
+  types: string[],
+  lang?: StudyLanguage
 ): string {
   const typeInstr = types.includes("mcq") && types.includes("short")
     ? "a mix of multiple-choice (mcq) and short-answer (short) questions"
@@ -377,7 +394,7 @@ export function quizCitedPrompt(
 Return JSON: { "questions": [ { "id": 1, "type": "mcq", "prompt": "... [1]", "options": ["a","b","c","d"], "answer": "b" }, { "id": 2, "type": "short", "prompt": "... [2]", "answer": "..." } ] }
 
 Study material:
-${blocks}`;
+${blocks}${langInstr(lang)}`;
 }
 
 export function quizCitedSchemaHint(): string {

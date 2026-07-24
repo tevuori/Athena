@@ -11,7 +11,7 @@ import prisma from "../db/client";
 import { authMiddleware } from "../middleware/auth";
 import { getUserConfig, buildModel, isLlmConfiguredFor } from "../services/athena/llm";
 import { generateText } from "../services/study/llm-json";
-import { podcastScriptPrompt } from "../services/study/prompts";
+import { podcastScriptPrompt, type StudyLanguage } from "../services/study/prompts";
 import { logSessionSafe } from "../services/study/logSession";
 import { canonicalPair } from "../db/links";
 
@@ -51,6 +51,7 @@ const generateSchema = z.object({
   title: z.string().max(200).optional(),
   host1Label: z.string().max(40).optional(),
   host2Label: z.string().max(40).optional(),
+  language: z.enum(["en", "cs"]).optional().default("en"),
 });
 
 /** POST /generate — generate a podcast script from sources. */
@@ -86,7 +87,7 @@ podcasts.post("/generate", zValidator("json", generateSchema), async (c) => {
   try {
     script = await generateText(
       buildModel(cfg),
-      podcastScriptPrompt(sources, host1Label, host2Label),
+      podcastScriptPrompt(sources, host1Label, host2Label, body.language as StudyLanguage),
       "You are a podcast scriptwriter. Output ONLY the dialogue lines in the exact 'Host: text' format requested. No preamble, no commentary, no markdown fences."
     );
   } catch (e) {

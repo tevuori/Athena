@@ -17,6 +17,7 @@ import {
 } from "../../services/study-chat";
 import { studySourcesApi, type StudySource } from "../../services/study-sources";
 import { studyWorkspacesApi } from "../../services/study-workspaces";
+import { notesApi } from "../../services/notes";
 import WorkspaceSourceSelector from "./WorkspaceSourceSelector";
 import CitationMarkdown from "./CitationMarkdown";
 import { ActionButton, ErrorBanner, Loading } from "./ui";
@@ -38,7 +39,7 @@ interface Props {
   initialWorkspaceId?: string | null;
 }
 
-export default function SourceChat({ initialChatId, initialWorkspaceId }: Props) {
+export default function SourceChat({ initialChatId, initialWorkspaceId, language }: Props & { language?: "en" | "cs" }) {
   const [chats, setChats] = useState<StudyChatSummary[]>([]);
   const [chatId, setChatId] = useState<string | null>(initialChatId ?? null);
   const [chat, setChat] = useState<StudyChat | null>(null);
@@ -235,7 +236,7 @@ export default function SourceChat({ initialChatId, initialWorkspaceId }: Props)
         });
         setError(msg);
       },
-    });
+    }, language);
   };
 
   const abort = () => {
@@ -258,7 +259,7 @@ export default function SourceChat({ initialChatId, initialWorkspaceId }: Props)
     }
   };
 
-  const openCitation = (cite: ChatCitation) => {
+  const openCitation = async (cite: ChatCitation) => {
     if (cite.kind === "note") {
       openWindow({ appId: "notes", title: "Notes", icon: "StickyNote", payload: { noteId: cite.refId } });
     } else if (cite.kind === "file") {
@@ -267,6 +268,20 @@ export default function SourceChat({ initialChatId, initialWorkspaceId }: Props)
       openWindow({ appId: "browser", title: "Browser", icon: "Globe", payload: { url: cite.refId } });
     } else if (cite.kind === "moodle") {
       openWindow({ appId: "browser", title: "Browser", icon: "Globe", payload: { url: cite.refId } });
+    } else if (cite.kind === "paste") {
+      // Paste sources: fetch the StudySource text by index → sourceIds mapping.
+      const sourceId = chat?.sourceIds[cite.index - 1];
+      if (!sourceId) return;
+      try {
+        const src = await studySourcesApi.get(sourceId);
+        // Create a note with the pasted text so the user can read it.
+        const { note } = await notesApi.create({
+          title: src.name,
+          content: src.textCache,
+          tags: "source,paste",
+        });
+        openWindow({ appId: "notes", title: "Notes", icon: "StickyNote", payload: { noteId: note.id } });
+      } catch { /* non-fatal */ }
     }
   };
 

@@ -67,7 +67,7 @@ export const studyChatApi = {
   remove: (id: string) => apiDelete<{ ok: boolean }>(`/api/study/chat/${id}`),
 
   /** Stream a grounded answer for the chat. Resolves when the stream ends. */
-  stream: (chatId: string, message: string, cb: StreamCallbacks): StreamHandle => {
+  stream: (chatId: string, message: string, cb: StreamCallbacks, language?: "en" | "cs"): StreamHandle => {
     const controller = new AbortController();
     const token = getToken();
 
@@ -80,7 +80,7 @@ export const studyChatApi = {
             "Content-Type": "application/json",
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
-          body: JSON.stringify({ message }),
+          body: JSON.stringify({ message, language }),
           signal: controller.signal,
         });
       } catch (e) {

@@ -26,9 +26,11 @@ interface AnsweredQuestion extends QuizQuestion {
 export default function QuizMe({
   initialSource,
   preloadedQuizId,
+  language,
 }: {
   initialSource?: SourceDescriptor | null;
   preloadedQuizId?: string | null;
+  language?: "en" | "cs";
 }) {
   const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(new Set());
   const toggleSource = (id: string) => {
@@ -118,6 +120,7 @@ export default function QuizMe({
         sources,
         questionCount: count,
         types: [...types],
+        language,
       });
       setQuizId(res.quizId);
       setSourceName(res.sourceName);
@@ -137,7 +140,7 @@ export default function QuizMe({
     setLoading(true);
     setError("");
     try {
-      const result = await studyApi.quizAnswer(quizId, { questionId: q.id, answer: answer.trim() });
+      const result = await studyApi.quizAnswer(quizId, { questionId: q.id, answer: answer.trim(), language });
       setFeedback(result);
       setQuestions((prev) =>
         prev.map((qq, i) => (i === current ? { ...qq, userAnswer: answer.trim(), result } : qq))

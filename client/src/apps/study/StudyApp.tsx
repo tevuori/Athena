@@ -14,9 +14,10 @@ import {
   Home,
   MessageSquare,
   Mic,
+  Languages,
 } from "lucide-react";
 import type { WindowInstance } from "../../store/windows";
-import type { SourceDescriptor, SourceKind } from "../../services/study";
+import type { SourceDescriptor, SourceKind, StudyLanguage } from "../../services/study";
 import CollapsibleSidebar from "../../wm/CollapsibleSidebar";
 import GenerateFlashcards from "./GenerateFlashcards";
 import Summarize from "./Summarize";
@@ -56,12 +57,23 @@ const MODES: { id: Mode; label: string; icon: typeof Brain; desc: string }[] = [
 
 export default function StudyApp({ win }: { win: WindowInstance }) {
   const [mode, setMode] = useState<Mode>("home");
+  const [language, setLanguage] = useState<StudyLanguage>(() => {
+    return (localStorage.getItem("study-language") as StudyLanguage) || "en";
+  });
   const [initialSource, setInitialSource] = useState<SourceDescriptor | null>(null);
   const [appendDeck, setAppendDeck] = useState<{ id: string; name: string } | null>(null);
   const [preloadedQuizId, setPreloadedQuizId] = useState<string | null>(null);
   const [initialChatId, setInitialChatId] = useState<string | null>(null);
   const [initialPodcastId, setInitialPodcastId] = useState<string | null>(null);
   const [initialWorkspaceId, setInitialWorkspaceId] = useState<string | null>(null);
+
+  const toggleLanguage = () => {
+    setLanguage((prev) => {
+      const next = prev === "en" ? "cs" : "en";
+      localStorage.setItem("study-language", next);
+      return next;
+    });
+  };
 
   // Honor a payload sent when opening (e.g. from Athena's open_study_hub or
   // start_quiz tool).
@@ -117,6 +129,14 @@ export default function StudyApp({ win }: { win: WindowInstance }) {
         <div className="flex items-center gap-2 border-b border-edge px-3 py-3">
           <GraduationCap size={16} className="text-accent" />
           <span className="text-sm font-semibold text-ink">Study Hub</span>
+          <button
+            onClick={toggleLanguage}
+            className="ml-auto flex items-center gap-1 rounded-md border border-edge px-1.5 py-0.5 text-[10px] font-medium text-ink-muted transition hover:bg-surface-3 hover:text-ink"
+            title="Switch output language"
+          >
+            <Languages size={11} />
+            {language === "en" ? "EN" : "CS"}
+          </button>
         </div>
         <div className="flex flex-1 flex-col gap-0.5 p-2">
           {MODES.map((m) => {
@@ -145,7 +165,7 @@ export default function StudyApp({ win }: { win: WindowInstance }) {
       <div className="flex-1 overflow-y-auto p-5">
         {mode === "chat" ? (
           <div className="h-full">
-            <SourceChat initialChatId={initialChatId} initialWorkspaceId={initialWorkspaceId} />
+            <SourceChat initialChatId={initialChatId} initialWorkspaceId={initialWorkspaceId} language={language} />
           </div>
         ) : (
           <div className="mx-auto max-w-none @5xl:max-w-2xl">
@@ -153,13 +173,13 @@ export default function StudyApp({ win }: { win: WindowInstance }) {
               setMode(m as Mode);
               if (opts?.workspaceId) setInitialWorkspaceId(opts.workspaceId);
             }} />}
-            {mode === "podcast" && <Podcast initialPodcastId={initialPodcastId} initialWorkspaceId={initialWorkspaceId} />}
-            {mode === "flashcards" && <GenerateFlashcards initialSource={initialSource} appendDeck={appendDeck} />}
-            {mode === "summarize" && <Summarize initialSource={initialSource} />}
-            {mode === "explain" && <Explain initialSource={initialSource} />}
-            {mode === "study_guide" && <StudyGuide />}
-            {mode === "quiz" && <QuizMe initialSource={initialSource} preloadedQuizId={preloadedQuizId} />}
-            {mode === "syllabus" && <SyllabusTasks initialSource={initialSource} />}
+            {mode === "podcast" && <Podcast initialPodcastId={initialPodcastId} initialWorkspaceId={initialWorkspaceId} language={language} />}
+            {mode === "flashcards" && <GenerateFlashcards initialSource={initialSource} appendDeck={appendDeck} language={language} />}
+            {mode === "summarize" && <Summarize initialSource={initialSource} language={language} />}
+            {mode === "explain" && <Explain initialSource={initialSource} language={language} />}
+            {mode === "study_guide" && <StudyGuide language={language} />}
+            {mode === "quiz" && <QuizMe initialSource={initialSource} preloadedQuizId={preloadedQuizId} language={language} />}
+            {mode === "syllabus" && <SyllabusTasks initialSource={initialSource} language={language} />}
             {mode === "recent" && <RecentActivity />}
           </div>
         )}

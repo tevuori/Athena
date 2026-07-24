@@ -21,6 +21,7 @@ export const studyPodcastsApi = {
     title?: string;
     host1Label?: string;
     host2Label?: string;
+    language?: "en" | "cs";
   }) => api.post<{ podcast: Podcast; noteId: string }>("/api/study/podcasts/generate", data),
 
   list: () => api.get<{ podcasts: Podcast[] }>("/api/study/podcasts"),
