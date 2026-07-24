@@ -19,6 +19,7 @@ import {
   ChevronDown, GraduationCap, MessageSquare, BookOpen, Check,
   FileText, File as FileIcon, Link2, ClipboardPaste,
   Volume2, VolumeX, Mic, MicOff,
+  PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 import {
   teacherApi,
@@ -96,6 +97,7 @@ export default function TeacherMode({ initialSessionId, language = "en" }: Props
   const [comprehensionChecks, setComprehensionChecks] = useState<ComprehensionCheck[]>([]);
   const [comprehensionLog, setComprehensionLog] = useState<{ concept: string; passed: boolean }[]>([]);
   const [listOpen, setListOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // Voice: TTS (Athena speaks) + STT (student speaks)
   const [autoSpeak, setAutoSpeak] = useState(false);
@@ -475,12 +477,39 @@ export default function TeacherMode({ initialSessionId, language = "en" }: Props
 
   const openCitation = useCallback((index: number) => {
     const entry = sourceHistory.find((h) => h.index === index);
-    if (entry) {
-      focusWindow(entry.windowId);
-      const w = windowsRef.current.find((x) => x.id === entry.windowId);
+    if (!entry) return;
+    // If the source window is already open, just focus it.
+    const existing = findSourceWindow(entry.refId);
+    if (existing) {
+      focusWindow(existing);
+      const w = windowsRef.current.find((x) => x.id === existing);
       if (w?.minimized) minimizeWindow(w.id);
+      return;
     }
-  }, [sourceHistory, focusWindow, minimizeWindow]);
+    // Otherwise, open the source in the appropriate app.
+    const appId = entry.kind === "note" ? "notes"
+      : entry.kind === "url" || entry.kind === "moodle" ? "browser"
+      : "viewer";
+    const openPayload = entry.kind === "note" ? { noteId: entry.refId }
+      : entry.kind === "file" ? { fileId: entry.refId }
+      : entry.kind === "url" || entry.kind === "moodle" ? { url: entry.refId }
+      : {};
+    openWindow({
+      appId: appId as any,
+      title: entry.name,
+      icon: APP_ICONS[appId] ?? "BookOpen",
+      payload: openPayload,
+    });
+    // Track in source history (update windowId if re-opened).
+    setTimeout(() => {
+      const newWinId = findSourceWindow(entry.refId);
+      if (newWinId) {
+        setSourceHistory((prev) =>
+          prev.map((h) => h.index === index ? { ...h, windowId: newWinId } : h)
+        );
+      }
+    }, 200);
+  }, [sourceHistory, findSourceWindow, focusWindow, minimizeWindow, openWindow]);
 
   const citationMeta = sourceHistory.map((h) => ({ index: h.index, name: h.name, kind: h.kind, refId: h.refId }));
 
@@ -492,45 +521,66 @@ export default function TeacherMode({ initialSessionId, language = "en" }: Props
 
   return (
     <div className="flex h-full gap-3">
-      {/* Session list — inline @4xl+ */}
-      <div className="hidden w-56 shrink-0 flex-col @4xl:flex">
-        <div className="flex items-center justify-between border-b border-edge px-1 pb-2">
-          <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Sessions</span>
+      {/* Session list — collapsible sidebar @4xl+ */}
+      {sidebarOpen ? (
+        <div className="hidden w-56 shrink-0 flex-col @4xl:flex">
+          <div className="flex items-center justify-between border-b border-edge px-1 pb-2">
+            <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Sessions</span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => { setSession(null); setSessionId(null); setMessages([]); setSourceHistory([]); setShowSourcePanel(true); }}
+                className="flex items-center gap-1 rounded-md border border-edge px-1.5 py-0.5 text-[10px] text-ink-muted hover:bg-surface-2 hover:text-ink"
+                title="New session"
+              >
+                <Plus size={10} /> New
+              </button>
+              <button
+                onClick={() => setSidebarOpen(false)}
+                className="rounded-md p-0.5 text-ink-muted hover:bg-surface-2 hover:text-ink"
+                title="Collapse sidebar"
+              >
+                <PanelLeftClose size={14} />
+              </button>
+            </div>
+          </div>
+          <div className="flex flex-1 flex-col gap-1 overflow-y-auto">
+            {sessions.length === 0 ? (
+              <p className="px-1 py-2 text-[11px] text-ink-muted">No sessions yet.</p>
+            ) : (
+              sessions.map((s) => (
+                <div
+                  key={s.id}
+                  className={`group flex items-center gap-1.5 rounded-md border px-2 py-1.5 text-xs transition ${
+                    sessionId === s.id ? "border-accent/40 bg-accent/10" : "border-transparent hover:bg-surface-2"
+                  }`}
+                >
+                  <button onClick={() => void loadSession(s.id)} className="flex flex-1 flex-col items-start text-left">
+                    <span className="truncate text-ink">{s.title}</span>
+                    <span className="text-[10px] text-ink-muted">{s.sourceIds.length} src · {timeAgo(s.updatedAt)}</span>
+                  </button>
+                  <button
+                    onClick={() => void deleteSession(s.id)}
+                    className="shrink-0 rounded p-0.5 text-ink-muted opacity-0 transition hover:text-red-400 group-hover:opacity-100"
+                    title="Delete session"
+                  >
+                    <Trash2 size={11} />
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="hidden shrink-0 flex-col items-center pt-2 @4xl:flex">
           <button
-            onClick={() => { setSession(null); setSessionId(null); setMessages([]); setSourceHistory([]); setShowSourcePanel(true); }}
-            className="flex items-center gap-1 rounded-md border border-edge px-1.5 py-0.5 text-[10px] text-ink-muted hover:bg-surface-2 hover:text-ink"
-            title="New session"
+            onClick={() => setSidebarOpen(true)}
+            className="rounded-md p-1 text-ink-muted hover:bg-surface-2 hover:text-ink"
+            title="Expand sidebar"
           >
-            <Plus size={10} /> New
+            <PanelLeftOpen size={16} />
           </button>
         </div>
-        <div className="flex flex-1 flex-col gap-1 overflow-y-auto">
-          {sessions.length === 0 ? (
-            <p className="px-1 py-2 text-[11px] text-ink-muted">No sessions yet.</p>
-          ) : (
-            sessions.map((s) => (
-              <div
-                key={s.id}
-                className={`group flex items-center gap-1.5 rounded-md border px-2 py-1.5 text-xs transition ${
-                  sessionId === s.id ? "border-accent/40 bg-accent/10" : "border-transparent hover:bg-surface-2"
-                }`}
-              >
-                <button onClick={() => void loadSession(s.id)} className="flex flex-1 flex-col items-start text-left">
-                  <span className="truncate text-ink">{s.title}</span>
-                  <span className="text-[10px] text-ink-muted">{s.sourceIds.length} src · {timeAgo(s.updatedAt)}</span>
-                </button>
-                <button
-                  onClick={() => void deleteSession(s.id)}
-                  className="shrink-0 rounded p-0.5 text-ink-muted opacity-0 transition hover:text-red-400 group-hover:opacity-100"
-                  title="Delete session"
-                >
-                  <Trash2 size={11} />
-                </button>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
+      )}
 
       {/* Chat panel */}
       <div className="flex min-w-0 flex-1 flex-col gap-3">
