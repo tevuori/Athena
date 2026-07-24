@@ -13,6 +13,7 @@ import {
   Users as UsersIcon,
   Database,
   Info,
+  Smartphone,
 } from "lucide-react";
 import { useAuth } from "../../store/auth";
 import type { WindowInstance } from "../../store/windows";
@@ -29,6 +30,7 @@ import ProactiveAlertsSection from "./sections/ProactiveAlertsSection";
 import UsersSection from "./sections/UsersSection";
 import DataStorageSection from "./sections/DataStorageSection";
 import AboutSection from "./sections/AboutSection";
+import MobileSection from "./sections/MobileSection";
 
 interface SectionDef {
   id: string;
@@ -41,6 +43,7 @@ const SECTIONS: SectionDef[] = [
   { id: "appearance", label: "Appearance", icon: <Palette size={15} /> },
   { id: "wallpaper", label: "Wallpaper", icon: <Image size={15} /> },
   { id: "animated-bg", label: "Animated BG", icon: <Film size={15} /> },
+  { id: "mobile", label: "Mobile", icon: <Smartphone size={15} /> },
   { id: "account", label: "Account", icon: <User size={15} /> },
   { id: "sound-athena", label: "Sound & Athena", icon: <Volume2 size={15} /> },
   { id: "athena", label: "Athena Assistant", icon: <Sparkles size={15} /> },
@@ -94,6 +97,7 @@ export default function SettingsApp({ win }: { win: WindowInstance }) {
         {active === "appearance" && <AppearanceSection />}
         {active === "wallpaper" && <WallpaperSection />}
         {active === "animated-bg" && <AnimatedBgSection />}
+        {active === "mobile" && <MobileSection />}
         {active === "account" && <AccountSection />}
         {active === "sound-athena" && <SoundAthenaSection />}
         {active === "athena" && <AthenaSection />}

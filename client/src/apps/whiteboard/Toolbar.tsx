@@ -2,6 +2,7 @@ import {
   MousePointer2, Pen, Minus, Square, Circle, ArrowRight, Type, Eraser,
   Undo2, Redo2, Trash2, Download, Save, PaintBucket,
 } from "lucide-react";
+import { useFormFactor } from "../../store/formfactor";
 import type { Tool } from "./elements";
 
 interface Props {
@@ -46,23 +47,24 @@ const STROKES = [2, 4, 8];
 const FONT_SIZES = [16, 24, 36, 56];
 
 function Btn({
-  active, onClick, title, disabled, children,
+  active, onClick, title, disabled, children, touch,
 }: {
   active?: boolean;
   onClick: () => void;
   title: string;
   disabled?: boolean;
   children: React.ReactNode;
+  touch?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className={`p-2 rounded-md transition-colors ${
+      className={`rounded-md transition-colors ${touch ? "p-2.5" : "p-2"} ${
         active
           ? "bg-indigo-500 text-white"
-          : "text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 disabled:opacity-40 disabled:hover:bg-transparent"
+          : "text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 active:bg-zinc-300 dark:active:bg-zinc-600 disabled:opacity-40 disabled:hover:bg-transparent"
       }`}
     >
       {children}
@@ -76,15 +78,16 @@ export default function Toolbar(props: Props) {
     fill, setFill, fontSize, setFontSize,
     onUndo, onRedo, canUndo, canRedo, onClear, onExportSvg, onExportPng, onSave, saving,
   } = props;
+  const isPhone = useFormFactor((s) => s.mode === "phone");
 
   const filled = fill !== "none";
 
   return (
-    <div className="flex flex-wrap items-center gap-1 px-2 py-1.5 border-b border-zinc-200 dark:border-zinc-700 bg-white/80 dark:bg-zinc-900/80 backdrop-blur">
+    <div className={`flex items-center gap-1 overflow-x-auto border-b border-zinc-200 dark:border-zinc-700 bg-white/80 dark:bg-zinc-900/80 px-2 py-1.5 backdrop-blur ${isPhone ? "safe-top" : "flex-wrap"}`}>
       {/* Tools */}
-      <div className="flex items-center gap-0.5">
+      <div className="flex shrink-0 items-center gap-0.5">
         {TOOLS.map((t) => (
-          <Btn key={t.id} active={tool === t.id} onClick={() => setTool(t.id)} title={t.label}>
+          <Btn key={t.id} active={tool === t.id} onClick={() => setTool(t.id)} title={t.label} touch={isPhone}>
             {t.icon}
           </Btn>
         ))}
@@ -93,13 +96,13 @@ export default function Toolbar(props: Props) {
       <Divider />
 
       {/* Color */}
-      <div className="flex items-center gap-1">
+      <div className="flex shrink-0 items-center gap-1">
         {COLORS.map((c) => (
           <button
             key={c}
             onClick={() => setColor(c)}
             title={c}
-            className={`w-5 h-5 rounded-full border-2 transition-transform ${
+            className={`rounded-full border-2 transition-transform ${isPhone ? "w-6 h-6" : "w-5 h-5"} ${
               color === c ? "border-indigo-500 scale-110" : "border-zinc-300 dark:border-zinc-600"
             }`}
             style={{ background: c }}
@@ -110,7 +113,7 @@ export default function Toolbar(props: Props) {
           value={color}
           onChange={(e) => setColor(e.target.value)}
           title="Custom color"
-          className="w-6 h-6 rounded cursor-pointer bg-transparent border-0 p-0"
+          className={`rounded border-0 bg-transparent p-0 ${isPhone ? "w-7 h-7" : "w-6 h-6"} cursor-pointer`}
         />
       </div>
 
@@ -118,13 +121,14 @@ export default function Toolbar(props: Props) {
 
       {/* Stroke width (hidden for text tool) */}
       {tool !== "text" && (
-        <div className="flex items-center gap-0.5">
+        <div className="flex shrink-0 items-center gap-0.5">
           {STROKES.map((w) => (
             <Btn
               key={w}
               active={strokeWidth === w}
               onClick={() => setStrokeWidth(w)}
               title={`${w}px`}
+              touch={isPhone}
             >
               <div
                 className="rounded-full bg-current"
@@ -137,13 +141,14 @@ export default function Toolbar(props: Props) {
 
       {/* Font size (text tool only) */}
       {tool === "text" && (
-        <div className="flex items-center gap-0.5">
+        <div className="flex shrink-0 items-center gap-0.5">
           {FONT_SIZES.map((s) => (
             <Btn
               key={s}
               active={fontSize === s}
               onClick={() => setFontSize(s)}
               title={`${s}px`}
+              touch={isPhone}
             >
               <span className="text-xs font-semibold">{s}</span>
             </Btn>
@@ -157,6 +162,7 @@ export default function Toolbar(props: Props) {
           active={filled}
           onClick={() => setFill(filled ? "none" : color)}
           title={filled ? "Filled (click to outline)" : "Outline (click to fill)"}
+          touch={isPhone}
         >
           <PaintBucket size={18} />
         </Btn>
@@ -165,14 +171,14 @@ export default function Toolbar(props: Props) {
       <Divider />
 
       {/* Undo / Redo */}
-      <div className="flex items-center gap-0.5">
-        <Btn onClick={onUndo} disabled={!canUndo} title="Undo (Ctrl+Z)">
+      <div className="flex shrink-0 items-center gap-0.5">
+        <Btn onClick={onUndo} disabled={!canUndo} title="Undo (Ctrl+Z)" touch={isPhone}>
           <Undo2 size={18} />
         </Btn>
-        <Btn onClick={onRedo} disabled={!canRedo} title="Redo (Ctrl+Y)">
+        <Btn onClick={onRedo} disabled={!canRedo} title="Redo (Ctrl+Y)" touch={isPhone}>
           <Redo2 size={18} />
         </Btn>
-        <Btn onClick={onClear} title="Clear canvas">
+        <Btn onClick={onClear} title="Clear canvas" touch={isPhone}>
           <Trash2 size={18} />
         </Btn>
       </div>
@@ -180,15 +186,15 @@ export default function Toolbar(props: Props) {
       <Divider />
 
       {/* Export + Save */}
-      <div className="flex items-center gap-0.5">
-        <Btn onClick={onExportSvg} title="Export as SVG">
+      <div className="flex shrink-0 items-center gap-0.5">
+        <Btn onClick={onExportSvg} title="Export as SVG" touch={isPhone}>
           <Download size={18} />
           <span className="sr-only">SVG</span>
         </Btn>
-        <Btn onClick={onExportPng} title="Export as PNG">
+        <Btn onClick={onExportPng} title="Export as PNG" touch={isPhone}>
           <span className="text-[10px] font-bold px-1">PNG</span>
         </Btn>
-        <Btn onClick={onSave} disabled={saving} title="Save (Ctrl+S)">
+        <Btn onClick={onSave} disabled={saving} title="Save (Ctrl+S)" touch={isPhone}>
           <Save size={18} />
         </Btn>
       </div>
@@ -197,5 +203,5 @@ export default function Toolbar(props: Props) {
 }
 
 function Divider() {
-  return <div className="w-px h-6 bg-zinc-200 dark:bg-zinc-700 mx-1" />;
+  return <div className="w-px h-6 shrink-0 bg-zinc-200 dark:bg-zinc-700 mx-1" />;
 }

@@ -1,0 +1,20 @@
+{
+  "appId": "ai.athena.app",
+  "appName": "Athena",
+  "webDir": "client/dist",
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 1500,
+      "backgroundColor": "#0f172a",
+      "showSpinner": false
+    },
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#0f172a",
+      "overlaysWebView": true
+    }
+  }
+}

@@ -276,10 +276,10 @@ export default function BrowserApp({ win }: { win: WindowInstance }) {
         >
           <ArrowRight size={16} />
         </NavBtn>
-        <NavBtn onClick={reload} disabled={isHome} title="Reload">
+        <NavBtn onClick={reload} disabled={isHome} title="Reload" className="@3xl:flex hidden">
           {loading ? <Loader2 size={16} className="animate-spin" /> : <RotateCw size={16} />}
         </NavBtn>
-        <NavBtn onClick={goHome} title="Home">
+        <NavBtn onClick={goHome} title="Home" className="@3xl:flex hidden">
           <Home size={16} />
         </NavBtn>
 
@@ -300,10 +300,10 @@ export default function BrowserApp({ win }: { win: WindowInstance }) {
           />
         </div>
 
-        <NavBtn onClick={openExternal} disabled={isHome} title="Open in new tab">
+        <NavBtn onClick={openExternal} disabled={isHome} title="Open in new tab" className="@3xl:flex hidden">
           <ExternalLink size={15} />
         </NavBtn>
-        <NavBtn onClick={clearSession} title="Clear session (log out)">
+        <NavBtn onClick={clearSession} title="Clear session (log out)" className="@3xl:flex hidden">
           <Trash2 size={15} />
         </NavBtn>
       </div>
@@ -380,18 +380,20 @@ function NavBtn({
   disabled,
   title,
   children,
+  className = "",
 }: {
   onClick: () => void;
   disabled?: boolean;
   title: string;
   children: React.ReactNode;
+  className?: string;
 }) {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className="flex h-7 w-7 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-surface-3 hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+      className={`flex h-7 w-7 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-surface-3 hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent ${className}`}
     >
       {children}
     </button>
@@ -431,7 +433,7 @@ function StartPage({ onNavigate }: { onNavigate: (url: string) => void }) {
         </div>
       </form>
 
-      <div className="grid w-full max-w-xl grid-cols-4 gap-3">
+      <div className="grid w-full max-w-xl grid-cols-3 @3xl:grid-cols-4 gap-3">
         {QUICK_LINKS.map((link) => (
           <button
             key={link.url}

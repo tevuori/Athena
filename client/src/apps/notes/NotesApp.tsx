@@ -604,7 +604,7 @@ export default function NotesApp({ win }: { win: WindowInstance }) {
                   e.preventDefault();
                   setNoteMenu({ x: e.clientX, y: e.clientY, noteId: note.id });
                 }}
-                className={`block w-full border-b border-edge/50 px-3 py-2.5 text-left transition ${
+                className={`group block w-full border-b border-edge/50 px-3 py-2.5 text-left transition ${
                   selectedId === note.id ? "bg-accent/10" : "hover:bg-surface-2"
                 }`}
               >

@@ -26,14 +26,20 @@ export interface AppDefinition {
   icon: string; // lucide icon name
   component: ComponentType<{ win: WindowInstance }>;
   pinnedToDesktop?: boolean;
+  /** On mobile, render the app full-bleed without the standard MobileAppFrame
+   *  header (the app provides its own chrome). Used by Viewer, Whiteboard. */
+  fullscreenOnMobile?: boolean;
+  /** Hide from the mobile app drawer (e.g. internal/secondary apps opened
+   *  only via deep links). */
+  hideOnMobile?: boolean;
 }
 
 export const APPS: AppDefinition[] = [
   { id: "notes", name: "Notes", icon: "StickyNote", component: NotesApp, pinnedToDesktop: true },
   { id: "tasks", name: "Tasks", icon: "CheckSquare", component: TasksApp, pinnedToDesktop: true },
   { id: "files", name: "Files", icon: "Folder", component: FilesApp, pinnedToDesktop: true },
-  { id: "editor", name: "Editor", icon: "Code2", component: EditorApp, pinnedToDesktop: true },
-  { id: "viewer", name: "Viewer", icon: "Eye", component: ViewerApp, pinnedToDesktop: false },
+  { id: "editor", name: "Editor", icon: "Code2", component: EditorApp, pinnedToDesktop: true, hideOnMobile: true },
+  { id: "viewer", name: "Viewer", icon: "Eye", component: ViewerApp, pinnedToDesktop: false, fullscreenOnMobile: true, hideOnMobile: true },
   { id: "pomodoro", name: "Pomodoro", icon: "Timer", component: PomodoroApp, pinnedToDesktop: true },
   { id: "flashcards", name: "Flashcards", icon: "Brain", component: FlashcardsApp, pinnedToDesktop: true },
   { id: "grades", name: "Grades", icon: "GraduationCap", component: GradesApp, pinnedToDesktop: true },
@@ -44,7 +50,7 @@ export const APPS: AppDefinition[] = [
   { id: "today", name: "Today", icon: "CalendarCheck", component: TodayApp, pinnedToDesktop: true },
   { id: "calendar", name: "Calendar", icon: "Calendar", component: CalendarApp, pinnedToDesktop: true },
   { id: "habits", name: "Habits", icon: "Flame", component: HabitsApp, pinnedToDesktop: true },
-  { id: "whiteboard", name: "Whiteboard", icon: "PenTool", component: WhiteboardApp, pinnedToDesktop: true },
+  { id: "whiteboard", name: "Whiteboard", icon: "PenTool", component: WhiteboardApp, pinnedToDesktop: true, fullscreenOnMobile: true },
   { id: "ntfy", name: "Ntfy", icon: "Bell", component: NtfyApp, pinnedToDesktop: false },
   { id: "voice", name: "Voice Notes", icon: "Mic", component: VoiceApp, pinnedToDesktop: true },
   { id: "browser", name: "Browser", icon: "Globe", component: BrowserApp, pinnedToDesktop: true },

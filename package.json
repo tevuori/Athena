@@ -18,9 +18,23 @@
     "db:seed": "cd server && bun run src/db/seed.ts",
     "docker:up": "docker compose up --build",
     "docker:down": "docker compose down",
-    "install:all": "bun install && cd server && bun install && cd ../client && bun install"
+    "install:all": "bun install && cd server && bun install && cd ../client && bun install",
+    "cap:sync": "bun run build:client && bunx cap sync",
+    "cap:add:android": "bunx cap add android",
+    "cap:add:ios": "bunx cap add ios",
+    "cap:open:android": "bunx cap open android",
+    "cap:open:ios": "bunx cap open ios"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.4.2",
     "concurrently": "^9.1.0"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.4.2",
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/core": "^8.4.2",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/splash-screen": "^8.0.2",
+    "@capacitor/status-bar": "^8.0.3"
   }
 }

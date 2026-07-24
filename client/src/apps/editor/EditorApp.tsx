@@ -305,9 +305,9 @@ export default function EditorApp({ win }: { win: WindowInstance }) {
       <div className="flex items-center justify-between border-t border-edge bg-surface-2 px-3 py-1 text-[11px] text-ink-muted">
         <div className="flex items-center gap-3">
           <span>{lang.label}</span>
-          <span>{content.length} chars</span>
-          <span>{content.split("\n").length} lines</span>
-          {fileMeta && <span>{formatBytes(fileMeta.size)}</span>}
+          <span className="@3xl:inline hidden">{content.length} chars</span>
+          <span className="@3xl:inline hidden">{content.split("\n").length} lines</span>
+          {fileMeta && <span className="@3xl:inline hidden">{formatBytes(fileMeta.size)}</span>}
         </div>
         <div>
           {saving ? "Saving…" : dirty ? "Unsaved" : currentFileId ? "Saved" : "Not saved yet"}

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { useFormFactor } from "./formfactor";
 
 export type AppId =
   | "notes"
@@ -84,6 +85,48 @@ interface WindowsState {
   closeAll: () => void;
   /** Re-tile all visible windows into a grid. Called automatically on open/close. */
   retile: () => void;
+
+  // ===== Mobile navigation (phone form factor) =====
+  // On mobile there are no floating windows; instead a stack of apps where
+  // only the top (active) one is rendered full-bleed. The desktop `open`/
+  // `close`/`focus` calls are mirrored into mobile methods so all existing
+  // app call-sites work unchanged regardless of form factor.
+  /** Ordered stack of mobile app entries (bottom = first opened, top = active). */
+  mobileStack: MobileAppEntry[];
+  /** The active (top-of-stack) mobile app id, or null when on the Today home. */
+  mobileActiveId: string | null;
+  /** Whether the mobile home (Today) is currently showing. */
+  mobileOnHome: boolean;
+  /** Open (push) an app onto the mobile stack. Returns the entry id. */
+  mobileOpen: (input: {
+    appId: AppId;
+    title: string;
+    icon: string;
+    payload?: Record<string, unknown>;
+  }) => string;
+  /** Close (pop) a mobile app by entry id. */
+  mobileClose: (id: string) => void;
+  /** Go back one level (pop active), or to home if only one entry remains. */
+  mobileBack: () => void;
+  /** Return to the Today home (clears the active app but keeps stack for recents). */
+  mobileGoHome: () => void;
+  /** Activate a specific mobile entry by id (bring to top). */
+  mobileActivate: (id: string) => void;
+  /** Replace the entire mobile stack with a single app (used by bottom nav). */
+  mobileSwitchTo: (input: {
+    appId: AppId;
+    title: string;
+    icon: string;
+    payload?: Record<string, unknown>;
+  }) => string;
+}
+
+export interface MobileAppEntry {
+  id: string;
+  appId: AppId;
+  title: string;
+  icon: string;
+  payload?: Record<string, unknown>;
 }
 
 let idCounter = 0;
@@ -187,8 +230,20 @@ export const useWindows = create<WindowsState>((set, get) => ({
   focusedId: null,
   zCounter: 10,
 
+  // Mobile navigation state
+  mobileStack: [],
+  mobileActiveId: null,
+  mobileOnHome: true,
+
   open: ({ appId, title, icon, payload, rect }) => {
     const state = get();
+    // On the phone form factor, route to the mobile app stack instead of
+    // creating a floating desktop window. This keeps every existing call
+    // site (CommandPalette, Today, Files, Athena tool-calls, etc.) working
+    // unchanged across both shells.
+    if (useFormFactor.getState().mode === "phone") {
+      return get().mobileOpen({ appId, title, icon, payload });
+    }
     // If a window for this app+payload already exists, focus it.
     const existing = state.windows.find(
       (w) => w.appId === appId && JSON.stringify(w.payload) === JSON.stringify(payload)
@@ -428,5 +483,61 @@ export const useWindows = create<WindowsState>((set, get) => ({
         ),
       }));
     }, 350);
+  },
+
+  // ===== Mobile navigation implementations =====
+  mobileOpen: ({ appId, title, icon, payload }) => {
+    const id = nextId();
+    const entry: MobileAppEntry = { id, appId, title, icon, payload };
+    set((s) => ({
+      mobileStack: [...s.mobileStack, entry],
+      mobileActiveId: id,
+      mobileOnHome: false,
+    }));
+    return id;
+  },
+
+  mobileClose: (id) => {
+    set((s) => {
+      const idx = s.mobileStack.findIndex((e) => e.id === id);
+      if (idx === -1) return s;
+      const stack = s.mobileStack.filter((e) => e.id !== id);
+      // New active = the new top of stack, or null (go home) if empty.
+      const newActive = stack.length > 0 ? stack[stack.length - 1].id : null;
+      return {
+        mobileStack: stack,
+        mobileActiveId: newActive,
+        mobileOnHome: newActive === null,
+      };
+    });
+  },
+
+  mobileBack: () => {
+    const s = get();
+    if (s.mobileOnHome || !s.mobileActiveId) return;
+    get().mobileClose(s.mobileActiveId);
+  },
+
+  mobileGoHome: () => {
+    set({ mobileActiveId: null, mobileOnHome: true });
+  },
+
+  mobileActivate: (id) => {
+    set((s) => {
+      const entry = s.mobileStack.find((e) => e.id === id);
+      if (!entry) return s;
+      // Move the entry to the top of the stack.
+      const stack = [...s.mobileStack.filter((e) => e.id !== id), entry];
+      return { mobileStack: stack, mobileActiveId: id, mobileOnHome: false };
+    });
+  },
+
+  mobileSwitchTo: ({ appId, title, icon, payload }) => {
+    // Used by bottom nav: replace the whole stack with a single fresh entry.
+    // If the same app is already active, just go home-equivalent (no-op-ish).
+    const id = nextId();
+    const entry: MobileAppEntry = { id, appId, title, icon, payload };
+    set({ mobileStack: [entry], mobileActiveId: id, mobileOnHome: false });
+    return id;
   },
 }));

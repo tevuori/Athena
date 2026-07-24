@@ -8,6 +8,61 @@ A desktop-environment-style productivity dashboard for students.
 - **Backend:** Bun + Hono
 - **DB:** SQLite via Prisma
 - **Infra:** Docker Compose (client on :5173, server on :3001)
+- **Mobile:** PWA (vite-plugin-pwa) + optional Capacitor native wrapper (Android/iOS)
+
+## Mobile architecture
+
+Athena adapts to phone/tablet/desktop via a **form-factor store** (`client/src/store/formfactor.ts`):
+- Detects phone = coarse pointer AND max-width 820px, tablet = coarse pointer + wider, desktop = fine pointer
+- Manual override persisted in localStorage (configurable in Settings → Mobile)
+- Resize/orientationchange listeners update mode live
+
+**App.tsx** branches: `mode === "phone"` → `<MobileShell />`, else `<DesktopEnvironment />`. Desktop behavior is completely unchanged.
+
+**MobileShell** (`client/src/shell/mobile/`):
+- Today agenda as the home screen (with pull-to-refresh)
+- Bottom nav: Today / Tasks / Notes / Athena (sheet) / Apps (drawer)
+- Single active app at a time via mobile stack in `store/windows.ts` (`mobileOpen`, `mobileClose`, `mobileBack`, `mobileGoHome`, `mobileSwitchTo`)
+- `open()` in windows store is form-factor-aware: routes to `mobileOpen` on phone, so all existing call sites (CommandPalette, Today, Files, Athena tool-calls) work unchanged
+- Browser back button / iOS edge-swipe pops the app stack via `popstate` + `pushState` history integration
+- Bottom sheets: AppDrawer, AthenaSheet (reuses AthenaApp `mode="quick"`), NotificationSheet
+- QuickCaptureFab triggers the existing QuickCapture overlay
+- MiniPlayer (compact Spotify player) above bottom nav
+- InstallBanner (PWA install prompt, iOS instructions)
+- MobileAppFrame wraps apps with a mobile header (back chevron, title) + `@container` content area so existing container-query breakpoints resolve at phone width
+
+**Cross-cutting touch infra:**
+- `ContextMenu` renders as a bottom sheet on phone (vs. floating menu on desktop)
+- `useLongPressMenu` hook + `LongPressArea` component for long-press → context menu on touch
+- Files app: delegated long-press handler on file area using `data-file-id`/`data-folder-id`
+- Tasks Kanban: `TouchSensor` (200ms delay) + snap-scrolling columns
+- `index.css`: `@media (hover: none)` reveals hover-gated controls on touch, `overscroll-behavior: none`, safe-area helper classes
+
+**Per-app mobile adaptations:**
+- Viewer: pinch-to-zoom, double-tap zoom, mobile header with back button, auto-hiding controls
+- Whiteboard: horizontally scrollable toolbar with larger touch targets
+- Calendar: new "agenda" view (14-day scrollable list), defaults to agenda on phone
+- VUT: grades as card list on phone (vs. 9-column table), timetable as day-by-day list (vs. weekly grid)
+- Grades: header buttons collapse to icons, GPA summary wraps
+- Flashcards: review rating buttons 2×2 grid on narrow
+- Editor: status bar hides char/line/size on narrow
+- Browser: secondary nav buttons hidden on narrow, quick links 3-col grid
+- Notes: `group` class added to note items so MoreVertical reveals on touch
+- Settings: new Mobile section with form-factor override
+
+**PWA:** vite-plugin-pwa generates service worker + manifest. Icons in `client/public/`. `usePwaInstall` hook + `InstallBanner` component handle install prompt (Android) and iOS instructions.
+
+**Capacitor:** `capacitor.config.json` at root. `client/src/shell/mobile/capacitor.ts` dynamically imported on app start — initializes StatusBar, SplashScreen, hardware back button, haptics, and a background check for APK self-updates. Only runs on native platforms (`Capacitor.isNativePlatform()`). Scripts: `bun run cap:sync`, `bun run cap:add:android`, `bun run cap:add:ios`, `bun run cap:open:android`, `bun run cap:open:ios`.
+
+**APK auto-update (Android only):** The Capacitor Android build can self-update from GitHub Releases.
+- On native startup, `capacitor.ts` calls `checkForUpdate()` in `services/updater.ts`, which polls `https://api.github.com/repos/<owner>/<repo>/releases/latest`. The repo slug is auto-detected from `git remote get-url origin` at Vite build time and baked in via `__UPDATE_REPO__` (override with `VITE_UPDATE_REPO=owner/repo`). If a newer version is found (and not skipped), `store/updater.ts` surfaces `shell/UpdateDialog.tsx` with release notes + Download & Install.
+- Tapping install calls the local `ApkUpdater` Capacitor plugin (`android/app/src/main/java/ai/athena/app/ApkUpdaterPlugin.java`, registered in `MainActivity.java`). It streams the APK to `<external-files-dir>/updates/athena.apk`, optionally verifies a SHA256 sidecar, and launches Android's system package installer via the existing FileProvider (`res/xml/file_paths.xml` has an `external-files-path` entry for `updates/`). Requires `REQUEST_INSTALL_PACKAGES` permission (declared in `AndroidManifest.xml`).
+- A manual "Check for updates" button lives in Settings → About (`sections/AboutSection.tsx`), gated on `isAutoUpdateAvailable()`. The button passes `includeSkipped: true` so it ignores the auto-skip flag.
+- `android/app/build.gradle` reads `versionName`/`versionCode` from Gradle properties (`-PversionName=… -PversionCode=…`) with `1.0`/`1` fallbacks for local debug builds.
+- The release pipeline is `.github/workflows/build-android.yml`: on a `v*` tag push (or manual dispatch), it builds the client, `cap sync android`, builds a signed release APK with the keystore from secrets, computes SHA256, writes `latest.json`, and creates a GitHub Release with the APK + `*.apk.sha256` + `latest.json` as assets.
+- **Required GitHub secrets:** `KEYSTORE_BASE64` (base64-encoded release keystore), `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`. Generate with `keytool -genkeypair -v -keystore athena-release.keystore -alias athena -keyalg RSA -keysize 2048 -validity 10000` then `base64 -w0 athena-release.keystore > athena-release.keystore.b64`. **Every release must be signed with the same keystore** — Android refuses in-place updates signed with a different key. Back up the keystore somewhere safe.
+- **versionCode formula:** `major*10000 + minor*100 + patch` (e.g. `1.2.3` → `10203`). Must be monotonically increasing.
+- Web/PWA builds are unaffected — all update logic is gated on `isCapacitor()`. The PWA already uses vite-plugin-pwa's `autoUpdate` for SW-based updates.
 
 ## Quick start (local dev)
 
@@ -58,6 +113,18 @@ docker compose up --build
 | `bun run db:seed` | Seed demo data |
 | `bun run docker:up` | Docker Compose up --build |
 | `bun run docker:down` | Docker Compose down |
+| `bun run cap:sync` | Build client + sync to Capacitor native projects |
+| `bun run cap:add:android` | Add Android platform to Capacitor |
+| `bun run cap:add:ios` | Add iOS platform to Capacitor |
+| `bun run cap:open:android` | Open Android project in Android Studio |
+| `bun run cap:open:ios` | Open iOS project in Xcode |
+
+### Android release (APK auto-update)
+
+Releases are produced by the `build-android.yml` GitHub Actions workflow — there are no local release scripts (signing keys live in GitHub secrets, not on your machine). To cut a release:
+
+1. Make sure the four secrets are set: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD` (see "APK auto-update" section above for how to generate them).
+2. Tag + push: `git tag v1.2.3 && git push origin v1.2.3`. The workflow builds, signs, and creates the GitHub Release automatically. Or use the Actions tab → "Build & Release Android APK" → "Run workflow" with a version string to test without tagging.
 
 ## Environment variables
 
