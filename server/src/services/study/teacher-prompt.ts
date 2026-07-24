@@ -41,7 +41,7 @@ export function teacherSystemPrompt(
   state: TeacherSessionState,
   lang?: StudyLanguage
 ): string {
-  const budgeted = budgetSources(sources, 60000);
+  const budgeted = budgetSources(sources, 8000);
   const blocks = budgeted
     .map((s) => `--- SOURCE [${s.index}] (${s.kind}: ${s.name}) id=${s.refId} kind=${s.kind} ---\n${s.text}\n`)
     .join("\n");
