@@ -5,7 +5,7 @@
 
 import type { ToolDef } from "./plugin";
 import prisma from "../../../db/client";
-import { getUserConfig, buildModel } from "../llm";
+import { getUserConfig, buildModel, acquireLlmModel } from "../llm";
 import { resolveSource } from "../../study/source";
 import { generateJson, generateText } from "../../study/llm-json";
 import {
@@ -42,6 +42,7 @@ export const studyTools: ToolDef[] = [
     handler: async (args, { userId }) => {
       const cfg = await getUserConfig(userId);
       if (!cfg.apiKey) return { error: "No AI provider configured." };
+      const { model } = await acquireLlmModel(userId);
 
       let resolved;
       try {
@@ -58,7 +59,7 @@ export const studyTools: ToolDef[] = [
       let result;
       try {
         result = await generateJson<{ cards: FlashcardSpec[] }>(
-          buildModel(cfg),
+          model,
           flashcardsPrompt(resolved.text, count, "mixed"),
           flashcardsSchemaHint()
         );
@@ -112,6 +113,7 @@ export const studyTools: ToolDef[] = [
     handler: async (args, { userId }) => {
       const cfg = await getUserConfig(userId);
       if (!cfg.apiKey) return { error: "No AI provider configured." };
+      const { model } = await acquireLlmModel(userId);
 
       let resolved;
       try {
@@ -124,7 +126,7 @@ export const studyTools: ToolDef[] = [
       let summary: string;
       try {
         summary = await generateText(
-          buildModel(cfg),
+          model,
           summarizePrompt(resolved.text, mode),
           "You are a study assistant. Summarize accurately in clear Markdown. Do not invent information."
         );
@@ -162,6 +164,7 @@ export const studyTools: ToolDef[] = [
     handler: async (args, { userId }) => {
       const cfg = await getUserConfig(userId);
       if (!cfg.apiKey) return { error: "No AI provider configured." };
+      const { model } = await acquireLlmModel(userId);
 
       let resolved;
       try {
@@ -177,7 +180,7 @@ export const studyTools: ToolDef[] = [
       let result;
       try {
         result = await generateJson<{ tasks: SyllabusTaskSpec[] }>(
-          buildModel(cfg),
+          model,
           syllabusTasksPrompt(resolved.text),
           syllabusTasksSchemaHint()
         );
@@ -256,6 +259,7 @@ export const studyTools: ToolDef[] = [
     handler: async (args, { userId }) => {
       const cfg = await getUserConfig(userId);
       if (!cfg.apiKey) return { error: "No AI provider configured." };
+      const { model } = await acquireLlmModel(userId);
 
       let resolved;
       try {
@@ -268,7 +272,7 @@ export const studyTools: ToolDef[] = [
       let explanation: string;
       try {
         explanation = await generateText(
-          buildModel(cfg),
+          model,
           explainPrompt(resolved.text, depth),
           "You are a study assistant. Explain clearly and accurately in Markdown with examples. Do not invent information."
         );
@@ -305,6 +309,7 @@ export const studyTools: ToolDef[] = [
     handler: async (args, { userId }) => {
       const cfg = await getUserConfig(userId);
       if (!cfg.apiKey) return { error: "No AI provider configured." };
+      const { model } = await acquireLlmModel(userId);
 
       const ids = String(args.noteIds ?? "")
         .split(",")
@@ -319,7 +324,7 @@ export const studyTools: ToolDef[] = [
       let guide: string;
       try {
         guide = await generateText(
-          buildModel(cfg),
+          model,
           studyGuidePrompt(combined),
           "You are a study assistant. Create a clear, comprehensive study guide in Markdown. Do not invent information."
         );
@@ -360,6 +365,7 @@ export const studyTools: ToolDef[] = [
     handler: async (args, { userId }) => {
       const cfg = await getUserConfig(userId);
       if (!cfg.apiKey) return { error: "No AI provider configured." };
+      const { model } = await acquireLlmModel(userId);
 
       let resolved;
       try {
@@ -376,7 +382,7 @@ export const studyTools: ToolDef[] = [
       let result;
       try {
         result = await generateJson<{ questions: QuizQuestionSpec[] }>(
-          buildModel(cfg),
+          model,
           quizGeneratePrompt(resolved.text, count, ["mcq", "short"]),
           quizGenerateSchemaHint()
         );

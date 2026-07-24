@@ -13,7 +13,7 @@ import prisma from "../../db/client";
 import { decryptNtfyConfig, isNtfyEnabled } from "./config";
 import { publish, type NtfyUsableConfig } from "./client";
 import { isAthenaReady } from "./athena-turn";
-import { buildModel, getUserConfig } from "../athena/llm";
+import { acquireLlmModel, getUserConfig } from "../athena/llm";
 import { buildSystemPrompt } from "../athena/context";
 import { AthenaToolsPlugin, ALL_TOOLS } from "../athena/tools";
 
@@ -69,7 +69,7 @@ async function runProactiveTurn(userId: string, userText: string): Promise<strin
       new Message("user", effectivePrompt),
     ];
 
-    const model = buildModel(cfg);
+    const { model } = await acquireLlmModel(userId);
     const plugin = new AthenaToolsPlugin(ALL_TOOLS, { userId, windows: [] });
     model.addPlugin(plugin);
 

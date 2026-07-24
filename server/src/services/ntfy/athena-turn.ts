@@ -5,7 +5,7 @@
 
 import { Message } from "multi-llm-ts";
 import prisma from "../../db/client";
-import { buildModel, getUserConfig } from "../athena/llm";
+import { acquireLlmModel, getUserConfig } from "../athena/llm";
 import { buildSystemPrompt } from "../athena/context";
 import { AthenaToolsPlugin, ALL_TOOLS } from "../athena/tools";
 
@@ -28,7 +28,7 @@ export async function runAthenaTurn(
     new Message("user", userText),
   ];
 
-  const model = buildModel(cfg);
+  const { model } = await acquireLlmModel(userId);
   const plugin = new AthenaToolsPlugin(ALL_TOOLS, { userId, windows: [] });
   model.addPlugin(plugin);
 

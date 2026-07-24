@@ -6,7 +6,7 @@
 
 import type { ToolDef } from "./plugin";
 import prisma from "../../../db/client";
-import { getUserConfig, buildModel } from "../llm";
+import { getUserConfig, buildModel, acquireLlmModel } from "../llm";
 import { generateJson, generateText } from "../../study/llm-json";
 import { syllabusTasksPrompt, syllabusTasksSchemaHint, type SyllabusTaskSpec } from "../../study/prompts";
 
@@ -36,9 +36,10 @@ export const crossAppTools: ToolDef[] = [
       if (!title) {
         const cfg = await getUserConfig(userId);
         if (!cfg.apiKey) return { error: "No AI provider configured to extract a task title." };
+        const { model } = await acquireLlmModel(userId);
         try {
           const result = await generateJson<{ tasks: SyllabusTaskSpec[] }>(
-            buildModel(cfg),
+            model,
             syllabusTasksPrompt(note.content),
             syllabusTasksSchemaHint()
           );
@@ -92,6 +93,7 @@ export const crossAppTools: ToolDef[] = [
     handler: async (args, { userId }) => {
       const cfg = await getUserConfig(userId);
       if (!cfg.apiKey) return { error: "No AI provider configured." };
+      const { model } = await acquireLlmModel(userId);
 
       const note = await prisma.note.findFirst({ where: { id: String(args.noteId), userId } });
       if (!note) return { error: "Note not found" };
@@ -99,7 +101,7 @@ export const crossAppTools: ToolDef[] = [
       let result;
       try {
         result = await generateJson<{ tasks: SyllabusTaskSpec[] }>(
-          buildModel(cfg),
+          model,
           syllabusTasksPrompt(note.content),
           syllabusTasksSchemaHint()
         );
@@ -161,9 +163,10 @@ export const crossAppTools: ToolDef[] = [
       if (args.expand) {
         const cfg = await getUserConfig(userId);
         if (!cfg.apiKey) return { error: "No AI provider configured for expansion." };
+        const { model } = await acquireLlmModel(userId);
         try {
           content = await generateText(
-            buildModel(cfg),
+            model,
             `Expand the following task into detailed, useful notes in Markdown. Include relevant context, steps, and considerations. Do not invent unrelated information.\n\nTask: ${task.title}\nDescription: ${task.description || "(none)"}`,
             "You are a study assistant. Write clear, useful notes in Markdown."
           );

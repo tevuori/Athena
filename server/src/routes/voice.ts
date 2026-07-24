@@ -17,7 +17,7 @@
 import { Hono } from "hono";
 import prisma from "../db/client";
 import { authMiddleware } from "../middleware/auth";
-import { getUserConfig, buildModel, isLlmConfiguredFor } from "../services/athena/llm";
+import { acquireLlmModel, getUserConfig, isLlmConfiguredFor } from "../services/athena/llm";
 import { generateJson } from "../services/study/llm-json";
 import { canonicalPair } from "../db/links";
 import path from "node:path";
@@ -94,7 +94,7 @@ async function cleanupTranscript(
 ): Promise<CleanupResult | null> {
   if (!(await isLlmConfiguredFor(userId))) return null;
   try {
-    const model = buildModel(await getUserConfig(userId));
+    const { model } = await acquireLlmModel(userId);
     const result = await generateJson<{ title?: string; content?: string }>(
       model,
       `Clean up this voice-to-text transcript. Add punctuation and capitalization, split into paragraphs where natural, remove filler words ("um", "uh", "you know") and false starts, but preserve the speaker's meaning and wording as closely as possible. Do NOT add information that isn't there. Also produce a concise descriptive title (max 60 chars).\n\nTranscript:\n"""${raw}"""`,
