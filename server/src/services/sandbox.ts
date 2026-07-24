@@ -12,6 +12,9 @@
 //   SANDBOX_MAX_CODE_CHARS — max code size (default 20000)
 //   SANDBOX_PYTHON_IMAGE  — docker image for python (default python:3.12-slim)
 //   SANDBOX_NODE_IMAGE    — docker image for js/ts (default node:22-slim)
+//   SANDBOX_DOCKER_RUNTIME — docker runtime for sandbox containers (e.g. "runsc"
+//                            for gVisor). When set, adds --runtime=<value> to
+//                            docker run. Recommended for public deployments.
 
 import { spawn } from "node:child_process";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
@@ -36,6 +39,7 @@ const TIMEOUT_MS = Number(process.env.SANDBOX_TIMEOUT_MS ?? 10_000);
 const MAX_CODE_CHARS = Number(process.env.SANDBOX_MAX_CODE_CHARS ?? 20_000);
 const PYTHON_IMAGE = process.env.SANDBOX_PYTHON_IMAGE ?? "python:3.12-slim";
 const NODE_IMAGE = process.env.SANDBOX_NODE_IMAGE ?? "node:22-slim";
+const DOCKER_RUNTIME = process.env.SANDBOX_DOCKER_RUNTIME ?? ""; // e.g. "runsc"
 const MAX_OUTPUT_BYTES = 50 * 1024; // 50 KB per stream
 
 let dockerChecked: boolean | null = null;
@@ -195,6 +199,7 @@ export async function runCode(
       "--user=65534:65534",
       "--workdir=/tmp",
       "--name", `athena-sandbox-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      ...(DOCKER_RUNTIME ? ["--runtime", DOCKER_RUNTIME] : []),
       "-v", `${filePath}:/tmp/${filename}:ro`,
       image,
       ...command,
