@@ -34,10 +34,21 @@ import { startProactiveScheduler } from "./services/ntfy/proactive-scheduler";
 const app = new Hono();
 
 app.use("*", logger());
+// CORS: restrict to the configured client origin(s) for public deployments.
+// CLIENT_ORIGIN may be a single origin or a comma-separated list. When unset
+// (local dev), fall back to reflecting the request origin so dev still works.
+const allowedOrigins = (process.env.CLIENT_ORIGIN ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 app.use(
   "*",
   cors({
-    origin: (origin) => origin ?? "*",
+    origin: (origin) => {
+      if (allowedOrigins.length === 0) return origin ?? "*";
+      if (origin && allowedOrigins.includes(origin)) return origin;
+      return null; // reject non-allowed origins
+    },
     allowHeaders: ["Content-Type", "Authorization"],
     allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     credentials: true,

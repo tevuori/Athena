@@ -1,6 +1,7 @@
-import { useState } from "react";
-import { User, Loader2, KeyRound, ShieldCheck } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { User, Loader2, KeyRound, ShieldCheck, MonitorSmartphone, Trash2 } from "lucide-react";
 import { useAuth } from "../../../store/auth";
+import { authApi, type AuthDevice } from "../../../services/auth";
 import { SectionHeader, Card, Field, SaveButton, MsgBox, inputClass } from "../ui";
 
 const AVATAR_PRESETS = [
@@ -24,6 +25,47 @@ export default function AccountSection() {
   const [pwBusy, setPwBusy] = useState(false);
   const [pwMsg, setPwMsg] = useState<string | null>(null);
   const [pwErr, setPwErr] = useState(false);
+
+  // Active sessions / remembered devices
+  const [devices, setDevices] = useState<AuthDevice[]>([]);
+  const [devicesLoading, setDevicesLoading] = useState(true);
+  const [deviceErr, setDeviceErr] = useState<string | null>(null);
+
+  const refreshDevices = useCallback(async () => {
+    setDevicesLoading(true);
+    setDeviceErr(null);
+    try {
+      setDevices(await authApi.listDevices());
+    } catch (e) {
+      setDeviceErr(e instanceof Error ? e.message : "Failed to load devices");
+    } finally {
+      setDevicesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshDevices();
+  }, [refreshDevices]);
+
+  const revokeDevice = async (id: string) => {
+    if (!confirm("Revoke this device? It will be signed out immediately.")) return;
+    try {
+      await authApi.revokeDevice(id);
+      await refreshDevices();
+    } catch (e) {
+      setDeviceErr(e instanceof Error ? e.message : "Failed to revoke device");
+    }
+  };
+
+  const revokeAll = async () => {
+    if (!confirm("Revoke ALL remembered devices? You'll need to sign in again on every device.")) return;
+    try {
+      await authApi.revokeAllDevices();
+      await refreshDevices();
+    } catch (e) {
+      setDeviceErr(e instanceof Error ? e.message : "Failed to revoke devices");
+    }
+  };
 
   const saveProfile = async () => {
     setProfileBusy(true);
@@ -171,6 +213,55 @@ export default function AccountSection() {
           </SaveButton>
         </div>
         <MsgBox msg={pwMsg} error={pwErr} />
+      </Card>
+
+      <Card>
+        <div className="mb-3 flex items-center justify-between">
+          <h4 className="flex items-center gap-2 text-sm font-semibold text-ink">
+            <MonitorSmartphone size={15} /> Active sessions
+          </h4>
+          {devices.length > 0 && (
+            <button
+              onClick={revokeAll}
+              className="rounded-lg border border-edge px-2.5 py-1 text-xs text-ink-muted hover:bg-red-500 hover:text-white"
+            >
+              Revoke all
+            </button>
+          )}
+        </div>
+        <p className="mb-3 text-xs text-ink-muted">
+          Devices where you checked "Remember this device". Revoke to sign them out.
+        </p>
+        {devicesLoading ? (
+          <div className="flex items-center justify-center py-4 text-ink-muted">
+            <Loader2 size={16} className="animate-spin" />
+          </div>
+        ) : devices.length === 0 ? (
+          <p className="py-3 text-center text-sm text-ink-muted">No remembered devices.</p>
+        ) : (
+          <div className="divide-y divide-edge">
+            {devices.map((d) => (
+              <div key={d.id} className="flex items-center gap-3 py-2.5">
+                <MonitorSmartphone size={16} className="shrink-0 text-ink-muted" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm text-ink">{d.deviceLabel || "Unknown device"}</p>
+                  <p className="text-[11px] text-ink-muted">
+                    Last used {new Date(d.lastUsedAt).toLocaleString()} · expires{" "}
+                    {new Date(d.expiresAt).toLocaleDateString()}
+                  </p>
+                </div>
+                <button
+                  onClick={() => revokeDevice(d.id)}
+                  className="rounded-md p-1.5 text-ink-muted hover:bg-red-500 hover:text-white"
+                  title="Revoke"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        {deviceErr && <p className="mt-2 text-xs text-red-500">{deviceErr}</p>}
       </Card>
     </section>
   );

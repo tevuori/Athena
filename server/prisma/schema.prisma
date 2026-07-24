@@ -41,6 +41,28 @@ model User {
   proactiveAlertConfig ProactiveAlertConfig?
   memories      AthenaMemory[]
   itemLinks     ItemLink[]
+  refreshTokens RefreshToken[]
+}
+
+// ===== Refresh tokens (device-remembering) =====
+// Long-lived session tokens bound to a browser fingerprint. Issued on login
+// when "Remember this device" is checked. The raw token is sent to the client;
+// only its SHA-256 hash is stored. Rotated on each use. Revocable per-device
+// from Settings → Account.
+
+model RefreshToken {
+  id                 String   @id @default(cuid())
+  userId             String
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash          String   @unique // SHA-256 hex of the raw refresh token
+  deviceFingerprint  String   // browser fingerprint hash at issue time
+  deviceLabel        String   @default("") // human label derived from User-Agent
+  expiresAt          DateTime
+  lastUsedAt         DateTime @default(now())
+  createdAt          DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 // ===== Proactive Alerts (Athena daily briefing scheduler) =====
