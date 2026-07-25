@@ -193,13 +193,21 @@ export async function listEvents(
   startDateTime: string,
   endDateTime: string
 ): Promise<MsGraphEvent[]> {
-  // Use /me/events with $filter instead of /me/calendar/calendarView.
-  // The calendarView endpoint is a special "function" endpoint that returns
-  // 401 with an empty body for some account types (notably personal/consumer
-  // Microsoft accounts via the "common" tenant), even with a valid token and
-  // correct scopes. The /me/events endpoint with $filter is universally
-  // supported and returns the same data.
-  // ISO datetimes for $filter must use single quotes and no milliseconds.
+  // Diagnostic: try multiple endpoints to find which one works for this
+  // account type. Personal/consumer Microsoft accounts (via "common" tenant)
+  // have different Graph API behavior than work/school accounts.
+  const probes = [
+    { name: "/me/calendars", path: "/me/calendars?$top=5" },
+    { name: "/me/events (no filter)", path: "/me/events?$top=5" },
+    { name: "/me/calendar", path: "/me/calendar" },
+  ];
+  for (const p of probes) {
+    const r = await graphFetch(userId, p.path);
+    const t = await r.text();
+    console.log(`[ms] probe ${p.name}: ${r.status} body=${t.slice(0, 300)}`);
+  }
+
+  // Try /me/events with $filter
   const startNorm = startDateTime.replace(/\.\d{3}Z$/, "Z");
   const endNorm = endDateTime.replace(/\.\d{3}Z$/, "Z");
   const filter = `start/dateTime ge '${startNorm}' and end/dateTime le '${endNorm}'`;
@@ -212,8 +220,7 @@ export async function listEvents(
   const res = await graphFetch(userId, `/me/events?${params}`);
   if (!res.ok) {
     const text = await res.text();
-    const wwwAuth = res.headers.get("www-authenticate") ?? "(none)";
-    console.error(`[ms] listEvents failed (${res.status}) for user ${userId}: body="${text}" www-authenticate="${wwwAuth}"`);
+    console.error(`[ms] listEvents failed (${res.status}) for user ${userId}: body="${text}"`);
     throw { status: res.status, message: `MS listEvents failed: ${text}` } as MsApiError;
   }
   const data = (await res.json()) as { value: MsGraphEvent[] };
