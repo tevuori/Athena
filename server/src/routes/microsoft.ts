@@ -121,72 +121,77 @@ microsoft.post("/sync", zValidator("json", syncSchema), async (c) => {
     return c.json({ error: msg }, 502);
   }
 
-  // Fetch existing local microsoft events in range to detect deletions.
-  const existing = await prisma.calendarEvent.findMany({
-    where: {
-      userId,
-      source: "microsoft",
-      start: { gte: new Date(from), lte: new Date(to) },
-    },
-  });
-  const msIds = new Set(msEvents.map((e) => e.id));
-  const existingByRef = new Map(existing.map((e) => [e.sourceRef, e]));
+  try {
+    // Fetch existing local microsoft events in range to detect deletions.
+    const existing = await prisma.calendarEvent.findMany({
+      where: {
+        userId,
+        source: "microsoft",
+        start: { gte: new Date(from), lte: new Date(to) },
+      },
+    });
+    const msIds = new Set(msEvents.map((e) => e.id));
+    const existingByRef = new Map(existing.map((e) => [e.sourceRef, e]));
 
-  let upserted = 0;
-  let deleted = 0;
+    let upserted = 0;
+    let deleted = 0;
 
-  for (const ms of msEvents) {
-    const startStr = ms.start.dateTime;
-    const endStr = ms.end.dateTime;
-    if (!startStr || !endStr) continue;
-    const start = new Date(startStr);
-    const end = new Date(endStr);
-    const description = ms.body?.content ?? "";
-    const location = ms.location?.displayName ?? "";
-    // Show busy/free as a dimmer color for non-busy events.
-    const color = ms.showAs === "free" || ms.showAs === "tentative" ? "#94a3b8" : "#0ea5e9";
+    for (const ms of msEvents) {
+      const startStr = ms.start.dateTime;
+      const endStr = ms.end.dateTime;
+      if (!startStr || !endStr) continue;
+      const start = new Date(startStr);
+      const end = new Date(endStr);
+      const description = ms.body?.content ?? "";
+      const location = ms.location?.displayName ?? "";
+      // Show busy/free as a dimmer color for non-busy events.
+      const color = ms.showAs === "free" || ms.showAs === "tentative" ? "#94a3b8" : "#0ea5e9";
 
-    const existingEvent = existingByRef.get(ms.id);
-    if (existingEvent) {
-      await prisma.calendarEvent.update({
-        where: { id: existingEvent.id },
-        data: {
-          title: ms.subject || "(Untitled)",
-          description,
-          start,
-          end,
-          allDay: ms.isAllDay,
-          location,
-          color,
-        },
-      });
-    } else {
-      await prisma.calendarEvent.create({
-        data: {
-          userId,
-          title: ms.subject || "(Untitled)",
-          description,
-          start,
-          end,
-          allDay: ms.isAllDay,
-          location,
-          color,
-          source: "microsoft",
-          sourceRef: ms.id,
-        },
-      });
+      const existingEvent = existingByRef.get(ms.id);
+      if (existingEvent) {
+        await prisma.calendarEvent.update({
+          where: { id: existingEvent.id },
+          data: {
+            title: ms.subject || "(Untitled)",
+            description,
+            start,
+            end,
+            allDay: ms.isAllDay,
+            location,
+            color,
+          },
+        });
+      } else {
+        await prisma.calendarEvent.create({
+          data: {
+            userId,
+            title: ms.subject || "(Untitled)",
+            description,
+            start,
+            end,
+            allDay: ms.isAllDay,
+            location,
+            color,
+            source: "microsoft",
+            sourceRef: ms.id,
+          },
+        });
+      }
+      upserted++;
+      existingByRef.delete(ms.id);
     }
-    upserted++;
-    existingByRef.delete(ms.id);
-  }
 
-  // Remove local microsoft events that no longer exist remotely.
-  for (const stale of existingByRef.values()) {
-    await prisma.calendarEvent.delete({ where: { id: stale.id } });
-    deleted++;
-  }
+    // Remove local microsoft events that no longer exist remotely.
+    for (const stale of existingByRef.values()) {
+      await prisma.calendarEvent.delete({ where: { id: stale.id } });
+      deleted++;
+    }
 
-  return c.json({ synced: upserted, deleted, range: { from, to } });
+    return c.json({ synced: upserted, deleted, range: { from, to } });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "DB sync failed";
+    return c.json({ error: msg }, 500);
+  }
 });
 
 // POST /push — push a local CalendarEvent to Microsoft, then link it.

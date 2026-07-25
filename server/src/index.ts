@@ -38,6 +38,15 @@ import { startProactiveScheduler } from "./services/ntfy/proactive-scheduler";
 
 const app = new Hono();
 
+// Global error handler — returns JSON (not Hono's default plain-text "Internal
+// Server Error") so the client's JSON.parse never fails on unhandled errors.
+app.onError((err, c) => {
+  console.error("[athena-server] Unhandled error:", err);
+  const message =
+    err instanceof Error ? err.message : "Internal server error";
+  return c.json({ error: message }, 500);
+});
+
 app.use("*", logger());
 // CORS: restrict to the configured client origin(s) for public deployments.
 // CLIENT_ORIGIN may be a single origin or a comma-separated list. When unset
