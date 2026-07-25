@@ -29,6 +29,39 @@ import {
 const microsoft = new Hono();
 microsoft.use("*", authMiddleware);
 
+/**
+ * Microsoft Graph returns event bodies as HTML (Exchange boilerplate like
+ * `<html><head><meta>…</head><body>…</body></html>`), even for plain-text
+ * notes. Strip tags + decode common entities so we store readable text.
+ * Returns "" for empty/whitespace-only bodies (e.g. the default Exchange
+ * template with just a `&nbsp;`).
+ */
+function stripHtml(html: string): string {
+  return html
+    // drop <style>/<script> blocks (and their contents) entirely
+    .replace(/<(style|script)\b[^>]*>[\s\S]*?<\/\1>/gi, " ")
+    // drop <head>…</head> entirely
+    .replace(/<head\b[^>]*>[\s\S]*?<\/head>/gi, " ")
+    // convert <br> and block closers to newlines for readability
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|li|tr|h[1-6])>/gi, "\n")
+    // remove all remaining tags
+    .replace(/<[^>]+>/g, " ")
+    // decode common HTML entities
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCharCode(parseInt(n, 16)))
+    // collapse whitespace
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n\s*\n+/g, "\n")
+    .trim();
+}
+
 // ---------- Credential management (per-user) ----------
 
 const credSchema = z.object({
@@ -138,12 +171,19 @@ microsoft.post("/sync", zValidator("json", syncSchema), async (c) => {
     let deleted = 0;
 
     for (const ms of msEvents) {
-      const startStr = ms.start.dateTime;
-      const endStr = ms.end.dateTime;
+      // Graph returns `dateTime` for timed events and `date` (yyyy-MM-dd) for
+      // all-day events. Fall back to `date` so multi-day all-day events sync.
+      const startStr = ms.start.dateTime ?? ms.start.date;
+      const endStr = ms.end.dateTime ?? ms.end.date;
       if (!startStr || !endStr) continue;
       const start = new Date(startStr);
       const end = new Date(endStr);
-      const description = ms.body?.content ?? "";
+      // Graph's all-day `end` is exclusive (day after the last day). Keep it
+      // as-is so the client's [start, end) overlap check shows the last day.
+      // Graph returns HTML bodies (Exchange boilerplate); strip to plain text.
+      const rawBody = ms.body?.content ?? "";
+      const isHtml = ms.body?.contentType === "html" || /^\s*<(?:!doctype|html|body|head)\b/i.test(rawBody);
+      const description = isHtml ? stripHtml(rawBody) : rawBody;
       const location = ms.location?.displayName ?? "";
       // Show busy/free as a dimmer color for non-busy events.
       const color = ms.showAs === "free" || ms.showAs === "tentative" ? "#94a3b8" : "#0ea5e9";

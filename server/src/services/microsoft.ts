@@ -59,8 +59,10 @@ export interface MsGraphEvent {
   id: string;
   subject: string;
   body?: { contentType: string; content: string };
-  start: { dateTime: string; timeZone: string };
-  end: { dateTime: string; timeZone: string };
+  // Graph returns `dateTime` for timed events and `date` (yyyy-MM-dd) for
+  // all-day events. The missing field is null/undefined.
+  start: { dateTime: string | null; date: string | null; timeZone: string };
+  end: { dateTime: string | null; date: string | null; timeZone: string };
   isAllDay: boolean;
   location?: { displayName: string };
   showAs?: string;
