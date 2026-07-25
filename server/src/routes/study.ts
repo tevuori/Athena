@@ -28,6 +28,9 @@ import {
   summarizeCitedPrompt,
   explainCitedPrompt,
   studyGuideCitedPrompt,
+  notetakingPrompt,
+  type NoteStyle,
+  type NoteDetail,
   type FlashcardSpec,
   type QuizQuestionSpec,
   type SyllabusTaskSpec,
@@ -624,6 +627,85 @@ study.post("/quiz/:id/finish", zValidator("json", quizFinishSchema), async (c) =
 
   deleteQuiz(quizId);
   return c.json({ sessionId, noteId });
+});
+
+// ===== Notes from source (PDF / pasted text) =====
+// Used by the Notes app's "Notes from PDF" feature: resolves a source
+// (typically a PDF file or pasted text), generates structured notes with the
+// user's chosen detail level + style + optional custom structure description,
+// saves them as a new Note, and returns the noteId.
+const notesFromSourceSchema = z.object({
+  source: sourceSchema,
+  style: z.enum(["cornell", "outline", "summary", "bullets"]).optional().default("outline"),
+  detail: z.enum(["brief", "standard", "detailed"]).optional().default("standard"),
+  customStructure: z.string().max(2000).optional(),
+  title: z.string().max(200).optional(),
+  tags: z.string().max(200).optional(),
+  folderId: z.string().nullable().optional(),
+  language: languageSchema,
+});
+
+study.post("/notes-from-source", zValidator("json", notesFromSourceSchema), async (c) => {
+  const { userId } = c.get("auth");
+  const body = c.req.valid("json");
+  const loaded = await loadModel(c, userId);
+  if ("error" in loaded) return loaded.error;
+
+  let resolved: ResolvedSource;
+  try {
+    resolved = await resolveSource(userId, body.source);
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : "Source error" }, 400);
+  }
+
+  let notes: string;
+  try {
+    notes = await generateText(
+      loaded.model,
+      notetakingPrompt(resolved.text, body.style as NoteStyle, resolved.name, {
+        detail: body.detail as NoteDetail,
+        customStructure: body.customStructure,
+      }),
+      "You are a study assistant. Take accurate, well-organized notes in Markdown. Do not invent information not present in the source."
+    );
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : "Note generation failed" }, 502);
+  }
+
+  if (!notes.trim()) {
+    return c.json({ error: "The AI did not generate any notes." }, 502);
+  }
+
+  const defaultTags = resolved.kind === "file" ? "notes,ai,pdf" : resolved.kind === "paste" ? "notes,ai,paste" : "notes,ai";
+  const title = (body.title?.trim() || `Notes: ${resolved.name}`).slice(0, 200);
+  const tags = body.tags?.trim() ?? defaultTags;
+  const note = await prisma.note.create({
+    data: {
+      userId,
+      title,
+      content: notes,
+      tags,
+      folderId: body.folderId ?? null,
+    },
+  });
+
+  const sessionId = await logSessionSafe(userId, "notes", title, resolved.ref, {
+    noteId: note.id,
+    style: body.style,
+    detail: body.detail,
+    sourceKind: resolved.kind,
+    sourceName: resolved.name,
+    truncated: resolved.truncated,
+    customStructure: body.customStructure?.trim() || undefined,
+  });
+
+  return c.json({
+    noteId: note.id,
+    title: note.title,
+    content: notes,
+    sessionId,
+    truncated: resolved.truncated,
+  }, 201);
 });
 
 // ===== Recent sessions =====

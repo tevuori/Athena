@@ -160,8 +160,23 @@ export function quizGradeSchemaHint(): string {
 // ===== Notetaking (from URL / PDF) =====
 
 export type NoteStyle = "cornell" | "outline" | "summary" | "bullets";
+export type NoteDetail = "brief" | "standard" | "detailed";
 
-export function notetakingPrompt(sourceText: string, style: NoteStyle, sourceLabel: string): string {
+export interface NotetakingOptions {
+  /** How thorough the notes should be. Defaults to "standard". */
+  detail?: NoteDetail;
+  /** Freeform user instructions describing how the notes should be structured
+   *  (e.g. "start with a glossary, then one section per chapter, end with 5
+   *  review questions"). Injected verbatim into the prompt. */
+  customStructure?: string;
+}
+
+export function notetakingPrompt(
+  sourceText: string,
+  style: NoteStyle,
+  sourceLabel: string,
+  options?: NotetakingOptions
+): string {
   const styleInstr =
     style === "cornell"
       ? "Cornell notes format: organize into 'Cues / Questions' (left), 'Notes' (right, main body with bullet points), and a 'Summary' at the bottom (2-3 sentences). Use a Markdown structure with these sections clearly labeled."
@@ -170,7 +185,17 @@ export function notetakingPrompt(sourceText: string, style: NoteStyle, sourceLab
       : style === "summary"
       ? "A concise summary: a 2-3 sentence overview followed by the key points as bullets."
       : "Clear bullet-point notes organized by topic with ## headings.";
-  return `Take structured notes from the source material below. Use ${styleInstr}. Be accurate — do not invent information not present in the source. Use Markdown formatting.
+  const detail = options?.detail ?? "standard";
+  const detailInstr =
+    detail === "brief"
+      ? "Keep the notes concise — capture only the key points, essential definitions, and main takeaways. Avoid exhaustive detail."
+      : detail === "detailed"
+      ? "Be thorough and detailed — capture all important concepts, definitions, examples, formulas, and supporting details from the source. Prefer completeness over brevity."
+      : "Capture the key points with reasonable detail — include important definitions and explanations, but stay focused.";
+  const customInstr = options?.customStructure?.trim()
+    ? `\n\nThe user has requested the following specific structure for the notes. Follow it as closely as possible while staying accurate to the source material (skip any part that does not apply to this material):\n"""\n${options.customStructure.trim()}\n"""`
+    : "";
+  return `Take structured notes from the source material below. Use ${styleInstr}. ${detailInstr} Be accurate — do not invent information not present in the source. Use Markdown formatting.${customInstr}
 
 Source: ${sourceLabel}
 

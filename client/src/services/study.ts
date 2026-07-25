@@ -47,6 +47,17 @@ export interface StudyGuideResult {
   sessionId: string;
 }
 
+export type NoteStyle = "cornell" | "outline" | "summary" | "bullets";
+export type NoteDetail = "brief" | "standard" | "detailed";
+
+export interface NotesFromSourceResult {
+  noteId: string;
+  title: string;
+  content: string;
+  sessionId: string;
+  truncated: boolean;
+}
+
 export interface SyllabusTask {
   title: string;
   dueDate: string | null;
@@ -127,6 +138,17 @@ export const studyApi = {
     noteTitle?: string;
     language?: StudyLanguage;
   }) => api.post<StudyGuideResult>("/api/study/study-guide", data),
+
+  notesFromSource: (data: {
+    source: SourceDescriptor;
+    style?: NoteStyle;
+    detail?: NoteDetail;
+    customStructure?: string;
+    title?: string;
+    tags?: string;
+    folderId?: string | null;
+    language?: StudyLanguage;
+  }) => api.post<NotesFromSourceResult>("/api/study/notes-from-source", data),
 
   syllabusTasks: (data: { source?: SourceDescriptor; sources?: SourceDescriptor[]; create?: boolean; language?: StudyLanguage }) =>
     api.post<SyllabusResult>("/api/study/syllabus-tasks", data),

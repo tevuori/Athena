@@ -12,6 +12,7 @@ import {
   Search, Plus, Pin, Trash2, FolderPlus, FileText, Tag,
   Download, Loader2, Folder, Pencil, Columns2, Eye, Check,
   ImageIcon, Paperclip, MoreVertical, GraduationCap, X,
+  Sparkles,
 } from "lucide-react";
 import { notesApi } from "../../services/notes";
 import { filesApi } from "../../services/files";
@@ -26,6 +27,8 @@ import { setLinkPayload, readLinkPayload, allowLinkDrop } from "../links/linkDnd
 import LinkBadge from "../links/LinkBadge";
 import { useCodemirrorShowControl } from "../shared/useCodemirrorShowControl";
 import { useShowControl } from "../../store/showControl";
+import NotesFromPdfModal from "./NotesFromPdfModal";
+import type { NotesFromSourceResult } from "../../services/study";
 
 type EditorMode = "edit" | "split" | "preview";
 
@@ -46,6 +49,7 @@ export default function NotesApp({ win }: { win: WindowInstance }) {
   const [saving, setSaving] = useState(false);
   const [mode, setMode] = useState<EditorMode>("split");
   const [noteLinkSignal, setNoteLinkSignal] = useState(0);
+  const [showFromPdf, setShowFromPdf] = useState(false);
 
   // Overlay sidebars — shown as toggled overlays when the window is too narrow
   // for them to sit inline (controlled by container queries).
@@ -147,6 +151,15 @@ export default function NotesApp({ win }: { win: WindowInstance }) {
       console.error(e);
       return null;
     }
+  };
+
+  // AI-generated notes from a PDF (or pasted text) — called by the
+  // NotesFromPdfModal on success. Reloads the list so the new note appears
+  // with its server-set tags/folder, then selects it.
+  const onNotesFromSourceCreated = async (result: NotesFromSourceResult) => {
+    setShowFromPdf(false);
+    setSelectedId(result.noteId);
+    await loadNotes();
   };
 
   const createFolder = async () => {
@@ -435,6 +448,13 @@ export default function NotesApp({ win }: { win: WindowInstance }) {
               className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-accent py-1.5 text-xs font-medium text-accent-fg hover:opacity-90"
             >
               <Plus size={13} /> New
+            </button>
+            <button
+              onClick={() => setShowFromPdf(true)}
+              className="flex items-center justify-center rounded-lg border border-edge px-2 py-1.5 text-ink-muted hover:bg-surface-3 hover:text-accent"
+              title="Generate notes from a PDF with AI"
+            >
+              <Sparkles size={14} />
             </button>
             <button
               onClick={createFolder}
@@ -852,9 +872,23 @@ export default function NotesApp({ win }: { win: WindowInstance }) {
             </div>
             <FileText size={40} className="mb-3 opacity-30" />
             <p className="text-sm">Select a note or create a new one</p>
+            <button
+              onClick={() => setShowFromPdf(true)}
+              className="mt-3 flex items-center gap-1.5 rounded-lg border border-edge px-3 py-1.5 text-xs font-medium text-ink-muted hover:bg-surface-3 hover:text-accent"
+            >
+              <Sparkles size={13} /> Generate notes from a PDF
+            </button>
           </div>
         )}
       </div>
+
+      {showFromPdf && (
+        <NotesFromPdfModal
+          folderId={selectedFolder}
+          onCreated={(result) => void onNotesFromSourceCreated(result)}
+          onClose={() => setShowFromPdf(false)}
+        />
+      )}
     </div>
   );
 }

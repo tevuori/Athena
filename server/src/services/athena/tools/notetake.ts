@@ -9,7 +9,7 @@ import prisma from "../../../db/client";
 import { getUserConfig, buildModel, acquireLlmModel } from "../llm";
 import { fetchUrl } from "../../../services/fetcher";
 import { generateText } from "../../study/llm-json";
-import { notetakingPrompt, type NoteStyle } from "../../study/prompts";
+import { notetakingPrompt, type NoteStyle, type NoteDetail } from "../../study/prompts";
 import { logSessionSafe } from "../../study/logSession";
 
 const UPLOAD_DIR = path.resolve(process.cwd(), "uploads");
@@ -32,6 +32,18 @@ function parseStyle(s: unknown): NoteStyle {
     : "outline";
 }
 
+function parseDetail(s: unknown): NoteDetail {
+  const v = String(s ?? "standard");
+  return (["brief", "standard", "detailed"] as const).includes(v as NoteDetail)
+    ? (v as NoteDetail)
+    : "standard";
+}
+
+function parseCustomStructure(s: unknown): string | undefined {
+  const v = String(s ?? "").trim();
+  return v ? v.slice(0, 2000) : undefined;
+}
+
 export const notetakeTools: ToolDef[] = [
   {
     name: "create_notes_from_url",
@@ -47,6 +59,13 @@ export const notetakeTools: ToolDef[] = [
         description: "Note style",
         enum: ["cornell", "outline", "summary", "bullets"],
       },
+      {
+        name: "detail",
+        type: "string",
+        description: "How detailed the notes should be",
+        enum: ["brief", "standard", "detailed"],
+      },
+      { name: "customStructure", type: "string", description: "Optional freeform instructions describing how the notes should be structured (e.g. 'start with a glossary, then one section per chapter, end with 5 review questions')" },
       { name: "title", type: "string", description: "Optional title for the new note" },
       { name: "tags", type: "string", description: "Comma-separated tags (defaults to 'notes,ai,web')" },
     ],
@@ -69,11 +88,13 @@ export const notetakeTools: ToolDef[] = [
       }
 
       const style = parseStyle(args.style);
+      const detail = parseDetail(args.detail);
+      const customStructure = parseCustomStructure(args.customStructure);
       let notes: string;
       try {
         notes = await generateText(
           model,
-          notetakingPrompt(page.content, style, page.title || page.finalUrl),
+          notetakingPrompt(page.content, style, page.title || page.finalUrl, { detail, customStructure }),
           "You are a study assistant. Take accurate, well-organized notes in Markdown. Do not invent information."
         );
       } catch (e) {
@@ -121,6 +142,13 @@ export const notetakeTools: ToolDef[] = [
         description: "Note style",
         enum: ["cornell", "outline", "summary", "bullets"],
       },
+      {
+        name: "detail",
+        type: "string",
+        description: "How detailed the notes should be",
+        enum: ["brief", "standard", "detailed"],
+      },
+      { name: "customStructure", type: "string", description: "Optional freeform instructions describing how the notes should be structured (e.g. 'start with a glossary, then one section per chapter, end with 5 review questions')" },
       { name: "title", type: "string", description: "Optional title for the new note" },
       { name: "tags", type: "string", description: "Comma-separated tags (defaults to 'notes,ai,pdf')" },
     ],
@@ -161,11 +189,13 @@ export const notetakeTools: ToolDef[] = [
       }
 
       const style = parseStyle(args.style);
+      const detail = parseDetail(args.detail);
+      const customStructure = parseCustomStructure(args.customStructure);
       let notes: string;
       try {
         notes = await generateText(
           model,
-          notetakingPrompt(text, style, file.name),
+          notetakingPrompt(text, style, file.name, { detail, customStructure }),
           "You are a study assistant. Take accurate, well-organized notes in Markdown. Do not invent information."
         );
       } catch (e) {
@@ -181,9 +211,11 @@ export const notetakeTools: ToolDef[] = [
       await logSessionSafe(userId, "notes", title, file.id, {
         noteId: note.id,
         style,
+        detail,
         fileId: file.id,
         fileName: file.name,
         truncated,
+        customStructure: customStructure || undefined,
       });
 
       return {
