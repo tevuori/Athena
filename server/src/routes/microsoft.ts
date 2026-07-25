@@ -118,6 +118,7 @@ microsoft.post("/sync", zValidator("json", syncSchema), async (c) => {
     msEvents = await listEvents(userId, from, to);
   } catch (e) {
     const msg = (e as { message?: string }).message ?? "Sync failed";
+    console.error(`[ms] sync failed for user ${userId}:`, msg);
     return c.json({ error: msg }, 502);
   }
 
