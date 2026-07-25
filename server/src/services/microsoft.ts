@@ -194,9 +194,6 @@ export async function listEvents(
   endDateTime: string
 ): Promise<MsGraphEvent[]> {
   // Decode the JWT access token to diagnose the 401 on calendar endpoints.
-  // /me works but /me/events, /me/calendar, /me/calendars all return 401
-  // with empty body — this pattern suggests a personal/consumer MSA account
-  // or an audience mismatch.
   const token = await getAccessToken(userId);
   try {
     const payloadB64 = token.split(".")[1];
@@ -208,20 +205,13 @@ export async function listEvents(
     console.error(`[ms] could not decode access token JWT:`, e);
   }
 
-  // Try the beta endpoint — personal/consumer MSA accounts sometimes only
-  // work with the beta Graph endpoint for calendar data.
-  const betaRes = await fetch(`${GRAPH_BASE.replace("/v1.0", "/beta")}/me/events?$top=5`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  const betaText = await betaRes.text();
-  console.log(`[ms] probe beta /me/events: ${betaRes.status} body=${betaText.slice(0, 300)}`);
-
-  // Try the Outlook REST API directly (different audience/resource).
-  const outlookRes = await fetch("https://outlook.office.com/api/v2.0/me/events?$top=5", {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  const outlookText = await outlookRes.text();
-  console.log(`[ms] probe outlook.office.com /me/events: ${outlookRes.status} body=${outlookText.slice(0, 300)}`);
+  // Fetch /me to see the UPN — if it contains "#EXT#" it's a guest/external
+  // account, which can authenticate but has no mailbox/calendar in this tenant.
+  const meRes = await graphFetch(userId, "/me");
+  if (meRes.ok) {
+    const meData = await meRes.json() as { userPrincipalName?: string; displayName?: string; mail?: string };
+    console.log(`[ms] /me profile: UPN="${meData.userPrincipalName}" displayName="${meData.displayName}" mail="${meData.mail}"`);
+  }
 
   // Standard v1.0 /me/events with $filter
   const startNorm = startDateTime.replace(/\.\d{3}Z$/, "Z");
