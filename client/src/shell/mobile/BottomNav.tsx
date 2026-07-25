@@ -1,4 +1,5 @@
-import { CalendarCheck, CheckSquare, StickyNote, Sparkles, LayoutGrid } from "lucide-react";
+import { CalendarCheck, CheckSquare, StickyNote, Calendar, Sparkles, LayoutGrid } from "lucide-react";
+import { motion } from "framer-motion";
 import { useWindows, type AppId } from "../../store/windows";
 import { useAthenaQuick } from "../../store/athenaQuick";
 
@@ -8,11 +9,12 @@ interface NavSlot {
   icon: React.ReactNode;
 }
 
-/** The 4 fixed app slots in the bottom nav (Athena is the 5th, opens a sheet). */
+/** The 4 fixed app slots in the bottom nav. Athena + Apps are special. */
 const SLOTS: NavSlot[] = [
   { appId: "today", label: "Today", icon: <CalendarCheck size={22} /> },
   { appId: "tasks", label: "Tasks", icon: <CheckSquare size={22} /> },
   { appId: "notes", label: "Notes", icon: <StickyNote size={22} /> },
+  { appId: "calendar", label: "Calendar", icon: <Calendar size={22} /> },
 ];
 
 interface Props {
@@ -22,6 +24,7 @@ interface Props {
 export default function BottomNav({ onOpenDrawer }: Props) {
   const { mobileActiveId, mobileStack, mobileOnHome, mobileSwitchTo, mobileGoHome } = useWindows();
   const toggleAthena = useAthenaQuick((s) => s.toggle);
+  const athenaOpen = useAthenaQuick((s) => s.open);
 
   const activeAppId = mobileOnHome ? null : mobileStack.find((e) => e.id === mobileActiveId)?.appId;
 
@@ -42,12 +45,21 @@ export default function BottomNav({ onOpenDrawer }: Props) {
           <button
             key={slot.appId}
             onClick={() => tap(slot)}
-            className={`flex flex-1 flex-col items-center justify-center gap-0.5 py-1.5 transition ${
-              active ? "text-accent" : "text-ink-muted active:text-ink"
-            }`}
+            className="relative flex flex-1 flex-col items-center justify-center gap-0.5 py-1.5 transition active:scale-95"
           >
-            {slot.icon}
-            <span className="text-[10px] font-medium">{slot.label}</span>
+            {active && (
+              <motion.span
+                layoutId="nav-active"
+                className="absolute top-0 h-0.5 w-8 rounded-full bg-accent"
+                transition={{ type: "spring", damping: 28, stiffness: 380 }}
+              />
+            )}
+            <span className={active ? "text-accent" : "text-ink-muted"}>{slot.icon}</span>
+            <span
+              className={`text-[10px] font-medium ${active ? "text-accent" : "text-ink-muted"}`}
+            >
+              {slot.label}
+            </span>
           </button>
         );
       })}
@@ -55,16 +67,29 @@ export default function BottomNav({ onOpenDrawer }: Props) {
       {/* Athena — opens the Athena bottom sheet */}
       <button
         onClick={() => toggleAthena()}
-        className="flex flex-1 flex-col items-center justify-center gap-0.5 py-1.5 text-ink-muted active:text-accent"
+        className="relative flex flex-1 flex-col items-center justify-center gap-0.5 py-1.5 transition active:scale-95"
       >
-        <Sparkles size={22} />
-        <span className="text-[10px] font-medium">Athena</span>
+        {athenaOpen && (
+          <motion.span
+            layoutId="nav-active"
+            className="absolute top-0 h-0.5 w-8 rounded-full bg-accent"
+            transition={{ type: "spring", damping: 28, stiffness: 380 }}
+          />
+        )}
+        <span className={athenaOpen ? "text-accent" : "text-ink-muted"}>
+          <Sparkles size={22} />
+        </span>
+        <span
+          className={`text-[10px] font-medium ${athenaOpen ? "text-accent" : "text-ink-muted"}`}
+        >
+          Athena
+        </span>
       </button>
 
       {/* Apps drawer */}
       <button
         onClick={onOpenDrawer}
-        className="flex flex-1 flex-col items-center justify-center gap-0.5 py-1.5 text-ink-muted active:text-ink"
+        className="flex flex-1 flex-col items-center justify-center gap-0.5 py-1.5 text-ink-muted transition active:scale-95"
       >
         <LayoutGrid size={22} />
         <span className="text-[10px] font-medium">Apps</span>
@@ -74,7 +99,7 @@ export default function BottomNav({ onOpenDrawer }: Props) {
 }
 
 /** Map an appId to its lucide icon name (must match registry). */
-function iconFor(appId: AppId): string {
+export function iconFor(appId: AppId): string {
   const map: Record<AppId, string> = {
     notes: "StickyNote",
     tasks: "CheckSquare",

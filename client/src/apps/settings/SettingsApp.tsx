@@ -14,9 +14,11 @@ import {
   Database,
   Info,
   Smartphone,
+  ChevronLeft,
 } from "lucide-react";
 import { useAuth } from "../../store/auth";
 import type { WindowInstance } from "../../store/windows";
+import { useFormFactor } from "../../store/formfactor";
 import CollapsibleSidebar from "../../wm/CollapsibleSidebar";
 import AppearanceSection from "./sections/AppearanceSection";
 import WallpaperSection from "./sections/WallpaperSection";
@@ -57,11 +59,75 @@ const SECTIONS: SectionDef[] = [
 
 export default function SettingsApp({ win }: { win: WindowInstance }) {
   const { user } = useAuth();
-  const [active, setActive] = useState((win.payload?.section as string) || "appearance");
+  const [active, setActive] = useState<string | null>((win.payload?.section as string) || "appearance");
   const isAdmin = user?.role === "ADMIN";
+  const isPhone = useFormFactor((s) => s.mode === "phone");
 
   const visibleSections = SECTIONS.filter((s) => !s.adminOnly || isAdmin);
+  const activeLabel = visibleSections.find((s) => s.id === active)?.label ?? "Settings";
 
+  const renderSection = () => {
+    if (active === null) return null;
+    if (active === "appearance") return <AppearanceSection />;
+    if (active === "wallpaper") return <WallpaperSection />;
+    if (active === "animated-bg") return <AnimatedBgSection />;
+    if (active === "mobile") return <MobileSection />;
+    if (active === "account") return <AccountSection />;
+    if (active === "sound-athena") return <SoundAthenaSection />;
+    if (active === "athena") return <AthenaSection />;
+    if (active === "integrations") return <IntegrationsSection />;
+    if (active === "notifications") return <NotificationsSection />;
+    if (active === "proactive-alerts") return <ProactiveAlertsSection />;
+    if (active === "users" && isAdmin) return <UsersSection />;
+    if (active === "data") return <DataStorageSection />;
+    if (active === "about") return <AboutSection />;
+    return null;
+  };
+
+  // Phone: list → detail flow (no sidebar overlay).
+  if (isPhone) {
+    if (active === null) {
+      // Section list screen
+      return (
+        <div className="flex h-full flex-col bg-surface">
+          <div className="border-b border-edge px-4 py-3">
+            <h2 className="text-base font-semibold text-ink">Settings</h2>
+          </div>
+          <div className="flex-1 overflow-y-auto p-2">
+            {visibleSections.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => setActive(s.id)}
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left transition active:bg-surface-2"
+              >
+                <span className="text-ink-muted">{s.icon}</span>
+                <span className="flex-1 text-sm text-ink">{s.label}</span>
+                <ChevronLeft size={16} className="rotate-180 text-ink-muted/50" />
+              </button>
+            ))}
+          </div>
+        </div>
+      );
+    }
+    // Section detail screen
+    return (
+      <div className="flex h-full flex-col bg-surface">
+        <div className="safe-top sticky top-0 z-10 flex items-center gap-2 border-b border-edge bg-surface px-2 py-2.5">
+          <button
+            onClick={() => setActive(null)}
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-ink-muted hover:bg-surface-2 active:bg-surface-2"
+            title="Back"
+          >
+            <ChevronLeft size={20} />
+          </button>
+          <h2 className="text-sm font-semibold text-ink">{activeLabel}</h2>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4">{renderSection()}</div>
+      </div>
+    );
+  }
+
+  // Desktop / tablet: sidebar + content
   return (
     <div className="relative flex h-full overflow-hidden">
       <CollapsibleSidebar
@@ -93,21 +159,7 @@ export default function SettingsApp({ win }: { win: WindowInstance }) {
         </nav>
       </CollapsibleSidebar>
 
-      <div className="flex-1 overflow-y-auto p-6">
-        {active === "appearance" && <AppearanceSection />}
-        {active === "wallpaper" && <WallpaperSection />}
-        {active === "animated-bg" && <AnimatedBgSection />}
-        {active === "mobile" && <MobileSection />}
-        {active === "account" && <AccountSection />}
-        {active === "sound-athena" && <SoundAthenaSection />}
-        {active === "athena" && <AthenaSection />}
-        {active === "integrations" && <IntegrationsSection />}
-        {active === "notifications" && <NotificationsSection />}
-        {active === "proactive-alerts" && <ProactiveAlertsSection />}
-        {active === "users" && isAdmin && <UsersSection />}
-        {active === "data" && <DataStorageSection />}
-        {active === "about" && <AboutSection />}
-      </div>
+      <div className="flex-1 overflow-y-auto p-6">{renderSection()}</div>
     </div>
   );
 }

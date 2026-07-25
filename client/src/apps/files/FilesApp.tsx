@@ -16,6 +16,7 @@ import type { VFile, VFolder, FolderTreeNode, StorageInfo } from "../../types";
 import type { WindowInstance } from "../../store/windows";
 import { useWindows } from "../../store/windows";
 import { useDataRefreshVersion } from "../../store/dataRefresh";
+import { useFormFactor } from "../../store/formfactor";
 import ContextMenu, { type MenuItem } from "../../shell/ContextMenu";
 import CollapsibleSidebar from "../../wm/CollapsibleSidebar";
 import { setLinkPayload } from "../links/linkDnd";
@@ -34,6 +35,7 @@ interface ClipboardItem {
 export default function FilesApp(_: { win: WindowInstance }) {
   const { open: openWindow } = useWindows();
   const refreshVersion = useDataRefreshVersion("files");
+  const isPhone = useFormFactor((s) => s.mode === "phone");
 
   // ---- State ----
   const [folders, setFolders] = useState<VFolder[]>([]);
@@ -847,35 +849,35 @@ export default function FilesApp(_: { win: WindowInstance }) {
 
       {/* Main panel */}
       <div className="flex flex-1 flex-col">
-        {/* Toolbar */}
-        <div className="flex items-center gap-1.5 border-b border-edge px-3 py-2">
+        {/* Toolbar — horizontally scrollable on phone to avoid overflow */}
+        <div className={`flex items-center gap-1.5 border-b border-edge px-3 py-2 ${isPhone ? "overflow-x-auto" : ""}`}>
           <button
             onClick={goUp}
             disabled={breadcrumb.length <= 1}
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-ink-muted hover:bg-surface-2 disabled:opacity-30"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink-muted hover:bg-surface-2 active:bg-surface-2 disabled:opacity-30"
             title="Up"
           >
-            <ArrowUp size={15} />
+            <ArrowUp size={16} />
           </button>
           <button
             onClick={() => createFolder()}
-            className="flex items-center gap-1.5 rounded-lg border border-edge px-2 py-1.5 text-xs text-ink hover:bg-surface-2"
+            className="flex shrink-0 items-center gap-1.5 rounded-lg border border-edge px-2.5 py-1.5 text-xs text-ink hover:bg-surface-2 active:bg-surface-2"
           >
-            <FolderPlus size={13} /> New Folder
+            <FolderPlus size={14} />{!isPhone && "New Folder"}
           </button>
           <button
             onClick={() => createTextFile()}
-            className="flex items-center gap-1.5 rounded-lg border border-edge px-2 py-1.5 text-xs text-ink hover:bg-surface-2"
+            className="flex shrink-0 items-center gap-1.5 rounded-lg border border-edge px-2.5 py-1.5 text-xs text-ink hover:bg-surface-2 active:bg-surface-2"
           >
-            <FilePlus size={13} /> New File
+            <FilePlus size={14} />{!isPhone && "New File"}
           </button>
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
-            className="flex items-center gap-1.5 rounded-lg bg-accent px-2 py-1.5 text-xs text-accent-fg hover:opacity-90 disabled:opacity-50"
+            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-accent px-2.5 py-1.5 text-xs text-accent-fg hover:opacity-90 active:opacity-90 disabled:opacity-50"
           >
-            {uploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
-            Upload
+            {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+            {!isPhone ? "Upload" : uploading ? "…" : ""}
           </button>
           <input
             ref={fileInputRef}
@@ -885,16 +887,16 @@ export default function FilesApp(_: { win: WindowInstance }) {
             className="hidden"
           />
 
-          <div className="ml-auto flex items-center gap-1.5">
+          <div className={`flex items-center gap-1.5 ${isPhone ? "shrink-0" : "ml-auto"}`}>
             {/* Search */}
-            <div className="relative">
+            <div className="relative shrink-0">
               <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-ink-muted" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search..."
-                className="w-36 rounded-lg border border-edge bg-surface-2 py-1.5 pl-7 pr-2 text-xs text-ink placeholder:text-ink-muted focus:w-48 focus:outline-none focus:ring-1 focus:ring-accent transition-all"
+                className={`rounded-lg border border-edge bg-surface-2 py-1.5 pl-7 pr-2 text-xs text-ink placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-accent ${isPhone ? "w-24 focus:w-32" : "w-36 focus:w-48"} transition-all`}
               />
             </div>
 
@@ -906,7 +908,7 @@ export default function FilesApp(_: { win: WindowInstance }) {
                 setSortKey(k);
                 setSortDir(d);
               }}
-              className="rounded-lg border border-edge bg-surface-2 px-2 py-1.5 text-xs text-ink focus:outline-none"
+              className="shrink-0 rounded-lg border border-edge bg-surface-2 px-2 py-1.5 text-xs text-ink focus:outline-none"
             >
               <option value="name-asc">Name ↑</option>
               <option value="name-desc">Name ↓</option>
@@ -919,20 +921,20 @@ export default function FilesApp(_: { win: WindowInstance }) {
             </select>
 
             {/* View toggle */}
-            <div className="flex items-center rounded-lg border border-edge">
+            <div className="flex shrink-0 items-center rounded-lg border border-edge">
               <button
                 onClick={() => setViewMode("grid")}
-                className={`flex h-7 w-7 items-center justify-center rounded-l-lg ${viewMode === "grid" ? "bg-surface-3 text-ink" : "text-ink-muted hover:bg-surface-2"}`}
+                className={`flex h-8 w-8 items-center justify-center rounded-l-lg ${viewMode === "grid" ? "bg-surface-3 text-ink" : "text-ink-muted hover:bg-surface-2"}`}
                 title="Grid view"
               >
-                <Grid3x3 size={13} />
+                <Grid3x3 size={14} />
               </button>
               <button
                 onClick={() => setViewMode("list")}
-                className={`flex h-7 w-7 items-center justify-center rounded-r-lg ${viewMode === "list" ? "bg-surface-3 text-ink" : "text-ink-muted hover:bg-surface-2"}`}
+                className={`flex h-8 w-8 items-center justify-center rounded-r-lg ${viewMode === "list" ? "bg-surface-3 text-ink" : "text-ink-muted hover:bg-surface-2"}`}
                 title="List view"
               >
-                <ListIcon size={13} />
+                <ListIcon size={14} />
               </button>
             </div>
           </div>
@@ -940,9 +942,9 @@ export default function FilesApp(_: { win: WindowInstance }) {
 
         {/* Breadcrumb + inline selection actions (merged so selecting files
             doesn't shift the file area down by inserting a new row) */}
-        <div className="flex items-center gap-1 border-b border-edge px-3 py-1.5 text-xs text-ink-muted">
+        <div className={`flex items-center gap-1 border-b border-edge px-3 py-1.5 text-xs text-ink-muted ${isPhone ? "overflow-x-auto" : ""}`}>
           {breadcrumb.map((b, i) => (
-            <span key={i} className="flex items-center gap-1">
+            <span key={i} className="flex shrink-0 items-center gap-1">
               {i > 0 && <ChevronRight size={12} />}
               <button
                 onClick={() => navigateBreadcrumb(i)}

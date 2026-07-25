@@ -1,4 +1,4 @@
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, type PanInfo } from "framer-motion";
 import { Bell, BellOff, X } from "lucide-react";
 import { useNotifications } from "../../store/notifications";
 import { useSettings } from "../../store/settings";
@@ -10,13 +10,17 @@ interface Props {
 
 /**
  * Mobile notification + DND bottom sheet. Replaces the desktop system tray
- * notification popover. Volume/wifi/battery are dropped on mobile (use the
- * native status bar / hardware buttons).
+ * notification popover. Each notification can be swiped left to dismiss.
+ * Volume/wifi/battery are dropped on mobile (use the native status bar).
  */
 export default function NotificationSheet({ open, onClose }: Props) {
   const { items, unreadCount, markRead, dismiss, clearAll } = useNotifications();
   const { doNotDisturb, setDoNotDisturb, notificationsEnabled } = useSettings();
   const unread = unreadCount();
+
+  const onSwipeEnd = (id: string, info: PanInfo) => {
+    if (info.offset.x < -80 || info.velocity.x < -500) dismiss(id);
+  };
 
   return (
     <AnimatePresence>
@@ -33,9 +37,13 @@ export default function NotificationSheet({ open, onClose }: Props) {
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
-            transition={{ type: "spring", damping: 32, stiffness: 320 }}
-            className="safe-bottom absolute inset-x-0 bottom-0 z-50 flex max-h-[70%] flex-col rounded-t-2xl border-t border-edge bg-surface shadow-window"
+            transition={{ type: "spring", damping: 32, stiffness: 340 }}
+            className="safe-bottom absolute inset-x-0 bottom-0 z-50 flex max-h-[75%] flex-col rounded-t-2xl border-t border-edge bg-surface shadow-window"
           >
+            <div className="flex justify-center pt-2">
+              <div className="h-1 w-10 rounded-full bg-surface-3" />
+            </div>
+
             <div className="flex items-center justify-between px-4 pb-2 pt-3">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-semibold text-ink">Notifications</span>
@@ -49,7 +57,7 @@ export default function NotificationSheet({ open, onClose }: Props) {
                 <button
                   onClick={() => setDoNotDisturb(!doNotDisturb)}
                   className={`flex h-8 w-8 items-center justify-center rounded-lg ${
-                    doNotDisturb ? "bg-accent/20 text-accent" : "text-ink-muted hover:bg-surface-3"
+                    doNotDisturb ? "bg-accent/20 text-accent" : "text-ink-muted active:bg-surface-3"
                   }`}
                   title="Do not disturb"
                 >
@@ -65,7 +73,7 @@ export default function NotificationSheet({ open, onClose }: Props) {
                 )}
                 <button
                   onClick={onClose}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-muted hover:bg-surface-3"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-muted active:bg-surface-3"
                 >
                   <X size={18} />
                 </button>
@@ -77,8 +85,12 @@ export default function NotificationSheet({ open, onClose }: Props) {
                 <p className="py-10 text-center text-sm text-ink-muted">No notifications</p>
               ) : (
                 items.map((n) => (
-                  <div
+                  <motion.div
                     key={n.id}
+                    drag="x"
+                    dragConstraints={{ left: 0, right: 0 }}
+                    dragElastic={{ left: 0.6, right: 0 }}
+                    onDragEnd={(_, info) => onSwipeEnd(n.id, info)}
                     className={`rounded-lg border p-3 text-left transition ${
                       n.read ? "border-edge bg-surface" : "border-accent/30 bg-accent/5"
                     }`}
@@ -100,7 +112,7 @@ export default function NotificationSheet({ open, onClose }: Props) {
                         <span className="text-lg">×</span>
                       </button>
                     </div>
-                  </div>
+                  </motion.div>
                 ))
               )}
             </div>

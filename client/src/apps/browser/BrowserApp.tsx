@@ -296,7 +296,7 @@ export default function BrowserApp({ win }: { win: WindowInstance }) {
   return (
     <div className="flex h-full flex-col bg-surface">
       {/* Toolbar */}
-      <div className="flex items-center gap-1 border-b border-edge bg-surface-2 px-2 py-1.5">
+      <div className="flex items-center gap-1 overflow-x-auto border-b border-edge bg-surface-2 px-2 py-1.5">
         <NavBtn onClick={goBack} disabled={historyIdx === 0} title="Back">
           <ArrowLeft size={16} />
         </NavBtn>

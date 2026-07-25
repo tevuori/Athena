@@ -215,7 +215,7 @@ export default function HabitsApp() {
                     </div>
                   </div>
                   {/* Mini 7-day strip */}
-                  <div className="flex shrink-0 gap-0.5">
+                  <div className="flex shrink-0 gap-1">
                     {Array.from({ length: 7 }, (_, i) => {
                       const d = new Date();
                       d.setDate(d.getDate() - (6 - i));
@@ -224,7 +224,7 @@ export default function HabitsApp() {
                       return (
                         <div
                           key={i}
-                          className={`h-3 w-3 rounded-sm ${logged ? "" : "bg-surface-3"}`}
+                          className={`h-4 w-4 rounded-sm ${logged ? "" : "bg-surface-3"}`}
                           style={logged ? { background: h.color } : {}}
                           title={`${dk}: ${logged ? "done" : "—"}`}
                         />
