@@ -23,6 +23,17 @@ export const microsoftApi = {
     }),
   deleteCredentials: () => api.delete<{ ok: boolean }>("/api/microsoft/credentials"),
 
+  // ---------- OAuth2 authorization-code flow ----------
+  // Starts the flow: stores the app creds server-side and returns the Microsoft
+  // authorize URL (with a signed state JWT). The caller opens it in a new tab;
+  // after consent Microsoft redirects to /auth/callback, which the server
+  // handles and then redirects back to the client with #ms_oauth=success|error.
+  startOAuth: (clientId: string, clientSecret: string, tenantId?: string) =>
+    api.post<{ authorizeUrl: string; redirectUri: string }>(
+      "/api/microsoft/oauth/start",
+      { clientId, clientSecret, tenantId: tenantId ?? "" }
+    ),
+
   // ---------- Calendar sync ----------
   status: () => api.get<{ configured: boolean }>("/api/microsoft/status"),
   sync: (from?: string, to?: string) =>

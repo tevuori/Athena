@@ -12,11 +12,15 @@
  * Required scope: Calendar.ReadWrite (offline_access for refresh tokens).
  */
 
+import { SignJWT, jwtVerify } from "jose";
+import { randomBytes } from "node:crypto";
 import prisma from "../db/client";
 import { encryptSecret, decryptSecret } from "./crypto";
 
 const TOKEN_URL = (tenant: string) =>
   `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/token`;
+const AUTHORIZE_URL = (tenant: string) =>
+  `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/authorize`;
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 
 // Server-wide fallback (env vars)
@@ -24,6 +28,19 @@ const ENV_CLIENT_ID = process.env.MS_CLIENT_ID ?? "";
 const ENV_CLIENT_SECRET = process.env.MS_CLIENT_SECRET ?? "";
 const ENV_TENANT_ID = process.env.MS_TENANT_ID ?? "common";
 const ENV_REFRESH_TOKEN = process.env.MS_REFRESH_TOKEN ?? "";
+
+// Redirect URI registered in the Azure app (Authentication → Web → Redirect URI).
+// Must match exactly what Microsoft has on file. Defaults to the production URL.
+const ENV_REDIRECT_URI =
+  process.env.MS_REDIRECT_URI ?? "https://athena.tevuori.eu/auth/callback";
+
+// Reuse the JWT secret for signing OAuth state tokens (short-lived, separate audience).
+const STATE_SECRET = new TextEncoder().encode(
+  process.env.JWT_SECRET ?? "dev-secret-change-me"
+);
+const STATE_ISSUER = "athena-student-os";
+const STATE_AUDIENCE = "athena-ms-oauth";
+const STATE_EXPIRY = "10m";
 
 export interface MsTokens {
   access_token: string;
@@ -259,4 +276,135 @@ export async function deleteEvent(userId: string, id: string): Promise<void> {
     const text = await res.text();
     throw { status: res.status, message: `MS deleteEvent failed: ${text}` } as MsApiError;
   }
+}
+
+// ===== OAuth2 authorization-code flow =====
+//
+// The flow:
+//   1. User enters clientId/clientSecret/tenantId in Settings → Integrations
+//   2. POST /api/microsoft/oauth/start stores them (with an empty refresh token)
+//      and returns the Microsoft authorize URL (with a signed state JWT)
+//   3. User consents on Microsoft → browser redirects to GET /auth/callback
+//   4. The callback handler verifies the state, exchanges the code for tokens,
+//      and persists the refresh token (encrypted) against the user
+
+/** Build the Microsoft OAuth2 authorize URL. */
+export function buildAuthorizeUrl(
+  clientId: string,
+  tenantId: string,
+  state: string,
+  redirectUri: string = ENV_REDIRECT_URI
+): string {
+  const params = new URLSearchParams({
+    client_id: clientId,
+    response_type: "code",
+    redirect_uri: redirectUri,
+    response_mode: "query",
+    scope: "offline_access Calendars.ReadWrite",
+    state,
+    prompt: "select_account",
+  });
+  return `${AUTHORIZE_URL(tenantId || "common")}?${params}`;
+}
+
+/** Sign a short-lived OAuth state JWT binding the flow to the given user. */
+export async function generateOAuthState(userId: string): Promise<string> {
+  return new SignJWT({ nonce: randomBytes(16).toString("hex") })
+    .setProtectedHeader({ alg: "HS256" })
+    .setSubject(userId)
+    .setIssuer(STATE_ISSUER)
+    .setAudience(STATE_AUDIENCE)
+    .setIssuedAt()
+    .setExpirationTime(STATE_EXPIRY)
+    .sign(STATE_SECRET);
+}
+
+/** Verify an OAuth state JWT. Returns the userId on success, null on failure. */
+export async function verifyOAuthState(state: string): Promise<string | null> {
+  try {
+    const { payload } = await jwtVerify(state, STATE_SECRET, {
+      issuer: STATE_ISSUER,
+      audience: STATE_AUDIENCE,
+    });
+    if (typeof payload.sub !== "string") return null;
+    return payload.sub;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Store partial Microsoft credentials (clientId/clientSecret/tenantId) with an
+ * empty refresh token. Used during the OAuth start step — the real refresh
+ * token is filled in by the callback handler after the code exchange.
+ */
+export async function storePartialCredentials(
+  userId: string,
+  clientId: string,
+  clientSecret: string,
+  tenantId: string
+): Promise<void> {
+  const tenant = tenantId.trim() || "common";
+  await prisma.microsoftCredential.upsert({
+    where: { userId },
+    create: {
+      userId,
+      clientIdEnc: encryptSecret(clientId.trim()),
+      clientSecretEnc: encryptSecret(clientSecret.trim()),
+      tenantId: tenant,
+      refreshTokenEnc: encryptSecret(""),
+    },
+    update: {
+      clientIdEnc: encryptSecret(clientId.trim()),
+      clientSecretEnc: encryptSecret(clientSecret.trim()),
+      tenantId: tenant,
+    },
+  });
+}
+
+/**
+ * Exchange a Microsoft OAuth2 authorization code for access + refresh tokens,
+ * then persist the refresh token (encrypted) against the user. The client
+ * credentials are loaded from the DB (stored during the start step).
+ * Returns true on success, false on failure.
+ */
+export async function exchangeAuthCode(
+  userId: string,
+  code: string,
+  redirectUri: string = ENV_REDIRECT_URI
+): Promise<boolean> {
+  const cred = await prisma.microsoftCredential.findUnique({ where: { userId } });
+  if (!cred) return false;
+  const clientId = decryptSafe(cred.clientIdEnc);
+  const clientSecret = decryptSafe(cred.clientSecretEnc);
+  if (!clientId || !clientSecret) return false;
+  const tenantId = cred.tenantId || "common";
+
+  const body = new URLSearchParams({
+    grant_type: "authorization_code",
+    code,
+    client_id: clientId,
+    client_secret: clientSecret,
+    redirect_uri: redirectUri,
+    scope: "offline_access Calendars.ReadWrite",
+  });
+  const res = await fetch(TOKEN_URL(tenantId), {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
+  if (!res.ok) return false;
+  const data = (await res.json()) as MsTokens;
+  if (!data.refresh_token) return false;
+
+  await prisma.microsoftCredential.update({
+    where: { userId },
+    data: { refreshTokenEnc: encryptSecret(data.refresh_token) },
+  });
+  return true;
+}
+
+/** The configured redirect URI (for the start endpoint to send to Microsoft). */
+export function getRedirectUri(): string {
+  return ENV_REDIRECT_URI;
 }
