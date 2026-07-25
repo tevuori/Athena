@@ -195,22 +195,31 @@ export async function listEvents(
 ): Promise<MsGraphEvent[]> {
   // Decode the JWT access token to diagnose the 401 on calendar endpoints.
   const token = await getAccessToken(userId);
+  let tokenIssuer = "";
   try {
     const payloadB64 = token.split(".")[1];
     const payload = JSON.parse(
       Buffer.from(payloadB64, "base64url").toString("utf8")
     );
-    console.log(`[ms] access token decoded for user ${userId}: aud="${payload.aud}" iss="${payload.iss}" appid="${payload.appid ?? payload.azp ?? "(none)"}" idtyp="${payload.idtyp ?? "(none)"}"`);
+    tokenIssuer = payload.iss ?? "";
+    console.log(`[ms] access token decoded for user ${userId}: aud="${payload.aud}" iss="${payload.iss}" idtyp="${payload.idtyp ?? "(none)"}"`);
   } catch (e) {
     console.error(`[ms] could not decode access token JWT:`, e);
   }
 
-  // Fetch /me to see the UPN — if it contains "#EXT#" it's a guest/external
-  // account, which can authenticate but has no mailbox/calendar in this tenant.
-  const meRes = await graphFetch(userId, "/me");
-  if (meRes.ok) {
-    const meData = await meRes.json() as { userPrincipalName?: string; displayName?: string; mail?: string };
-    console.log(`[ms] /me profile: UPN="${meData.userPrincipalName}" displayName="${meData.displayName}" mail="${meData.mail}"`);
+  // If the token was issued by a tenant-specific endpoint (sts.windows.net/<tenant>/)
+  // instead of the consumer endpoint (login.live.com), the user signed in with a
+  // personal Microsoft account through the "common" tenant. Personal accounts
+  // authenticated via "common" get a tenant-specific token that can access /me
+  // but NOT calendar endpoints (401 empty body). They must use the "consumers"
+  // tenant to get a token for the personal Outlook.com calendar store.
+  if (tokenIssuer.includes("sts.windows.net") && tokenIssuer !== "https://sts.windows.net/9188040d-6c67-4c5b-b112-36a304b66dad/") {
+    // 9188040d-... is the consumer tenant — if issuer is that, it's already correct.
+    // Any other sts.windows.net tenant with a personal account = wrong endpoint.
+    throw {
+      status: 401,
+      message: "Personal Microsoft account authenticated via the 'common' tenant, which cannot access calendar data. Please disconnect and sign in again with the Tenant ID set to 'consumers' (not 'common').",
+    } as MsApiError;
   }
 
   // Standard v1.0 /me/events with $filter
