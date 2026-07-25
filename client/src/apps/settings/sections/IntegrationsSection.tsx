@@ -492,9 +492,14 @@ function MicrosoftCard() {
             <input
               value={tenantId}
               onChange={(e) => setTenantId(e.target.value)}
-              placeholder="common"
+              placeholder="common / consumers / <tenant GUID>"
               className={inputClass}
             />
+            <p className="mt-1 text-xs text-ink-muted">
+              Use <code className="text-ink">common</code> for work/school accounts,
+              <code className="text-ink"> consumers</code> for personal Microsoft accounts
+              (Outlook.com / Live / Hotmail), or your Azure AD tenant GUID.
+            </p>
           </Field>
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -537,6 +542,8 @@ function MicrosoftCard() {
         Register an app in <a href="https://portal.azure.com" target="_blank" rel="noreferrer" className="underline">Azure Portal</a> with
         <code className="text-ink"> Calendars.ReadWrite</code> + <code className="text-ink">offline_access</code> delegated permissions.
         Add <code className="text-ink">https://athena.tevuori.eu/auth/callback</code> as a Web redirect URI.
+        For personal Microsoft accounts (Outlook.com/Live/Hotmail), set "Supported account types"
+        to "Personal Microsoft accounts only" and use <code className="text-ink">consumers</code> as the tenant.
         Credentials are encrypted (AES-256-GCM).
       </p>
     </Card>
