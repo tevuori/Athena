@@ -20,6 +20,8 @@ import { memoryTools } from "./memory";
 import { linkTools } from "./links";
 import { browserTools } from "./browser";
 import { teacherTools } from "./teacher";
+import { ntfyTools } from "./ntfy";
+import { reminderTools } from "./reminders";
 
 export { AthenaToolsPlugin, type ToolDef, type ToolContext, type ClientWindowInfo } from "./plugin";
 
@@ -46,6 +48,8 @@ export const ALL_TOOLS: ToolDef[] = [
   ...linkTools,
   ...browserTools,
   ...teacherTools,
+  ...ntfyTools,
+  ...reminderTools,
 ];
 
 /** Tool metadata safe to expose to the client (no handlers). */
