@@ -106,7 +106,7 @@ export default function RemindersApp() {
   return (
     <div className="flex flex-col h-full bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100">
       {/* Tab bar */}
-      <div className="flex items-center gap-1 px-3 pt-3 border-b border-zinc-200 dark:border-zinc-800 shrink-0">
+      <div className="flex items-center gap-1 px-3 pt-3 overflow-x-auto border-b border-zinc-200 dark:border-zinc-800 shrink-0">
         <TabBtn icon={<Clock size={15} />} label="Pending" active={tab === "pending"} onClick={() => setTab("pending")} />
         <TabBtn icon={<Check size={15} />} label="Fired" active={tab === "fired"} onClick={() => setTab("fired")} />
         <TabBtn icon={<X size={15} />} label="Cancelled" active={tab === "cancelled"} onClick={() => setTab("cancelled")} />

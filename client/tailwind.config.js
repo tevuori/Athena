@@ -9,6 +9,8 @@ export default {
     // from a `showAt` prop (e.g. "@5xl:hidden"). Tailwind's scanner can't see
     // dynamically built class names, and safelist regex patterns don't match
     // container-query variant prefixes, so list them explicitly here.
+    "@sm:hidden", "@sm:flex", "@sm:inline", "@sm:block", "@sm:static", "@sm:z-auto", "@sm:shadow-none", "@sm:text-4xl", "@sm:max-w-[260px]",
+    "@2xl:hidden", "@2xl:flex", "@2xl:inline", "@2xl:block", "@2xl:static", "@2xl:z-auto", "@2xl:shadow-none",
     "@3xl:hidden", "@3xl:flex", "@3xl:inline", "@3xl:block", "@3xl:static", "@3xl:z-auto", "@3xl:shadow-none",
     "@4xl:hidden", "@4xl:flex", "@4xl:inline", "@4xl:block", "@4xl:static", "@4xl:z-auto", "@4xl:shadow-none",
     "@5xl:hidden", "@5xl:flex", "@5xl:inline", "@5xl:block", "@5xl:static", "@5xl:z-auto", "@5xl:shadow-none",

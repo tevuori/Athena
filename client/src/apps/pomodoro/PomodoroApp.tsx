@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Play, Pause, RotateCcw, SkipForward, Coffee, Brain, Volume2, VolumeX } from "lucide-react";
 import { useSettings } from "../../store/settings";
+import { useFormFactor } from "../../store/formfactor";
 import type { WindowInstance } from "../../store/windows";
 
 type Phase = "focus" | "short-break" | "long-break";
@@ -46,6 +47,7 @@ export default function PomodoroApp({ win }: { win: WindowInstance }) {
   const [muted, setMuted] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { setDoNotDisturb } = useSettings();
+  const isPhone = useFormFactor((s) => s.mode === "phone");
 
   // Honor an auto-start payload sent by the Athena assistant (start_pomodoro).
   useEffect(() => {
@@ -164,32 +166,32 @@ export default function PomodoroApp({ win }: { win: WindowInstance }) {
   const mm = Math.floor(secondsLeft / 60).toString().padStart(2, "0");
   const ss = (secondsLeft % 60).toString().padStart(2, "0");
 
-  // SVG circle parameters
+  // SVG circle parameters (viewBox is fixed; the element scales via CSS).
   const radius = 120;
   const circumference = 2 * Math.PI * radius;
   const dashOffset = circumference * (1 - progress);
 
   return (
-    <div className="flex h-full flex-col items-center bg-gradient-to-b from-surface to-surface-2 p-6">
-      {/* Phase tabs */}
-      <div className="mb-6 flex gap-1 rounded-full bg-surface-2 p-1">
+    <div className={`flex h-full flex-col items-center bg-gradient-to-b from-surface to-surface-2 ${isPhone ? "safe-bottom px-4 pb-4 pt-2" : "p-6"}`}>
+      {/* Phase tabs — segmented control (scrollable on phone) */}
+      <div className={`mb-6 flex gap-1 rounded-full bg-surface-2 p-1 ${isPhone ? "w-full max-w-sm overflow-x-auto" : ""}`}>
         {(Object.keys(PHASE_CONFIG) as Phase[]).map((p) => (
           <button
             key={p}
             onClick={() => switchPhase(p)}
-            className={`flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-medium transition ${
+            className={`flex flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-2 text-xs font-medium transition ${
               phase === p ? "bg-accent text-white" : "text-ink-muted hover:text-ink"
             }`}
           >
             {PHASE_CONFIG[p].icon}
-            {PHASE_CONFIG[p].label}
+            <span className="whitespace-nowrap">{PHASE_CONFIG[p].label}</span>
           </button>
         ))}
       </div>
 
-      {/* Timer circle */}
-      <div className="relative mb-6 flex items-center justify-center">
-        <svg width="280" height="280" className="-rotate-90">
+      {/* Timer circle — responsive via viewBox + container/vw sizing */}
+      <div className="relative mb-6 flex aspect-square w-full max-w-[280px] items-center justify-center @sm:max-w-[260px]">
+        <svg viewBox="0 0 280 280" className="h-full w-full -rotate-90">
           {/* Background ring */}
           <circle
             cx="140" cy="140" r={radius}
@@ -220,7 +222,7 @@ export default function PomodoroApp({ win }: { win: WindowInstance }) {
               {config.label}
             </motion.div>
           </AnimatePresence>
-          <div className="font-mono text-5xl font-bold tabular-nums text-ink">
+          <div className="font-mono text-5xl font-bold tabular-nums text-ink @sm:text-4xl">
             {mm}:{ss}
           </div>
           <p className="mt-1 text-xs text-ink-muted">
@@ -229,37 +231,37 @@ export default function PomodoroApp({ win }: { win: WindowInstance }) {
         </div>
       </div>
 
-      {/* Controls */}
-      <div className="mb-6 flex items-center gap-3">
+      {/* Controls — larger touch targets on phone */}
+      <div className="mb-6 flex items-center gap-4">
         <button
           onClick={reset}
-          className="flex h-11 w-11 items-center justify-center rounded-full bg-surface-2 text-ink-muted transition hover:bg-surface-3 hover:text-ink"
+          className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-2 text-ink-muted transition hover:bg-surface-3 hover:text-ink active:scale-95"
           title="Reset"
         >
-          <RotateCcw size={18} />
+          <RotateCcw size={20} />
         </button>
         <button
           onClick={() => setRunning((r) => !r)}
-          className="flex h-14 w-14 items-center justify-center rounded-full text-white shadow-lg transition hover:scale-105 active:scale-95"
+          className="flex h-16 w-16 items-center justify-center rounded-full text-white shadow-lg transition hover:scale-105 active:scale-95"
           style={{ backgroundColor: config.color }}
           title={running ? "Pause" : "Start"}
         >
-          {running ? <Pause size={24} /> : <Play size={24} className="ml-0.5" />}
+          {running ? <Pause size={28} /> : <Play size={28} className="ml-0.5" />}
         </button>
         <button
           onClick={nextPhase}
-          className="flex h-11 w-11 items-center justify-center rounded-full bg-surface-2 text-ink-muted transition hover:bg-surface-3 hover:text-ink"
+          className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-2 text-ink-muted transition hover:bg-surface-3 hover:text-ink active:scale-95"
           title="Skip"
         >
-          <SkipForward size={18} />
+          <SkipForward size={20} />
         </button>
       </div>
 
       {/* Options */}
-      <div className="mb-4 flex gap-2">
+      <div className="mb-4 flex flex-wrap justify-center gap-2">
         <button
           onClick={() => setDndEnabled((v) => !v)}
-          className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+          className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition ${
             dndEnabled ? "bg-accent/20 text-accent" : "bg-surface-2 text-ink-muted hover:text-ink"
           }`}
         >
@@ -268,7 +270,7 @@ export default function PomodoroApp({ win }: { win: WindowInstance }) {
         </button>
         <button
           onClick={() => setMuted((v) => !v)}
-          className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+          className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition ${
             muted ? "bg-surface-2 text-ink-muted" : "bg-surface-2 text-ink hover:bg-surface-3"
           }`}
         >

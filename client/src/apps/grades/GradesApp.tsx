@@ -328,13 +328,13 @@ export default function GradesApp() {
       {/* New course modal */}
       <AnimatePresence>
         {showCourseForm && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowCourseForm(false)}>
+          <div className="absolute inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" onClick={() => setShowCourseForm(false)}>
             <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
+              initial={{ opacity: 0, y: 40 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 40 }}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-sm rounded-xl border border-edge bg-surface p-5 shadow-window"
+              className="safe-bottom w-full max-w-sm rounded-t-2xl border border-edge bg-surface p-5 shadow-window sm:rounded-xl"
             >
               <h3 className="mb-4 text-sm font-semibold text-ink">Add Course</h3>
               <input autoFocus value={courseName} onChange={(e) => setCourseName(e.target.value)} placeholder="Course name" className="mb-3 w-full rounded-lg border border-edge bg-surface-2 px-3 py-2 text-sm text-ink outline-none focus:border-accent" />
@@ -360,13 +360,13 @@ export default function GradesApp() {
       {/* Add assignment modal */}
       <AnimatePresence>
         {showAssignmentForm && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowAssignmentForm(null)}>
+          <div className="absolute inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" onClick={() => setShowAssignmentForm(null)}>
             <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
+              initial={{ opacity: 0, y: 40 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 40 }}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-sm rounded-xl border border-edge bg-surface p-5 shadow-window"
+              className="safe-bottom max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-t-2xl border border-edge bg-surface p-5 shadow-window sm:rounded-xl"
             >
               <h3 className="mb-4 text-sm font-semibold text-ink">Add Assignment</h3>
               <input autoFocus value={aName} onChange={(e) => setAName(e.target.value)} placeholder="Assignment name" className="mb-3 w-full rounded-lg border border-edge bg-surface-2 px-3 py-2 text-sm text-ink outline-none focus:border-accent" />

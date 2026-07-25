@@ -15,6 +15,7 @@ import LinkDragHandle from "../links/LinkDragHandle";
 import LinkBadge from "../links/LinkBadge";
 import { useLinkDrop } from "../links/useLinkDrop";
 import { useDataRefreshVersion } from "../../store/dataRefresh";
+import { useFormFactor } from "../../store/formfactor";
 
 export default function TasksApp(_: { win: WindowInstance }) {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -23,6 +24,7 @@ export default function TasksApp(_: { win: WindowInstance }) {
   const [addingTo, setAddingTo] = useState<TaskStatus | null>(null);
   const [newTitle, setNewTitle] = useState("");
   const refreshVersion = useDataRefreshVersion("tasks");
+  const isPhone = useFormFactor((s) => s.mode === "phone");
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -127,7 +129,9 @@ export default function TasksApp(_: { win: WindowInstance }) {
     <div className="flex h-full flex-col bg-surface">
       <div className="border-b border-edge px-4 py-2.5">
         <h2 className="text-sm font-semibold text-ink">Tasks</h2>
-        <p className="text-xs text-ink-muted">{tasks.length} total · drag cards between columns</p>
+        <p className="text-xs text-ink-muted">
+          {tasks.length} total{isPhone ? " · swipe columns →" : " · drag cards between columns"}
+        </p>
       </div>
 
       <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
@@ -144,6 +148,7 @@ export default function TasksApp(_: { win: WindowInstance }) {
               onCreate={() => createTask(status)}
               onUpdate={updateTask}
               onDelete={deleteTask}
+              isPhone={isPhone}
             />
           ))}
         </div>
@@ -156,7 +161,7 @@ export default function TasksApp(_: { win: WindowInstance }) {
 }
 
 function Column({
-  status, tasks, addingTo, setAddingTo, newTitle, setNewTitle, onCreate, onUpdate, onDelete,
+  status, tasks, addingTo, setAddingTo, newTitle, setNewTitle, onCreate, onUpdate, onDelete, isPhone,
 }: {
   status: TaskStatus;
   tasks: Task[];
@@ -167,11 +172,12 @@ function Column({
   onCreate: () => void;
   onUpdate: (id: string, data: Partial<Task>) => void;
   onDelete: (id: string) => void;
+  isPhone: boolean;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
   return (
-    <div className="flex w-72 shrink-0 snap-center flex-col rounded-xl border border-edge bg-surface-2">
-      <div className="flex items-center justify-between px-3 py-2.5">
+    <div className={`flex shrink-0 snap-center flex-col rounded-xl border border-edge bg-surface-2 ${isPhone ? "w-[85vw] max-w-[320px]" : "w-72"}`}>
+      <div className="sticky top-0 z-10 flex items-center justify-between rounded-t-xl bg-surface-2 px-3 py-2.5">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-ink">{STATUS_LABELS[status]}</span>
           <span className="rounded-full bg-surface-3 px-1.5 py-0.5 text-[10px] text-ink-muted">
@@ -180,9 +186,9 @@ function Column({
         </div>
         <button
           onClick={() => setAddingTo(addingTo === status ? null : status)}
-          className="flex h-6 w-6 items-center justify-center rounded text-ink-muted hover:bg-surface-3 hover:text-ink"
+          className="flex h-8 w-8 items-center justify-center rounded text-ink-muted hover:bg-surface-3 hover:text-ink active:bg-surface-3"
         >
-          <Plus size={14} />
+          <Plus size={16} />
         </button>
       </div>
 
@@ -192,7 +198,7 @@ function Column({
       >
         <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
           {tasks.map((task) => (
-            <SortableCard key={task.id} task={task} onUpdate={onUpdate} onDelete={onDelete} />
+            <SortableCard key={task.id} task={task} onUpdate={onUpdate} onDelete={onDelete} isPhone={isPhone} />
           ))}
         </SortableContext>
 
@@ -241,11 +247,12 @@ function Column({
 }
 
 function SortableCard({
-  task, onUpdate, onDelete,
+  task, onUpdate, onDelete, isPhone,
 }: {
   task: Task;
   onUpdate: (id: string, data: Partial<Task>) => void;
   onDelete: (id: string) => void;
+  isPhone: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: task.id,
@@ -257,18 +264,19 @@ function SortableCard({
   };
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <TaskCard task={task} onUpdate={onUpdate} onDelete={onDelete} />
+      <TaskCard task={task} onUpdate={onUpdate} onDelete={onDelete} isPhone={isPhone} />
     </div>
   );
 }
 
 function TaskCard({
-  task, onUpdate, onDelete, dragging,
+  task, onUpdate, onDelete, dragging, isPhone,
 }: {
   task: Task;
   onUpdate?: (id: string, data: Partial<Task>) => void;
   onDelete?: (id: string) => void;
   dragging?: boolean;
+  isPhone?: boolean;
 }) {
   const [refreshSignal, setRefreshSignal] = useState(0);
   const { onDragOver, onDragEnter, onDragLeave, onDrop, isOver } = useLinkDrop(
@@ -295,14 +303,14 @@ function TaskCard({
     >
       <div className="flex items-start justify-between gap-2">
         <p className="flex-1 text-sm text-ink">{task.title}</p>
-        <div className="flex shrink-0 items-center gap-1 opacity-0 transition group-hover:opacity-100">
-          <LinkDragHandle type="task" id={task.id} title={task.title} />
+        <div className={`flex shrink-0 items-center gap-1 transition ${isPhone ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+          {!isPhone && <LinkDragHandle type="task" id={task.id} title={task.title} />}
           {onUpdate && (
             <>
               <select
                 value={task.priority}
                 onChange={(e) => onUpdate(task.id, { priority: e.target.value as TaskPriority })}
-                className="bg-transparent text-[10px] text-ink-muted outline-none"
+                className="bg-transparent text-[11px] text-ink-muted outline-none"
                 onPointerDown={(e) => e.stopPropagation()}
               >
                 {Object.entries(PRIORITY_LABELS).map(([v, l]) => (
@@ -312,9 +320,9 @@ function TaskCard({
               <button
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={() => onDelete?.(task.id)}
-                className="text-ink-muted hover:text-red-400"
+                className="flex h-7 w-7 items-center justify-center rounded text-ink-muted hover:text-red-400 active:bg-surface-3"
               >
-                <Trash2 size={12} />
+                <Trash2 size={14} />
               </button>
             </>
           )}

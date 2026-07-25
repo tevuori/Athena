@@ -16,6 +16,7 @@ import { microsoftApi } from "../../services/microsoft";
 import { apiUrl } from "../../services/api";
 import { useWindows } from "../../store/windows";
 import type { WindowInstance } from "../../store/windows";
+import { useFormFactor } from "../../store/formfactor";
 import { useDataRefreshVersion } from "../../store/dataRefresh";
 import type { CalendarEvent, Task, VutTimetableSlot, Course } from "../../types";
 import { linksApi } from "../../services/links";
@@ -197,6 +198,7 @@ interface DisplayEvent {
 export default function CalendarApp({ win }: { win: WindowInstance }) {
   const openWindow = useWindows((s) => s.open);
   const refreshVersion = useDataRefreshVersion("calendar");
+  const isPhone = useFormFactor((s) => s.mode === "phone");
   const [view, setView] = useState<ViewMode>(() =>
     typeof window !== "undefined" &&
     window.matchMedia("(pointer: coarse)").matches &&
@@ -204,6 +206,8 @@ export default function CalendarApp({ win }: { win: WindowInstance }) {
       ? "agenda"
       : "month"
   );
+  // On phone, the month/week/day grids (min-w-[640px]) are unusable — force agenda.
+  const effectiveView: ViewMode = isPhone ? "agenda" : view;
   const [cursor, setCursor] = useState<Date>(() => {
     const p = win?.payload as { date?: string } | undefined;
     return p?.date ? new Date(p.date) : new Date();
@@ -502,34 +506,34 @@ export default function CalendarApp({ win }: { win: WindowInstance }) {
 
   // ===== Navigation =====
   const goPrev = () => {
-    if (view === "month") setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1));
-    else if (view === "week") setCursor(addDays(startOfWeek(cursor), -7));
+    if (effectiveView === "month") setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1));
+    else if (effectiveView === "week") setCursor(addDays(startOfWeek(cursor), -7));
     else setCursor(addDays(cursor, -1));
   };
   const goNext = () => {
-    if (view === "month") setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1));
-    else if (view === "week") setCursor(addDays(startOfWeek(cursor), 7));
+    if (effectiveView === "month") setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1));
+    else if (effectiveView === "week") setCursor(addDays(startOfWeek(cursor), 7));
     else setCursor(addDays(cursor, 1));
   };
   const goToday = () => setCursor(new Date());
 
   const headerLabel = useMemo(() => {
-    if (view === "month") return cursor.toLocaleDateString(undefined, { month: "long", year: "numeric" });
-    if (view === "week") {
+    if (effectiveView === "month") return cursor.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+    if (effectiveView === "week") {
       const ws = startOfWeek(cursor);
       const we = addDays(ws, 6);
       return `${ws.toLocaleDateString(undefined, { month: "short", day: "numeric" })} – ${we.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
     }
     return cursor.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
-  }, [view, cursor]);
+  }, [effectiveView, cursor]);
 
   return (
     <div className="flex h-full flex-col bg-surface">
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-edge px-3 py-2">
-        <div className="flex items-center gap-1.5 text-accent">
+      {/* Toolbar — scrollable on phone to avoid overflow */}
+      <div className={`flex items-center gap-2 border-b border-edge px-3 py-2 ${isPhone ? "overflow-x-auto" : "flex-wrap"}`}>
+        <div className="flex shrink-0 items-center gap-1.5 text-accent">
           <CalendarIcon size={18} />
-          <span className="text-sm font-semibold">Calendar</span>
+          {!isPhone && <span className="text-sm font-semibold">Calendar</span>}
         </div>
         <div className="mx-1 flex items-center gap-1">
           <button onClick={goPrev} className="rounded-md p-1.5 text-ink-muted hover:bg-surface-3" title="Previous">
@@ -542,9 +546,10 @@ export default function CalendarApp({ win }: { win: WindowInstance }) {
             <ChevronRight size={16} />
           </button>
         </div>
-        <h2 className="flex-1 text-sm font-semibold text-ink">{headerLabel}</h2>
+        <h2 className={`text-sm font-semibold text-ink ${isPhone ? "shrink-0 truncate" : "flex-1"}`}>{headerLabel}</h2>
 
-        {/* Layer toggles */}
+        {/* Layer toggles — hidden on phone (agenda shows all enabled layers) */}
+        {!isPhone && (
         <div className="flex items-center gap-1.5">
           <Layers size={14} className="text-ink-muted" />
           {(Object.keys(LAYER_COLORS) as (keyof LayerToggles)[]).map((k) => (
@@ -566,7 +571,10 @@ export default function CalendarApp({ win }: { win: WindowInstance }) {
             </button>
           ))}
         </div>
+        )}
 
+        {/* View switcher — hidden on phone (forced to agenda) */}
+        {!isPhone && (
         <div className="mx-1 flex rounded-md border border-edge">
           {(["month", "week", "day", "agenda"] as ViewMode[]).map((v) => (
             <button
@@ -580,10 +588,13 @@ export default function CalendarApp({ win }: { win: WindowInstance }) {
             </button>
           ))}
         </div>
+        )}
 
+        {!isPhone && (
         <button onClick={() => fileInputRef.current?.click()} className="rounded-md border border-edge px-2 py-1 text-xs text-ink-muted hover:bg-surface-3" title="Import .ics">
           <Upload size={13} className="inline" /> ICS
         </button>
+        )}
         <input
           ref={fileInputRef}
           type="file"
@@ -591,9 +602,11 @@ export default function CalendarApp({ win }: { win: WindowInstance }) {
           className="hidden"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) handleIcsImport(f); e.target.value = ""; }}
         />
+        {!isPhone && (
         <button onClick={exportIcs} className="rounded-md border border-edge px-2 py-1 text-xs text-ink-muted hover:bg-surface-3" title="Export .ics">
           <Download size={13} className="inline" />
         </button>
+        )}
         {msConfigured ? (
           <button
             onClick={syncMicrosoft}
@@ -624,8 +637,8 @@ export default function CalendarApp({ win }: { win: WindowInstance }) {
         </div>
       )}
 
-      {/* Unscheduled tasks strip (drag source) */}
-      {layers.tasks && (
+      {/* Unscheduled tasks strip (drag source) — desktop only (drag needs mouse) */}
+      {layers.tasks && !isPhone && (
         <div className="flex items-center gap-1.5 overflow-x-auto border-b border-edge bg-surface-2/40 px-3 py-0.5">
           <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">Unscheduled:</span>
           {tasks.filter((t) => t.status !== "DONE" && t.dueDate).length === 0 && (
@@ -650,10 +663,10 @@ export default function CalendarApp({ win }: { win: WindowInstance }) {
 
       {/* Calendar grid */}
       <div className="flex-1 overflow-auto">
-        {view === "month" && <MonthView cursor={cursor} events={displayEvents} onDrop={onDrop} onEventClick={(ev) => openEditor(events.find((e) => e.id === ev.id) ?? displayToPartial(ev))} onSlotClick={(d) => openEditor(undefined, d)} />}
-        {view === "week" && <WeekView cursor={cursor} events={displayEvents} onDrop={onDrop} onEventClick={(ev) => openEditor(events.find((e) => e.id === ev.id) ?? displayToPartial(ev))} onSlotClick={(d) => openEditor(undefined, d)} />}
-        {view === "day" && <DayView cursor={cursor} events={displayEvents} onDrop={onDrop} onEventClick={(ev) => openEditor(events.find((e) => e.id === ev.id) ?? displayToPartial(ev))} onSlotClick={(d) => openEditor(undefined, d)} />}
-        {view === "agenda" && <AgendaView cursor={cursor} events={displayEvents} onEventClick={(ev) => openEditor(events.find((e) => e.id === ev.id) ?? displayToPartial(ev))} />}
+        {effectiveView === "month" && <MonthView cursor={cursor} events={displayEvents} onDrop={onDrop} onEventClick={(ev) => openEditor(events.find((e) => e.id === ev.id) ?? displayToPartial(ev))} onSlotClick={(d) => openEditor(undefined, d)} />}
+        {effectiveView === "week" && <WeekView cursor={cursor} events={displayEvents} onDrop={onDrop} onEventClick={(ev) => openEditor(events.find((e) => e.id === ev.id) ?? displayToPartial(ev))} onSlotClick={(d) => openEditor(undefined, d)} />}
+        {effectiveView === "day" && <DayView cursor={cursor} events={displayEvents} onDrop={onDrop} onEventClick={(ev) => openEditor(events.find((e) => e.id === ev.id) ?? displayToPartial(ev))} onSlotClick={(d) => openEditor(undefined, d)} />}
+        {effectiveView === "agenda" && <AgendaView cursor={cursor} events={displayEvents} onEventClick={(ev) => openEditor(events.find((e) => e.id === ev.id) ?? displayToPartial(ev))} />}
       </div>
 
       {/* Event editor modal */}
@@ -1162,8 +1175,8 @@ function EventEditor({
   const fromLocalInput = (v: string) => new Date(v).toISOString();
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md rounded-xl border border-edge bg-surface p-4 shadow-xl">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm sm:items-center" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="safe-bottom max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-2xl border border-edge bg-surface p-4 shadow-xl sm:rounded-xl">
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-sm font-semibold text-ink">{event.id ? "Edit Event" : "New Event"}</h3>
           <button onClick={onClose} className="rounded p-1 text-ink-muted hover:bg-surface-3"><X size={16} /></button>
