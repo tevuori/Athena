@@ -4,7 +4,7 @@
 // Also supports pushing local events to Microsoft and deleting from MS.
 // Each user configures their own Microsoft credentials (per-user encrypted DB).
 
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
 import prisma from "../db/client";
@@ -17,6 +17,12 @@ import {
   createEvent as msCreateEvent,
   updateEvent as msUpdateEvent,
   deleteEvent as msDeleteEvent,
+  buildAuthorizeUrl,
+  generateOAuthState,
+  verifyOAuthState,
+  storePartialCredentials,
+  exchangeAuthCode,
+  getRedirectUri,
   type MsGraphEvent,
 } from "../services/microsoft";
 
@@ -254,5 +260,69 @@ microsoft.delete("/event/:msId", async (c) => {
   });
   return c.json({ ok: true });
 });
+
+// ---------- OAuth2 authorization-code flow ----------
+
+const oauthStartSchema = z.object({
+  clientId: z.string().min(1).max(256),
+  clientSecret: z.string().min(1).max(256),
+  tenantId: z.string().max(256).optional().or(z.literal("")),
+});
+
+/** POST /microsoft/oauth/start — store partial creds + return the Microsoft authorize URL. */
+microsoft.post("/oauth/start", zValidator("json", oauthStartSchema), async (c) => {
+  const { userId } = c.get("auth");
+  const body = c.req.valid("json");
+  const tenantId = body.tenantId?.trim() || "common";
+
+  // Store the app credentials now so the callback can exchange the code.
+  await storePartialCredentials(userId, body.clientId, body.clientSecret, tenantId);
+
+  const state = await generateOAuthState(userId);
+  const redirectUri = getRedirectUri();
+  const authorizeUrl = buildAuthorizeUrl(body.clientId, tenantId, state, redirectUri);
+  return c.json({ authorizeUrl, redirectUri });
+});
+
+/**
+ * GET /auth/callback — public Microsoft OAuth2 redirect handler.
+ * Mounted at the root (not under /api/microsoft) so it bypasses authMiddleware.
+ * Verifies the signed state JWT, exchanges the auth code for tokens, persists
+ * the refresh token, then redirects to the client with a success/error flag.
+ */
+export async function msOAuthCallback(c: Context) {
+  const code = c.req.query("code");
+  const state = c.req.query("state");
+  const error = c.req.query("error");
+  const errorDesc = c.req.query("error_description");
+
+  // Build the client redirect URL (relative — the browser resolves it against
+  // the current origin, which works for both dev and prod).
+  const clientOrigin = process.env.CLIENT_ORIGIN?.split(",")[0].trim() ?? "";
+  const redirectBase = clientOrigin || "/";
+  const buildRedirect = (status: "success" | "error", detail?: string) => {
+    const url = new URL(redirectBase, clientOrigin ? undefined : "http://localhost");
+    url.hash = `ms_oauth=${status}${detail ? `&detail=${encodeURIComponent(detail)}` : ""}`;
+    return c.redirect(url.toString());
+  };
+
+  if (error) {
+    return buildRedirect("error", errorDesc || error);
+  }
+  if (!code || !state) {
+    return buildRedirect("error", "Missing code or state");
+  }
+
+  const userId = await verifyOAuthState(state);
+  if (!userId) {
+    return buildRedirect("error", "Invalid or expired state");
+  }
+
+  const ok = await exchangeAuthCode(userId, code, getRedirectUri());
+  if (!ok) {
+    return buildRedirect("error", "Token exchange failed");
+  }
+  return buildRedirect("success");
+}
 
 export default microsoft;

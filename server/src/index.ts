@@ -23,7 +23,7 @@ import calendar from "./routes/calendar";
 import habits from "./routes/habits";
 import whiteboards from "./routes/whiteboards";
 import capture from "./routes/capture";
-import microsoft from "./routes/microsoft";
+import microsoft, { msOAuthCallback } from "./routes/microsoft";
 import users from "./routes/users";
 import ntfy from "./routes/ntfy";
 import voice from "./routes/voice";
@@ -76,6 +76,11 @@ app.get("/health", (c) =>
     ),
   })
 );
+
+// Public Microsoft OAuth2 callback — mounted at the root (not under /api/microsoft)
+// so it bypasses the auth middleware. The redirect URI registered in Azure must
+// match: https://<your-domain>/auth/callback (configurable via MS_REDIRECT_URI).
+app.get("/auth/callback", msOAuthCallback);
 
 app.route("/api/auth", auth);
 app.route("/api/notes", notes);

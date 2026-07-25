@@ -319,6 +319,7 @@ function MicrosoftCard() {
   const [clientSecret, setClientSecret] = useState("");
   const [tenantId, setTenantId] = useState("common");
   const [refreshToken, setRefreshToken] = useState("");
+  const [showManual, setShowManual] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState(false);
@@ -333,6 +334,49 @@ function MicrosoftCard() {
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
+
+  // Detect the OAuth redirect hash (#ms_oauth=success|error&detail=...) that the
+  // server's /auth/callback handler appends when redirecting back to the client.
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (!hash || !hash.startsWith("#ms_oauth=")) return;
+    const params = new URLSearchParams(hash.slice(1));
+    const result = params.get("ms_oauth");
+    const detail = params.get("detail");
+    if (result === "success") {
+      setErr(false);
+      setMsg("Microsoft account connected. Click Sync now to pull your calendar.");
+      void refresh();
+    } else {
+      setErr(true);
+      setMsg(`Microsoft sign-in failed${detail ? `: ${detail}` : ""}`);
+    }
+    // Clear the hash so it doesn't persist across reloads.
+    history.replaceState(null, "", window.location.pathname + window.location.search);
+  }, [refresh]);
+
+  const signInWithMicrosoft = async () => {
+    if (!clientId.trim() || !clientSecret.trim()) return;
+    setBusy(true);
+    setErr(false);
+    setMsg(null);
+    try {
+      const { authorizeUrl } = await microsoftApi.startOAuth(
+        clientId.trim(),
+        clientSecret.trim(),
+        tenantId.trim() || "common"
+      );
+      // Open Microsoft consent in a new tab. After consent, Microsoft redirects
+      // to /auth/callback on the server, which exchanges the code and redirects
+      // back here with #ms_oauth=success|error.
+      window.location.href = authorizeUrl;
+    } catch (e) {
+      setErr(true);
+      setMsg(e instanceof Error ? e.message : "Failed to start OAuth flow");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const connect = async () => {
     if (!clientId.trim() || !clientSecret.trim() || !refreshToken.trim()) return;
@@ -444,40 +488,56 @@ function MicrosoftCard() {
               />
             </Field>
           </div>
-          <div className="grid gap-2 sm:grid-cols-2">
-            <Field label="Tenant ID (optional)">
-              <input
-                value={tenantId}
-                onChange={(e) => setTenantId(e.target.value)}
-                placeholder="common"
-                className={inputClass}
-              />
-            </Field>
-            <Field label="Refresh Token">
-              <input
-                type="password"
-                value={refreshToken}
-                onChange={(e) => setRefreshToken(e.target.value)}
-                placeholder="OAuth2 refresh token"
-                className={inputClass}
-              />
-            </Field>
-          </div>
-          <div className="flex items-center gap-2">
-            <SaveButton busy={busy} onClick={connect} disabled={!clientId.trim() || !clientSecret.trim() || !refreshToken.trim()}>
-              Connect
-            </SaveButton>
+          <Field label="Tenant ID (optional)">
+            <input
+              value={tenantId}
+              onChange={(e) => setTenantId(e.target.value)}
+              placeholder="common"
+              className={inputClass}
+            />
+          </Field>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={signInWithMicrosoft}
+              disabled={busy || !clientId.trim() || !clientSecret.trim()}
+              className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-sm text-accent-fg hover:opacity-90 disabled:opacity-40"
+            >
+              {busy ? <Loader2 size={14} className="animate-spin" /> : <ExternalLink size={14} />} Sign in with Microsoft
+            </button>
+            <button
+              onClick={() => setShowManual((v) => !v)}
+              className="text-xs text-ink-muted underline hover:text-ink"
+            >
+              {showManual ? "Hide manual refresh token" : "Already have a refresh token?"}
+            </button>
             {status?.usingEnvFallback && (
               <span className="text-xs text-ink-muted">Server fallback active — add your own to override</span>
             )}
           </div>
+          {showManual && (
+            <div className="space-y-2 rounded-lg border border-edge bg-surface-2 p-2">
+              <Field label="Refresh Token (manual)">
+                <input
+                  type="password"
+                  value={refreshToken}
+                  onChange={(e) => setRefreshToken(e.target.value)}
+                  placeholder="OAuth2 refresh token"
+                  className={inputClass}
+                />
+              </Field>
+              <SaveButton busy={busy} onClick={connect} disabled={!clientId.trim() || !clientSecret.trim() || !refreshToken.trim()}>
+                Save manually
+              </SaveButton>
+            </div>
+          )}
         </div>
       )}
       <MsgBox msg={msg} error={err} />
       <p className="mt-2 text-xs text-ink-muted">
         Register an app in <a href="https://portal.azure.com" target="_blank" rel="noreferrer" className="underline">Azure Portal</a> with
         <code className="text-ink"> Calendars.ReadWrite</code> + <code className="text-ink">offline_access</code> delegated permissions.
-        Use the Authorization Code flow to get a refresh token. Credentials are encrypted (AES-256-GCM).
+        Add <code className="text-ink">https://athena.tevuori.eu/auth/callback</code> as a Web redirect URI.
+        Credentials are encrypted (AES-256-GCM).
       </p>
     </Card>
   );
