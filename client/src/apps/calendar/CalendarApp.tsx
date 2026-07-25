@@ -94,6 +94,92 @@ function eventOnDay(e: { start: Date; end: Date }, date: Date): boolean {
   return e.start < de && e.end > ds;
 }
 
+/** True if the event spans more than one calendar day. */
+function isMultiDay(e: { start: Date; end: Date }): boolean {
+  return e.end > dayEnd(e.start);
+}
+
+/** Events that should render as spanning bars (all-day or multi-day). */
+function isSpanEvent(e: { start: Date; end: Date; allDay: boolean }): boolean {
+  return e.allDay || isMultiDay(e);
+}
+
+/** DST-safe number of days between two dates (at midnight). */
+function daysBetween(a: Date, b: Date): number {
+  return Math.round((dayStart(b).getTime() - dayStart(a).getTime()) / 86400000);
+}
+
+/** A multi-day/all-day event rendered as a bar spanning day columns. */
+interface SpanBar {
+  ev: DisplayEvent;
+  row: number;
+  startCol: number;
+  endCol: number;
+  lane: number;
+}
+
+/**
+ * Compute spanning bars for all-day + multi-day events across a grid of weeks.
+ * Events that cross a week boundary are split into one bar per row.
+ * Overlapping bars are assigned to vertical lanes so they don't stack on top
+ * of each other.
+ */
+function computeSpanBars(
+  events: DisplayEvent[],
+  weeks: Date[][],
+  gridStart: Date,
+  gridEnd: Date,
+): SpanBar[] {
+  const spanEvents = events.filter(isSpanEvent);
+  type RawSpan = { ev: DisplayEvent; row: number; startCol: number; endCol: number };
+  const rawSpans: RawSpan[] = [];
+
+  for (const ev of spanEvents) {
+    const evStart = ev.start < gridStart ? gridStart : ev.start;
+    const evEnd = ev.end > gridEnd ? gridEnd : ev.end;
+    // end is exclusive — last visible day is the day before evEnd
+    const lastVisible = new Date(evEnd.getTime() - 1);
+
+    for (let w = 0; w < weeks.length; w++) {
+      const rowStart = weeks[w][0];
+      const rowEnd = dayEnd(weeks[w][6]);
+      if (evStart >= rowEnd || evEnd <= rowStart) continue;
+      const startCol = Math.max(0, daysBetween(rowStart, evStart));
+      const endCol = Math.min(6, daysBetween(rowStart, lastVisible));
+      rawSpans.push({ ev, row: w, startCol, endCol });
+    }
+  }
+
+  // Assign lanes per row (greedy first-fit).
+  const byRow = new Map<number, RawSpan[]>();
+  for (const s of rawSpans) {
+    if (!byRow.has(s.row)) byRow.set(s.row, []);
+    byRow.get(s.row)!.push(s);
+  }
+
+  const result: SpanBar[] = [];
+  for (const [row, rowSpans] of byRow) {
+    rowSpans.sort((a, b) => a.startCol - b.startCol);
+    const laneEnds: number[] = [];
+    for (const s of rowSpans) {
+      let lane = -1;
+      for (let i = 0; i < laneEnds.length; i++) {
+        if (s.startCol > laneEnds[i]) {
+          lane = i;
+          laneEnds[i] = s.endCol;
+          break;
+        }
+      }
+      if (lane === -1) {
+        laneEnds.push(s.endCol);
+        lane = laneEnds.length - 1;
+      }
+      result.push({ ...s, lane });
+    }
+  }
+  return result;
+}
+
 /** A unified render-time event regardless of source. */
 interface DisplayEvent {
   id: string;
@@ -543,7 +629,7 @@ export default function CalendarApp({ win }: { win: WindowInstance }) {
         <div className="flex items-center gap-1.5 overflow-x-auto border-b border-edge bg-surface-2/40 px-3 py-0.5">
           <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">Unscheduled:</span>
           {tasks.filter((t) => t.status !== "DONE" && t.dueDate).length === 0 && (
-            <span className="text-[10px] text-ink-muted/60">No tasks with due dates — drag from Tasks app</span>
+            <span className="shrink-0 whitespace-nowrap text-[10px] text-ink-muted/60">No tasks with due dates — drag from Tasks app</span>
           )}
           {tasks
             .filter((t) => t.status !== "DONE")
@@ -676,6 +762,16 @@ function MonthView({
     }
     weeks.push(row);
   }
+  const allDays = weeks.flat();
+  const gridEnd = dayEnd(allDays[allDays.length - 1]);
+
+  // Multi-day + all-day events render as spanning bars on a grid overlay.
+  // Single-day timed events stay as chips inside each day cell.
+  const spanBars = computeSpanBars(events, weeks, gridStart, gridEnd);
+  const maxLaneByRow = new Map<number, number>();
+  for (const b of spanBars) {
+    maxLaneByRow.set(b.row, Math.max(maxLaneByRow.get(b.row) ?? 0, b.lane));
+  }
 
   return (
     <div className="flex h-full flex-col overflow-x-auto">
@@ -684,42 +780,73 @@ function MonthView({
           <div key={d} className="px-2 py-1.5 text-center text-[11px] font-semibold uppercase tracking-wide text-ink-muted">{d}</div>
         ))}
       </div>
-      <div className="grid min-w-[640px] flex-1 grid-cols-7 grid-rows-6">
-        {weeks.flat().map((date, i) => {
-          const inMonth = date.getMonth() === cursor.getMonth();
-          const isToday = sameDay(date, today);
-          const dayEvents = events.filter((e) => eventOnDay(e, date));
-          return (
+      <div className="relative min-w-[640px] flex-1">
+        {/* Day cells (background layer) */}
+        <div className="grid h-full grid-cols-7 grid-rows-6">
+          {allDays.map((date, i) => {
+            const inMonth = date.getMonth() === cursor.getMonth();
+            const isToday = sameDay(date, today);
+            // Only single-day timed events — multi-day/all-day are in the overlay.
+            const dayEvents = events.filter((e) => eventOnDay(e, date) && !isSpanEvent(e));
+            const row = Math.floor(i / 7);
+            const spanCount = (maxLaneByRow.get(row) ?? -1) + 1;
+            return (
+              <div
+                key={i}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => onDrop(e, date)}
+                onClick={() => onSlotClick(date)}
+                className={`group relative min-h-[80px] cursor-pointer border-b border-r border-edge p-1 transition hover:bg-surface-2/60 ${inMonth ? "bg-surface" : "bg-surface-2/30"}`}
+              >
+                <div className={`mb-0.5 flex items-center justify-end text-[11px] ${isToday ? "flex h-5 w-5 items-center justify-center rounded-full bg-accent font-bold text-white" : "text-ink-muted"}`}>
+                  {date.getDate()}
+                </div>
+                {/* Reserve space for span bars so chips don't overlap them */}
+                {spanCount > 0 && <div style={{ height: spanCount * 16 }} />}
+                <div className="space-y-0.5">
+                  {dayEvents.slice(0, 4).map((ev) => (
+                    <EventChip
+                      key={ev.id}
+                      ev={ev}
+                      onEventClick={onEventClick}
+                      className="relative truncate rounded px-1 py-0.5 text-[10px] font-medium text-white"
+                      style={{ background: ev.color }}
+                    >
+                      {`${ev.start.getHours().toString().padStart(2, "0")}:${ev.start.getMinutes().toString().padStart(2, "0")} `}
+                      {ev.title}
+                    </EventChip>
+                  ))}
+                  {dayEvents.length > 4 && (
+                    <div className="text-[10px] text-ink-muted">+{dayEvents.length - 4} more</div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {/* Spanning bars overlay (multi-day + all-day events) */}
+        <div className="pointer-events-none absolute inset-0 grid grid-cols-7 grid-rows-6">
+          {spanBars.map((bar, i) => (
             <div
               key={i}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => onDrop(e, date)}
-              onClick={() => onSlotClick(date)}
-              className={`group relative min-h-[80px] cursor-pointer border-b border-r border-edge p-1 transition hover:bg-surface-2/60 ${inMonth ? "bg-surface" : "bg-surface-2/30"}`}
+              className="pointer-events-auto px-0.5"
+              style={{
+                gridColumn: `${bar.startCol + 1} / ${bar.endCol + 2}`,
+                gridRow: bar.row + 1,
+                marginTop: `${20 + bar.lane * 16}px`,
+              }}
             >
-              <div className={`mb-0.5 flex items-center justify-end text-[11px] ${isToday ? "flex h-5 w-5 items-center justify-center rounded-full bg-accent font-bold text-white" : "text-ink-muted"}`}>
-                {date.getDate()}
-              </div>
-              <div className="space-y-0.5">
-                {dayEvents.slice(0, 4).map((ev) => (
-                  <EventChip
-                    key={ev.id}
-                    ev={ev}
-                    onEventClick={onEventClick}
-                    className="relative truncate rounded px-1 py-0.5 text-[10px] font-medium text-white"
-                    style={{ background: ev.color }}
-                  >
-                    {ev.allDay ? "" : `${ev.start.getHours().toString().padStart(2, "0")}:${ev.start.getMinutes().toString().padStart(2, "0")} `}
-                    {ev.title}
-                  </EventChip>
-                ))}
-                {dayEvents.length > 4 && (
-                  <div className="text-[10px] text-ink-muted">+{dayEvents.length - 4} more</div>
-                )}
-              </div>
+              <button
+                onClick={() => onEventClick(bar.ev)}
+                className="flex h-[14px] w-full items-center truncate rounded px-1 text-[10px] font-medium text-white"
+                style={{ background: bar.ev.color }}
+                title={bar.ev.title}
+              >
+                {bar.ev.title}
+              </button>
             </div>
-          );
-        })}
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -741,6 +868,15 @@ function WeekView({
   const hours = Array.from({ length: 24 }, (_, i) => i);
   const HOUR_PX = 44;
 
+  // Multi-day + all-day events render as spanning bars in a strip above the
+  // hour grid. Single-day timed events stay in the hour grid.
+  const weekStart = dayStart(ws);
+  const weekEnd = dayEnd(days[6]);
+  const spanWeeks: Date[][] = [days];
+  const spanBars = computeSpanBars(events, spanWeeks, weekStart, weekEnd);
+  const numLanes = spanBars.reduce((m, b) => Math.max(m, b.lane + 1), 0);
+  const SPAN_ROW_PX = 18;
+
   return (
     <div className="flex h-full flex-col">
       <div className="grid min-w-[700px] grid-cols-[60px_repeat(7,1fr)] border-b border-edge bg-surface-2/40">
@@ -752,6 +888,37 @@ function WeekView({
           </div>
         ))}
       </div>
+      {/* Multi-day / all-day spanning bars strip */}
+      {numLanes > 0 && (
+        <div
+          className="grid min-w-[700px] border-b border-edge bg-surface-2/20"
+          style={{
+            gridTemplateColumns: `60px repeat(7, 1fr)`,
+            gridTemplateRows: `repeat(${numLanes}, ${SPAN_ROW_PX}px)`,
+          }}
+        >
+          <div style={{ gridColumn: "1", gridRow: `1 / ${numLanes + 1}` }} />
+          {spanBars.map((bar, i) => (
+            <div
+              key={i}
+              className="px-0.5 py-px"
+              style={{
+                gridColumn: `${bar.startCol + 2} / ${bar.endCol + 3}`,
+                gridRow: bar.lane + 1,
+              }}
+            >
+              <button
+                onClick={() => onEventClick(bar.ev)}
+                className="flex h-full w-full items-center truncate rounded px-1 text-[10px] font-medium text-white"
+                style={{ background: bar.ev.color }}
+                title={bar.ev.title}
+              >
+                {bar.ev.title}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="flex-1 overflow-auto">
         <div className="relative grid min-w-[700px] grid-cols-[60px_repeat(7,1fr)]">
           {/* Hour labels */}
@@ -762,9 +929,9 @@ function WeekView({
               </div>
             ))}
           </div>
-          {/* Day columns */}
+          {/* Day columns — single-day timed events only */}
           {days.map((date) => {
-            const dayEvents = events.filter((e) => eventOnDay(e, date) && !e.allDay);
+            const dayEvents = events.filter((e) => eventOnDay(e, date) && !isSpanEvent(e));
             return (
               <div
                 key={date.toISOString()}
@@ -783,12 +950,8 @@ function WeekView({
                   <div key={h} className="border-b border-edge/40" style={{ height: HOUR_PX }} />
                 ))}
                 {dayEvents.map((ev) => {
-                  // Clamp the rendered block to the visible day so multi-day
-                  // timed events render correctly on each day they span.
-                  const visStart = ev.start < dayStart(date) ? dayStart(date) : ev.start;
-                  const visEnd = ev.end > dayEnd(date) ? dayEnd(date) : ev.end;
-                  const top = (visStart.getHours() * 60 + visStart.getMinutes()) * (HOUR_PX / 60);
-                  const heightMins = Math.max(15, (visEnd.getTime() - visStart.getTime()) / 60000);
+                  const top = (ev.start.getHours() * 60 + ev.start.getMinutes()) * (HOUR_PX / 60);
+                  const heightMins = Math.max(15, (ev.end.getTime() - ev.start.getTime()) / 60000);
                   const height = heightMins * (HOUR_PX / 60);
                   return (
                     <EventChip
@@ -825,7 +988,10 @@ function DayView({
   const today = new Date();
   const hours = Array.from({ length: 24 }, (_, i) => i);
   const HOUR_PX = 56;
-  const dayEvents = events.filter((e) => eventOnDay(e, cursor) && !e.allDay);
+  // Multi-day + all-day events show as bars above the hour grid.
+  const spanEvents = events.filter((e) => eventOnDay(e, cursor) && isSpanEvent(e));
+  // Single-day timed events go in the hour grid.
+  const dayEvents = events.filter((e) => eventOnDay(e, cursor) && !isSpanEvent(e));
 
   return (
     <div className="flex h-full flex-col">
@@ -835,6 +1001,28 @@ function DayView({
           {cursor.toLocaleDateString(undefined, { month: "long", day: "numeric" })}
         </div>
       </div>
+      {/* Multi-day / all-day strip */}
+      {spanEvents.length > 0 && (
+        <div className="space-y-1 border-b border-edge bg-surface-2/20 px-3 py-1.5">
+          {spanEvents.map((ev) => {
+            const multi = isMultiDay(ev);
+            const range = multi
+              ? `${ev.start.toLocaleDateString(undefined, { month: "short", day: "numeric" })} – ${new Date(ev.end.getTime() - 1).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`
+              : "All day";
+            return (
+              <button
+                key={ev.id}
+                onClick={() => onEventClick(ev)}
+                className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs text-white"
+                style={{ background: ev.color }}
+              >
+                <span className="font-semibold truncate">{ev.title}</span>
+                <span className="ml-auto shrink-0 opacity-80">{range}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
       <div className="flex-1 overflow-auto">
         <div className="relative grid grid-cols-[70px_1fr]">
           <div>
@@ -860,12 +1048,8 @@ function DayView({
               <div key={h} className="border-b border-edge/40" style={{ height: HOUR_PX }} />
             ))}
             {dayEvents.map((ev) => {
-              // Clamp the rendered block to the visible day so multi-day timed
-              // events render correctly on each day they span.
-              const visStart = ev.start < dayStart(cursor) ? dayStart(cursor) : ev.start;
-              const visEnd = ev.end > dayEnd(cursor) ? dayEnd(cursor) : ev.end;
-              const top = (visStart.getHours() * 60 + visStart.getMinutes()) * (HOUR_PX / 60);
-              const heightMins = Math.max(15, (visEnd.getTime() - visStart.getTime()) / 60000);
+              const top = (ev.start.getHours() * 60 + ev.start.getMinutes()) * (HOUR_PX / 60);
+              const heightMins = Math.max(15, (ev.end.getTime() - ev.start.getTime()) / 60000);
               const height = heightMins * (HOUR_PX / 60);
               return (
                 <EventChip
