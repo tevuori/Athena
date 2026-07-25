@@ -194,16 +194,42 @@ athena.post("/chat", zValidator("json", chatSchema, (result, c) => {
             // Check if the error body is "Upstream request failed" (transient)
             const cloned = res.clone();
             let isTransient = false;
+            let rawBody = "";
             try {
-              const body = await cloned.json();
-              const msg = body?.error?.message ?? body?.message ?? "";
+              rawBody = await cloned.text();
+              let body: any;
+              try { body = JSON.parse(rawBody); } catch { body = null; }
+              const msg = body?.error?.message ?? body?.message ?? rawBody;
               isTransient = /upstream request failed/i.test(msg);
-            } catch { /* not JSON */ }
+              // Log the real underlying error so we can diagnose provider
+              // issues instead of seeing only the wrapped "Upstream request
+              // failed" message. Also log whether reasoning_content is being
+              // sent in the request payload (DeepSeek V4 thinking mode
+              // requires it on follow-up turns).
+              let hasReasoningContent = false;
+              let msgRoles: string[] = [];
+              try {
+                const payload = init?.body ? JSON.parse(init.body) : null;
+                if (Array.isArray(payload?.messages)) {
+                  msgRoles = payload.messages.map((m: any) => m.role);
+                  hasReasoningContent = payload.messages.some(
+                    (m: any) => m.role === "assistant" && "reasoning_content" in m
+                  );
+                }
+              } catch { /* payload not JSON */ }
+              console.warn(
+                `[athena] 400 from provider (attempt ${attempt + 1}/${maxRetries + 1})`,
+                `\n  url: ${url}`,
+                `\n  body: ${rawBody.slice(0, 500)}`,
+                `\n  msg roles: [${msgRoles.join(", ")}]`,
+                `\n  assistant turns with reasoning_content: ${hasReasoningContent}`,
+                `\n  isTransient (will retry): ${isTransient}`
+              );
+            } catch { /* not readable */ }
             if (!isTransient) return res;
             // Exponential backoff with jitter: ~2s, ~4s, ~8s, ~16s, ~32s
             const base = Math.min(2000 * 2 ** attempt, 32000);
             const jitter = Math.floor(Math.random() * 500);
-            console.warn(`[athena] transient upstream error, retrying (${attempt + 1}/${maxRetries}) in ${base + jitter}ms…`);
             await new Promise((r) => setTimeout(r, base + jitter));
           }
           return origFetch(url, init);
