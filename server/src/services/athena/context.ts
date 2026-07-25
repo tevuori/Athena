@@ -156,7 +156,11 @@ export async function buildSystemPrompt(
   const memoryBlock = memories.length > 0
     ? `\nThings you remember about the user (use these proactively; the user can ask you to forget any of them):\n${memories.map((m) => `- [${m.category}] ${m.content}`).join("\n")}\n`
     : "";
+  const now = new Date();
+  const dateLine = `Current date/time: ${now.toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" })} (ISO: ${now.toISOString()}). Use this as "today" when the user says "today" — do not guess the date. Calendar/task tools accept ISO 8601 timestamps (e.g. ${now.toISOString().slice(0, 10)}T00:00:00Z).`;
   return `You are Athena, the user's personal workspace assistant living inside their Athena Student OS desktop. You can see and act on the user's workspace through tools.
+
+${dateLine}
 
 Capabilities (via tools):
 - Tasks: create_task, list_tasks, update_task_status, delete_task
