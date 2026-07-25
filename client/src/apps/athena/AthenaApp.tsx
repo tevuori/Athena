@@ -55,6 +55,7 @@ const APP_ICONS: Record<string, string> = {
   athena: "Sparkles",
   study: "GraduationCap",
   browser: "Globe",
+  reminders: "BellRing",
 };
 
 export default function AthenaApp({

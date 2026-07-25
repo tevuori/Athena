@@ -32,9 +32,11 @@ import proactiveAlerts from "./routes/proactive-alerts";
 import browser from "./routes/browser";
 import teacher from "./routes/teacher";
 import tts from "./routes/tts";
+import reminders from "./routes/reminders";
 import { startScheduler } from "./services/ntfy/scheduler";
 import { startAllSubscribers } from "./services/ntfy/subscriber";
 import { startProactiveScheduler } from "./services/ntfy/proactive-scheduler";
+import { startReminderScheduler } from "./services/reminders/scheduler";
 
 const app = new Hono();
 
@@ -122,6 +124,7 @@ app.route("/api/proactive-alerts", proactiveAlerts);
 app.route("/api/browser", browser);
 app.route("/api/teacher", teacher);
 app.route("/api/tts", tts);
+app.route("/api/reminders", reminders);
 
 // Start ntfy background workers (cron scheduler + per-user inbox subscribers).
 startScheduler();
@@ -130,6 +133,8 @@ startAllSubscribers().catch((e) =>
 );
 // Start the proactive daily-briefing scheduler.
 startProactiveScheduler();
+// Start the one-shot reminder scheduler.
+startReminderScheduler();
 
 const port = Number(process.env.SERVER_PORT ?? 3000);
 const hostname = process.env.SERVER_HOST ?? "0.0.0.0";

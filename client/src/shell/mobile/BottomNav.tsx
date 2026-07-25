@@ -96,6 +96,7 @@ function iconFor(appId: AppId): string {
     ntfy: "Bell",
     voice: "Mic",
     browser: "Globe",
+    reminders: "BellRing",
   };
   return map[appId];
 }
