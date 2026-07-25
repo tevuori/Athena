@@ -71,6 +71,29 @@ function addDays(d: Date, n: number): Date {
   return x;
 }
 
+/** Start of the given day (00:00:00.000 local). */
+function dayStart(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+/** End of the given day (exclusive: next day 00:00:00.000 local). */
+function dayEnd(d: Date): Date {
+  return addDays(dayStart(d), 1);
+}
+
+/**
+ * True if the event's [start, end) interval overlaps with the given calendar
+ * day. Handles multi-day and all-day events correctly — an event spanning
+ * July 10–15 will match July 10, 11, 12, 13, 14 and 15.
+ */
+function eventOnDay(e: { start: Date; end: Date }, date: Date): boolean {
+  const ds = dayStart(date);
+  const de = dayEnd(date);
+  return e.start < de && e.end > ds;
+}
+
 /** A unified render-time event regardless of source. */
 interface DisplayEvent {
   id: string;
@@ -517,10 +540,10 @@ export default function CalendarApp({ win }: { win: WindowInstance }) {
 
       {/* Unscheduled tasks strip (drag source) */}
       {layers.tasks && (
-        <div className="flex items-center gap-2 overflow-x-auto border-b border-edge bg-surface-2/40 px-3 py-1.5">
-          <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Unscheduled:</span>
+        <div className="flex items-center gap-1.5 overflow-x-auto border-b border-edge bg-surface-2/40 px-3 py-0.5">
+          <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">Unscheduled:</span>
           {tasks.filter((t) => t.status !== "DONE" && t.dueDate).length === 0 && (
-            <span className="text-[11px] text-ink-muted/60">No tasks with due dates — drag from Tasks app</span>
+            <span className="text-[10px] text-ink-muted/60">No tasks with due dates — drag from Tasks app</span>
           )}
           {tasks
             .filter((t) => t.status !== "DONE")
@@ -530,7 +553,7 @@ export default function CalendarApp({ win }: { win: WindowInstance }) {
                 key={t.id}
                 draggable
                 onDragStart={(e) => e.dataTransfer.setData("text/task-id", t.id)}
-                className="shrink-0 cursor-grab rounded-full border border-edge bg-surface px-2.5 py-0.5 text-[11px] text-ink hover:border-accent active:cursor-grabbing"
+                className="shrink-0 cursor-grab rounded-full border border-edge bg-surface px-2 py-px text-[10px] text-ink hover:border-accent active:cursor-grabbing"
                 title={t.title}
               >
                 📋 {t.title}
@@ -665,7 +688,7 @@ function MonthView({
         {weeks.flat().map((date, i) => {
           const inMonth = date.getMonth() === cursor.getMonth();
           const isToday = sameDay(date, today);
-          const dayEvents = events.filter((e) => sameDay(e.start, date));
+          const dayEvents = events.filter((e) => eventOnDay(e, date));
           return (
             <div
               key={i}
@@ -741,7 +764,7 @@ function WeekView({
           </div>
           {/* Day columns */}
           {days.map((date) => {
-            const dayEvents = events.filter((e) => sameDay(e.start, date) && !e.allDay);
+            const dayEvents = events.filter((e) => eventOnDay(e, date) && !e.allDay);
             return (
               <div
                 key={date.toISOString()}
@@ -760,8 +783,12 @@ function WeekView({
                   <div key={h} className="border-b border-edge/40" style={{ height: HOUR_PX }} />
                 ))}
                 {dayEvents.map((ev) => {
-                  const top = (ev.start.getHours() * 60 + ev.start.getMinutes()) * (HOUR_PX / 60);
-                  const heightMins = Math.max(15, (ev.end.getTime() - ev.start.getTime()) / 60000);
+                  // Clamp the rendered block to the visible day so multi-day
+                  // timed events render correctly on each day they span.
+                  const visStart = ev.start < dayStart(date) ? dayStart(date) : ev.start;
+                  const visEnd = ev.end > dayEnd(date) ? dayEnd(date) : ev.end;
+                  const top = (visStart.getHours() * 60 + visStart.getMinutes()) * (HOUR_PX / 60);
+                  const heightMins = Math.max(15, (visEnd.getTime() - visStart.getTime()) / 60000);
                   const height = heightMins * (HOUR_PX / 60);
                   return (
                     <EventChip
@@ -798,7 +825,7 @@ function DayView({
   const today = new Date();
   const hours = Array.from({ length: 24 }, (_, i) => i);
   const HOUR_PX = 56;
-  const dayEvents = events.filter((e) => sameDay(e.start, cursor) && !e.allDay);
+  const dayEvents = events.filter((e) => eventOnDay(e, cursor) && !e.allDay);
 
   return (
     <div className="flex h-full flex-col">
@@ -833,8 +860,12 @@ function DayView({
               <div key={h} className="border-b border-edge/40" style={{ height: HOUR_PX }} />
             ))}
             {dayEvents.map((ev) => {
-              const top = (ev.start.getHours() * 60 + ev.start.getMinutes()) * (HOUR_PX / 60);
-              const heightMins = Math.max(15, (ev.end.getTime() - ev.start.getTime()) / 60000);
+              // Clamp the rendered block to the visible day so multi-day timed
+              // events render correctly on each day they span.
+              const visStart = ev.start < dayStart(cursor) ? dayStart(cursor) : ev.start;
+              const visEnd = ev.end > dayEnd(cursor) ? dayEnd(cursor) : ev.end;
+              const top = (visStart.getHours() * 60 + visStart.getMinutes()) * (HOUR_PX / 60);
+              const heightMins = Math.max(15, (visEnd.getTime() - visStart.getTime()) / 60000);
               const height = heightMins * (HOUR_PX / 60);
               return (
                 <EventChip
@@ -878,7 +909,7 @@ function AgendaView({
       <div className="space-y-4">
         {days.map((date) => {
           const dayEvents = events
-            .filter((e) => sameDay(e.start, date))
+            .filter((e) => eventOnDay(e, date))
             .sort((a, b) => a.start.getTime() - b.start.getTime());
           const isToday = sameDay(date, today);
           const isPast = date < today && !isToday;
