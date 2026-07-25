@@ -142,6 +142,7 @@ async function refreshAccessToken(userId: string, config: MsUserConfig): Promise
     throw { status: res.status, message: `MS token refresh failed: ${text}` } as MsApiError;
   }
   const data = (await res.json()) as MsTokens;
+  console.log(`[ms] token refresh OK for user ${userId}: scope="${data.scope}" token_type="${data.token_type}" expires_in=${data.expires_in} access_token=${data.access_token ? data.access_token.slice(0, 20) + "..." : "(empty)"}`);
   tokenCache.set(userId, {
     accessToken: data.access_token,
     expiresAt: Date.now() + data.expires_in * 1000,
@@ -202,7 +203,8 @@ export async function listEvents(
   const res = await graphFetch(userId, `/me/calendar/calendarView?${params}`);
   if (!res.ok) {
     const text = await res.text();
-    console.error(`[ms] listEvents failed (${res.status}) for user ${userId}:`, text);
+    const wwwAuth = res.headers.get("www-authenticate") ?? "(none)";
+    console.error(`[ms] listEvents failed (${res.status}) for user ${userId}: body="${text}" www-authenticate="${wwwAuth}"`);
     throw { status: res.status, message: `MS listEvents failed: ${text}` } as MsApiError;
   }
   const data = (await res.json()) as { value: MsGraphEvent[] };
