@@ -176,34 +176,14 @@ export async function getAccessToken(userId: string): Promise<string> {
 
 async function graphFetch(userId: string, path: string, init?: RequestInit): Promise<Response> {
   const token = await getAccessToken(userId);
-  const url = `${GRAPH_BASE}${path}`;
-  const res = await fetch(url, {
+  const res = await fetch(`${GRAPH_BASE}${path}`, {
     ...init,
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
       ...(init?.headers as Record<string, string>),
     },
-    // Don't follow redirects silently — log them if they happen.
-    redirect: "manual",
   });
-
-  // Detect redirects (3xx) — Graph shouldn't redirect /me, but if it does,
-  // the Authorization header gets dropped on the next hop, causing a 401.
-  if (res.status >= 300 && res.status < 400) {
-    const location = res.headers.get("location") ?? "(none)";
-    console.error(`[ms] graphFetch got redirect ${res.status} for ${url} → ${location}`);
-    // Follow manually, re-attaching the auth header.
-    const followed = await fetch(location, {
-      ...init,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        ...(init?.headers as Record<string, string>),
-      },
-    });
-    return followed;
-  }
   return res;
 }
 
@@ -213,32 +193,27 @@ export async function listEvents(
   startDateTime: string,
   endDateTime: string
 ): Promise<MsGraphEvent[]> {
-  // First, probe /me to verify the token works at all. This isolates whether
-  // the 401 is token-level or calendar-endpoint-specific.
-  const meRes = await graphFetch(userId, "/me");
-  if (!meRes.ok) {
-    const meText = await meRes.text();
-    const meHeaders: Record<string, string> = {};
-    meRes.headers.forEach((v, k) => { meHeaders[k] = v; });
-    console.error(`[ms] /me probe failed (${meRes.status}) for user ${userId}: body="${meText}" headers=${JSON.stringify(meHeaders)}`);
-    throw { status: meRes.status, message: `MS auth check failed (${meRes.status}): ${meText}` } as MsApiError;
-  }
-  console.log(`[ms] /me probe OK for user ${userId}`);
-
+  // Use /me/events with $filter instead of /me/calendar/calendarView.
+  // The calendarView endpoint is a special "function" endpoint that returns
+  // 401 with an empty body for some account types (notably personal/consumer
+  // Microsoft accounts via the "common" tenant), even with a valid token and
+  // correct scopes. The /me/events endpoint with $filter is universally
+  // supported and returns the same data.
+  // ISO datetimes for $filter must use single quotes and no milliseconds.
+  const startNorm = startDateTime.replace(/\.\d{3}Z$/, "Z");
+  const endNorm = endDateTime.replace(/\.\d{3}Z$/, "Z");
+  const filter = `start/dateTime ge '${startNorm}' and end/dateTime le '${endNorm}'`;
   const params = new URLSearchParams({
-    startDateTime,
-    endDateTime,
+    $filter: filter,
     $select: "id,subject,body,start,end,isAllDay,location,showAs",
     $top: "250",
     $orderby: "start/dateTime",
   });
-  const res = await graphFetch(userId, `/me/calendar/calendarView?${params}`);
+  const res = await graphFetch(userId, `/me/events?${params}`);
   if (!res.ok) {
     const text = await res.text();
     const wwwAuth = res.headers.get("www-authenticate") ?? "(none)";
-    const allHeaders: Record<string, string> = {};
-    res.headers.forEach((v, k) => { allHeaders[k] = v; });
-    console.error(`[ms] listEvents failed (${res.status}) for user ${userId}: body="${text}" www-authenticate="${wwwAuth}" all-headers=${JSON.stringify(allHeaders)}`);
+    console.error(`[ms] listEvents failed (${res.status}) for user ${userId}: body="${text}" www-authenticate="${wwwAuth}"`);
     throw { status: res.status, message: `MS listEvents failed: ${text}` } as MsApiError;
   }
   const data = (await res.json()) as { value: MsGraphEvent[] };
