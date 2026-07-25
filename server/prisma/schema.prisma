@@ -734,3 +734,20 @@ model TeacherSession {
   @@index([userId])
   @@index([userId, updatedAt])
 }
+
+// ===== Anonymous usage analytics (admin-only) =====
+// Per-feature, per-day hit counts. NO userId is ever stored — only an
+// aggregate counter incremented by the analytics middleware on each API
+// request. Used by the admin Analytics view in Settings to show which
+// features are used most. The in-memory buffer in services/analytics.ts
+// is flushed here every 30s to avoid a DB write per request.
+
+model UsageStat {
+  id      String   @id @default(cuid())
+  feature String   // "notes" | "tasks" | "athena" | ...
+  day     DateTime // UTC midnight bucket
+  count   Int      @default(0)
+
+  @@unique([feature, day])
+  @@index([day])
+}

@@ -20,6 +20,57 @@ export interface AdminUser {
   createdAt: string;
 }
 
+// ===== Anonymous usage analytics (admin-only) =====
+// Shape of GET /api/analytics/overview. All aggregate counts — no per-user data.
+
+export interface AnalyticsFeatureUsage {
+  feature: string;
+  total: number;
+}
+
+export interface AnalyticsTrendPoint {
+  day: string; // YYYY-MM-DD
+  count: number;
+}
+
+export interface AnalyticsOverview {
+  windowDays: number;
+  users: { total: number; active7d: number; active30d: number };
+  featureUsage: AnalyticsFeatureUsage[];
+  trend: Record<string, AnalyticsTrendPoint[]>;
+  adoption: {
+    spotify: number;
+    microsoft: number;
+    ai: number;
+    vut: number;
+    ntfy: number;
+    proactiveAlerts: number;
+    tts: number;
+  };
+  content: {
+    notes: number;
+    tasks: number;
+    tasksDone: number;
+    tasksInProgress: number;
+    tasksTodo: number;
+    files: number;
+    flashcardDecks: number;
+    flashcards: number;
+    courses: number;
+    assignments: number;
+    calendarEvents: number;
+    chatConversations: number;
+    studySessions: number;
+    whiteboards: number;
+    habits: number;
+    studySources: number;
+    studyChats: number;
+    podcasts: number;
+    teacherSessions: number;
+    ntfyMessages: number;
+  };
+}
+
 export interface NoteFolder {
   id: string;
   name: string;

@@ -33,6 +33,8 @@ import browser from "./routes/browser";
 import teacher from "./routes/teacher";
 import tts from "./routes/tts";
 import reminders from "./routes/reminders";
+import analytics from "./routes/analytics";
+import { analyticsMiddleware, startAnalyticsFlusher } from "./services/analytics";
 import { startScheduler } from "./services/ntfy/scheduler";
 import { startAllSubscribers } from "./services/ntfy/subscriber";
 import { startProactiveScheduler } from "./services/ntfy/proactive-scheduler";
@@ -75,6 +77,10 @@ app.use(
     credentials: true,
   })
 );
+// Anonymous per-feature usage counter (in-memory, flushed every 30s).
+// Runs after CORS so only allowed-origin requests are counted. Skips
+// OPTIONS preflight and auth/analytics routes itself.
+app.use("*", analyticsMiddleware);
 
 app.get("/health", (c) =>
   c.json({
@@ -125,6 +131,7 @@ app.route("/api/browser", browser);
 app.route("/api/teacher", teacher);
 app.route("/api/tts", tts);
 app.route("/api/reminders", reminders);
+app.route("/api/analytics", analytics);
 
 // Start ntfy background workers (cron scheduler + per-user inbox subscribers).
 startScheduler();
@@ -135,6 +142,8 @@ startAllSubscribers().catch((e) =>
 startProactiveScheduler();
 // Start the one-shot reminder scheduler.
 startReminderScheduler();
+// Start the anonymous usage-analytics flusher (writes buffered hits to DB every 30s).
+startAnalyticsFlusher();
 
 const port = Number(process.env.SERVER_PORT ?? 3000);
 const hostname = process.env.SERVER_HOST ?? "0.0.0.0";

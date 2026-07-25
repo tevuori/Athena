@@ -15,6 +15,7 @@ import {
   Info,
   Smartphone,
   ChevronLeft,
+  BarChart3,
 } from "lucide-react";
 import { useAuth } from "../../store/auth";
 import type { WindowInstance } from "../../store/windows";
@@ -30,6 +31,7 @@ import IntegrationsSection from "./sections/IntegrationsSection";
 import NotificationsSection from "./sections/NotificationsSection";
 import ProactiveAlertsSection from "./sections/ProactiveAlertsSection";
 import UsersSection from "./sections/UsersSection";
+import AnalyticsSection from "./sections/AnalyticsSection";
 import DataStorageSection from "./sections/DataStorageSection";
 import AboutSection from "./sections/AboutSection";
 import MobileSection from "./sections/MobileSection";
@@ -53,6 +55,7 @@ const SECTIONS: SectionDef[] = [
   { id: "notifications", label: "Notifications", icon: <Bell size={15} /> },
   { id: "proactive-alerts", label: "Proactive Alerts", icon: <BellRing size={15} /> },
   { id: "users", label: "Users", icon: <UsersIcon size={15} />, adminOnly: true },
+  { id: "analytics", label: "Analytics", icon: <BarChart3 size={15} />, adminOnly: true },
   { id: "data", label: "Data & Storage", icon: <Database size={15} /> },
   { id: "about", label: "About", icon: <Info size={15} /> },
 ];
@@ -79,6 +82,7 @@ export default function SettingsApp({ win }: { win: WindowInstance }) {
     if (active === "notifications") return <NotificationsSection />;
     if (active === "proactive-alerts") return <ProactiveAlertsSection />;
     if (active === "users" && isAdmin) return <UsersSection />;
+    if (active === "analytics" && isAdmin) return <AnalyticsSection />;
     if (active === "data") return <DataStorageSection />;
     if (active === "about") return <AboutSection />;
     return null;
