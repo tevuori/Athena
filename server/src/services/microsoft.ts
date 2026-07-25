@@ -193,21 +193,37 @@ export async function listEvents(
   startDateTime: string,
   endDateTime: string
 ): Promise<MsGraphEvent[]> {
-  // Diagnostic: try multiple endpoints to find which one works for this
-  // account type. Personal/consumer Microsoft accounts (via "common" tenant)
-  // have different Graph API behavior than work/school accounts.
-  const probes = [
-    { name: "/me/calendars", path: "/me/calendars?$top=5" },
-    { name: "/me/events (no filter)", path: "/me/events?$top=5" },
-    { name: "/me/calendar", path: "/me/calendar" },
-  ];
-  for (const p of probes) {
-    const r = await graphFetch(userId, p.path);
-    const t = await r.text();
-    console.log(`[ms] probe ${p.name}: ${r.status} body=${t.slice(0, 300)}`);
+  // Decode the JWT access token to diagnose the 401 on calendar endpoints.
+  // /me works but /me/events, /me/calendar, /me/calendars all return 401
+  // with empty body — this pattern suggests a personal/consumer MSA account
+  // or an audience mismatch.
+  const token = await getAccessToken(userId);
+  try {
+    const payloadB64 = token.split(".")[1];
+    const payload = JSON.parse(
+      Buffer.from(payloadB64, "base64url").toString("utf8")
+    );
+    console.log(`[ms] access token decoded for user ${userId}: aud="${payload.aud}" iss="${payload.iss}" appid="${payload.appid ?? payload.azp ?? "(none)"}" idtyp="${payload.idtyp ?? "(none)"}"`);
+  } catch (e) {
+    console.error(`[ms] could not decode access token JWT:`, e);
   }
 
-  // Try /me/events with $filter
+  // Try the beta endpoint — personal/consumer MSA accounts sometimes only
+  // work with the beta Graph endpoint for calendar data.
+  const betaRes = await fetch(`${GRAPH_BASE.replace("/v1.0", "/beta")}/me/events?$top=5`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const betaText = await betaRes.text();
+  console.log(`[ms] probe beta /me/events: ${betaRes.status} body=${betaText.slice(0, 300)}`);
+
+  // Try the Outlook REST API directly (different audience/resource).
+  const outlookRes = await fetch("https://outlook.office.com/api/v2.0/me/events?$top=5", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const outlookText = await outlookRes.text();
+  console.log(`[ms] probe outlook.office.com /me/events: ${outlookRes.status} body=${outlookText.slice(0, 300)}`);
+
+  // Standard v1.0 /me/events with $filter
   const startNorm = startDateTime.replace(/\.\d{3}Z$/, "Z");
   const endNorm = endDateTime.replace(/\.\d{3}Z$/, "Z");
   const filter = `start/dateTime ge '${startNorm}' and end/dateTime le '${endNorm}'`;
