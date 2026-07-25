@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useLayoutEffect, useRef } from "react";
 import {
   DndContext, DragEndEvent, DragOverlay, DragStartEvent,
   PointerSensor, TouchSensor, useSensor, useSensors,
@@ -279,6 +279,9 @@ function TaskCard({
   isPhone?: boolean;
 }) {
   const [refreshSignal, setRefreshSignal] = useState(0);
+  const [descExpanded, setDescExpanded] = useState(false);
+  const descRef = useRef<HTMLParagraphElement>(null);
+  const [descClamped, setDescClamped] = useState(false);
   const { onDragOver, onDragEnter, onDragLeave, onDrop, isOver } = useLinkDrop(
     "task",
     task.id,
@@ -291,6 +294,15 @@ function TaskCard({
       }
     }
   );
+
+  // Detect whether the description is being clamped (overflowing 2 lines) so
+  // we only show the "show more" affordance when there's hidden text.
+  useLayoutEffect(() => {
+    const el = descRef.current;
+    if (!el) { setDescClamped(false); return; }
+    setDescClamped(el.scrollHeight > el.clientHeight + 1);
+  }, [task.description, descExpanded]);
+
   return (
     <div
       onDragOver={onDragOver}
@@ -329,7 +341,37 @@ function TaskCard({
         </div>
       </div>
       {task.description && (
-        <p className="mt-1 line-clamp-2 text-[11px] text-ink-muted">{task.description}</p>
+        <div className="mt-1">
+          <p
+            ref={descRef}
+            onClick={(e) => {
+              if (descClamped || descExpanded) {
+                e.stopPropagation();
+                setDescExpanded((v) => !v);
+              }
+            }}
+            onPointerDown={(e) => {
+              // Prevent the sortable drag listener from picking up the click
+              // intent when the user is just trying to expand the description.
+              if (descClamped || descExpanded) e.stopPropagation();
+            }}
+            className={`text-[11px] text-ink-muted ${
+              descExpanded ? "whitespace-pre-wrap break-words" : "line-clamp-2"
+            } ${descClamped || descExpanded ? "cursor-pointer hover:text-ink" : ""}`}
+            title={descClamped && !descExpanded ? "Click to expand" : undefined}
+          >
+            {task.description}
+          </p>
+          {(descClamped || descExpanded) && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setDescExpanded((v) => !v); }}
+              onPointerDown={(e) => e.stopPropagation()}
+              className="mt-0.5 text-[10px] font-medium text-accent hover:underline"
+            >
+              {descExpanded ? "Show less" : "Show more"}
+            </button>
+          )}
+        </div>
       )}
       <div className="mt-2 flex items-center gap-2">
         <span className={`flex items-center gap-1 text-[10px] text-ink-muted`}>
