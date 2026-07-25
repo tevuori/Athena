@@ -140,7 +140,24 @@ async function request<T>(
   }
 
   const text = await res.text();
-  const body = text ? JSON.parse(text) : null;
+  let body: unknown = null;
+  if (text) {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      // Server returned a non-JSON response (e.g. nginx HTML error page,
+      // or a plain-text error from a proxy). Wrap it so the caller gets
+      // a meaningful message instead of a JSON.parse crash.
+      if (!res.ok) {
+        throw new ApiError(
+          res.status,
+          text.length < 200 ? text : `Request failed (${res.status})`,
+          text
+        );
+      }
+      throw new ApiError(res.status, "Malformed server response (not JSON)", text);
+    }
+  }
 
   if (!res.ok) {
     if (res.status === 401) {
