@@ -138,6 +138,7 @@ async function refreshAccessToken(userId: string, config: MsUserConfig): Promise
   });
   if (!res.ok) {
     const text = await res.text();
+    console.error(`[ms] token refresh failed (${res.status}) for user ${userId}:`, text);
     throw { status: res.status, message: `MS token refresh failed: ${text}` } as MsApiError;
   }
   const data = (await res.json()) as MsTokens;
@@ -201,6 +202,7 @@ export async function listEvents(
   const res = await graphFetch(userId, `/me/calendar/calendarView?${params}`);
   if (!res.ok) {
     const text = await res.text();
+    console.error(`[ms] listEvents failed (${res.status}) for user ${userId}:`, text);
     throw { status: res.status, message: `MS listEvents failed: ${text}` } as MsApiError;
   }
   const data = (await res.json()) as { value: MsGraphEvent[] };
@@ -393,14 +395,22 @@ export async function exchangeAuthCode(
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
   });
-  if (!res.ok) return false;
+  if (!res.ok) {
+    const text = await res.text();
+    console.error(`[ms] auth code exchange failed (${res.status}) for user ${userId}:`, text);
+    return false;
+  }
   const data = (await res.json()) as MsTokens;
-  if (!data.refresh_token) return false;
+  if (!data.refresh_token) {
+    console.error(`[ms] auth code exchange for user ${userId}: no refresh_token in response`);
+    return false;
+  }
 
   await prisma.microsoftCredential.update({
     where: { userId },
     data: { refreshTokenEnc: encryptSecret(data.refresh_token) },
   });
+  console.log(`[ms] auth code exchange succeeded for user ${userId}, refresh token stored`);
   return true;
 }
 
