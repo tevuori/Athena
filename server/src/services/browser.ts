@@ -284,10 +284,6 @@ async function fetchResource(
 const ANTI_FRAME_BUST_SCRIPT = `<script>(function(){
   "use strict";
   var REAL_URL = __ATHENA_FINAL_URL__;
-  // Capture the real proxy origin BEFORE we fake location properties below.
-  // The INTERCEPT_SCRIPT uses this to build absolute proxy URLs that don't
-  // get mangled by the <base> tag (which points to the real site origin).
-  window.__ATHENA_PROXY_ORIGIN__ = window.location.origin;
   try {
     // Make window.top / parent / self all point to window itself.
     Object.defineProperty(window, "top", { get: function() { return window; }, configurable: true });
@@ -318,12 +314,14 @@ const ANTI_FRAME_BUST_SCRIPT = `<script>(function(){
 const INTERCEPT_SCRIPT = `<script>(function(){
   var ORIGIN = __ATHENA_ORIGIN__;
   var FINAL_URL = __ATHENA_FINAL_URL__;
-  // Use the proxy origin captured by the ANTI_FRAME_BUST script (before it
-  // faked location). This MUST be an absolute URL — a root-relative path like
-  // "/api/browser/proxy" would resolve against the <base> tag (which points
-  // to the real site origin), sending requests to the real site instead of
-  // the proxy, causing infinite recursion.
-  var PROXY = (window.__ATHENA_PROXY_ORIGIN__ || "") + "/api/browser/proxy?url=";
+  // Capture the real proxy origin NOW — this script runs before the
+  // ANTI_FRAME_BUST script fakes location properties, so window.location
+  // is still the real proxy location (e.g. http://localhost:3001).
+  // This MUST be an absolute URL — a root-relative path like "/api/browser/proxy"
+  // would resolve against the <base> tag (which points to the real site
+  // origin), sending requests to the real site instead of the proxy,
+  // causing infinite recursion.
+  var PROXY = window.location.origin + "/api/browser/proxy?url=";
   var TOKEN = __ATHENA_TOKEN__;
   function toProxy(u) {
     try {
