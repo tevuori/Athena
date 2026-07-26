@@ -701,12 +701,23 @@ export async function proxyPage(
   // link's RAW href, resolves it against the real page URL, and postMessages
   // the parent to navigate — which pushes onto history + builds a tokenized
   // proxy URL. This handles static AND dynamically-created links uniformly.
-  // The <base> tag is safe now that no cheerio-rewritten proxy links exist —
-  // it only helps unrewritten relative resources (CSS url(), dynamic JS
-  // loads) resolve against the real origin instead of the proxy origin.
-  if ($("base").length === 0) {
-    $("head").prepend(`<base href="${finalUrl}">`);
-  }
+  //
+  // We do NOT inject a <base> tag. It was previously added to help relative
+  // resources resolve against the real origin, but it also makes root-relative
+  // proxy URLs (like /api/browser/proxy?url=... used for <script src>) resolve
+  // against the real origin (e.g. https://duckduckgo.com/api/browser/proxy)
+  // instead of the proxy server — breaking script loading. Instead:
+  // - Resource URLs (CSS, images) are made absolute against the real origin
+  //   in cheerio below.
+  // - Script URLs are proxied through /api/browser/proxy (root-relative,
+  //   resolves against the iframe's actual origin = the proxy server).
+  // - CSS url() inside stylesheets resolves against the stylesheet's URL
+  //   (which we make absolute), not document.baseURI.
+  // - document.baseURI is faked by the ANTI_FRAME_BUST script to return the
+  //   real URL, so JS that reads it gets the correct value.
+  // - Relative <a href> and <form action> are handled by the click/submit
+  //   interceptors, which resolve against FINAL_URL in JS.
+  $("base").remove();
 
   // Rewrite resource URLs:
   // - <script src>: proxy through /api/browser/proxy so they load same-origin
