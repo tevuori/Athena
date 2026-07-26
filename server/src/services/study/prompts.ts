@@ -425,3 +425,71 @@ ${blocks}${langInstr(lang)}`;
 export function quizCitedSchemaHint(): string {
   return 'Schema: { "questions": [ { "id": number, "type": "mcq"|"short", "prompt": string, "options"?: string[], "answer": string } ] }';
 }
+
+// ===== Lecture Video → Notes (per-slide note generation) =====
+
+export function lectureSlideNotePrompt(
+  slideContent: string,
+  transcriptText: string,
+  slideIndex: number,
+  totalSlides: number,
+  style: NoteStyle,
+  options?: NotetakingOptions,
+  lang?: StudyLanguage
+): string {
+  const styleInstr =
+    style === "cornell"
+      ? "Cornell notes: organize into 'Cues / Questions' (left column) and 'Notes' (right column, main content with bullet points). Do NOT add a summary yet — that will be added at the end for the whole lecture."
+      : style === "outline"
+      ? "A structured outline with hierarchical headings (###, ####) and bullet points under each section."
+      : style === "summary"
+      ? "A concise summary: the key points as bullets, focusing on what matters most."
+      : "Clear bullet-point notes organized by topic.";
+  const detail = options?.detail ?? "standard";
+  const detailInstr =
+    detail === "brief"
+      ? "Be concise — only the key points and essential definitions."
+      : detail === "detailed"
+      ? "Be thorough — capture all important concepts, definitions, examples, formulas, and details."
+      : "Capture key points with reasonable detail.";
+  const customInstr = options?.customStructure?.trim()
+    ? `\n\nThe user has requested the following structure: "${options.customStructure.trim()}"`
+    : "";
+
+  return `You are taking notes from a lecture video. This is slide ${slideIndex + 1} of ${totalSlides}. Generate structured notes from the slide content and the professor's spoken commentary.
+
+RULES:
+- Merge information from both the slide and the transcript — the transcript often adds context, examples, and explanations not on the slide.
+- ${styleInstr}
+- ${detailInstr}
+- Use Markdown formatting.
+- Do NOT invent information not present in either source.
+- Do NOT include a title/heading for the slide number — that will be added by the system.${customInstr}
+
+SLIDE CONTENT:
+"""
+${slideContent || "(No text extracted from slide)"}
+"""
+
+PROFESSOR'S COMMENTARY (transcript):
+"""
+${transcriptText || "(No transcript available for this segment)"}
+"""${langInstr(lang)}`;
+}
+
+export function lectureSummaryPrompt(
+  allSlideNotes: string,
+  style: NoteStyle,
+  lang?: StudyLanguage
+): string {
+  const summaryInstr =
+    style === "cornell"
+      ? "Write a 3-5 sentence 'Summary' section that captures the main takeaways of the entire lecture — this is the bottom section of Cornell notes."
+      : "Write a concise 'Lecture Summary' (3-5 sentences) capturing the main takeaways of the entire lecture.";
+  return `${summaryInstr} Base it ONLY on the notes below — do not invent information.
+
+Notes from all slides:
+"""
+${allSlideNotes}
+"""${langInstr(lang)}`;
+}

@@ -4,7 +4,9 @@ WORKDIR /app
 # Install the Docker CLI so the Athena sandbox (run_code tool) can spawn
 # isolated containers via the mounted Docker socket. Only the CLI is needed —
 # the daemon runs on the host. gVisor (runsc) runtime provides kernel isolation.
-RUN apt-get update -qq && apt-get install -y -qq docker.io && rm -rf /var/lib/apt/lists/*
+# Also install ffmpeg (audio/video processing for lecture pipeline) and
+# tesseract-ocr (fallback slide text extraction when vision LLM unavailable).
+RUN apt-get update -qq && apt-get install -y -qq docker.io ffmpeg tesseract-ocr && rm -rf /var/lib/apt/lists/*
 
 # Install deps
 COPY package.json bunfig.toml ./

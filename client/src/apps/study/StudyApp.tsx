@@ -16,6 +16,7 @@ import {
   Mic,
   Languages,
   Presentation,
+  Video,
 } from "lucide-react";
 import type { WindowInstance } from "../../store/windows";
 import type { SourceDescriptor, SourceKind, StudyLanguage } from "../../services/study";
@@ -31,12 +32,14 @@ import StudyHome from "./StudyHome";
 import SourceChat from "./SourceChat";
 import Podcast from "./Podcast";
 import TeacherMode from "./TeacherMode";
+import LectureNotes from "./LectureNotes";
 
 type Mode =
   | "home"
   | "chat"
   | "teach"
   | "podcast"
+  | "lecture"
   | "flashcards"
   | "summarize"
   | "explain"
@@ -50,6 +53,7 @@ const MODES: { id: Mode; label: string; icon: typeof Brain; desc: string }[] = [
   { id: "chat", label: "Ask (grounded)", icon: MessageSquare, desc: "Source-grounded Q&A with citations" },
   { id: "teach", label: "Teach Me", icon: Presentation, desc: "Interactive live tutoring with sources" },
   { id: "podcast", label: "Podcast", icon: Mic, desc: "Audio overview from your sources" },
+  { id: "lecture", label: "Lecture → Notes", icon: Video, desc: "Generate notes from a lecture video" },
   { id: "flashcards", label: "Flashcards", icon: Brain, desc: "Generate Q/A cards from a source" },
   { id: "summarize", label: "Summarize", icon: FileText, desc: "TL;DR, outline, or key points" },
   { id: "quiz", label: "Quiz Me", icon: HelpCircle, desc: "Test yourself with AI-graded questions" },
@@ -187,6 +191,7 @@ export default function StudyApp({ win }: { win: WindowInstance }) {
               if (opts?.workspaceId) setInitialWorkspaceId(opts.workspaceId);
             }} />}
             {mode === "podcast" && <Podcast initialPodcastId={initialPodcastId} initialWorkspaceId={initialWorkspaceId} language={language} />}
+            {mode === "lecture" && <LectureNotes language={language} />}
             {mode === "flashcards" && <GenerateFlashcards initialSource={initialSource} appendDeck={appendDeck} language={language} />}
             {mode === "summarize" && <Summarize initialSource={initialSource} language={language} />}
             {mode === "explain" && <Explain initialSource={initialSource} language={language} />}

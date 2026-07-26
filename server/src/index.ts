@@ -35,6 +35,7 @@ import teacher from "./routes/teacher";
 import tts from "./routes/tts";
 import reminders from "./routes/reminders";
 import analytics from "./routes/analytics";
+import studyLectures from "./routes/study-lectures";
 import { analyticsMiddleware, startAnalyticsFlusher } from "./services/analytics";
 import { startScheduler } from "./services/ntfy/scheduler";
 import { startAllSubscribers } from "./services/ntfy/subscriber";
@@ -118,6 +119,7 @@ app.route("/api/study/sources", studySources);
 app.route("/api/study/chat", studyChat);
 app.route("/api/study/podcasts", studyPodcasts);
 app.route("/api/study/workspaces", studyWorkspaces);
+app.route("/api/study/lectures", studyLectures);
 app.route("/api/moodle", moodle);
 app.route("/api/calendar", calendar);
 app.route("/api/habits", habits);
@@ -153,10 +155,12 @@ const hostname = process.env.SERVER_HOST ?? "0.0.0.0";
 // Bun-native serve pattern: export default { port, fetch }.
 // idleTimeout is in seconds — default 10s kills SSE streams mid-tool-loop.
 // Set to 300s (5 min) so Athena chat streams with multi-step tool calls survive.
+// maxRequestBodySize raised to 2 GB to support lecture video uploads.
 console.log(`[athena-server] Bun serving on http://${hostname}:${port}`);
 export default {
   port,
   hostname,
   idleTimeout: 255,
+  maxRequestBodySize: 2 * 1024 * 1024 * 1024, // 2 GB
   fetch: app.fetch,
 };

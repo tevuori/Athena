@@ -52,6 +52,7 @@ model User {
   teacherSessions TeacherSession[]
   ttsCredential   TtsCredential?
   reminders       Reminder[]
+  lectureJobs     LectureJob[]
 }
 
 // ===== Refresh tokens (device-remembering) =====
@@ -768,4 +769,45 @@ model UsageStat {
 
   @@unique([feature, day])
   @@index([day])
+}
+
+// ===== Lecture Video → Notes pipeline =====
+// Tracks the progress of a long-running lecture-processing job: upload → ffmpeg
+// audio extraction → Whisper transcription → slide dedup → per-slide LLM notes.
+// The client polls for status updates while the pipeline runs in the background.
+
+model LectureJob {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Source video file (VFile id). Not an FK — orphan cleanup handled in delete route.
+  videoFileId String
+
+  // Pipeline config chosen by the user at start.
+  style      String   @default("outline")  // "cornell" | "outline" | "summary" | "bullets"
+  detail     String   @default("standard") // "brief" | "standard" | "detailed"
+  language   String   @default("en")       // "en" | "cs"
+  videoType  String   @default("slides")   // "slides" (screen capture) | "camera" (professor filmed)
+
+  // Pipeline progress.
+  status     String   @default("queued")   // "queued" | "processing" | "completed" | "failed"
+  stage      String   @default("")         // current stage label for UI: "audio_extract" | "transcribing" | "frame_sampling" | "slide_dedup" | "region_detect" | "ocr" | "generating_notes" | ""
+  progress   Int      @default(0)          // 0–100 percentage
+  error      String   @default("")         // error message if status="failed"
+
+  // Output references (set when completed).
+  noteId     String?  // the generated Note id
+  folderId   String?  // VFolder id where slide images were saved
+  slideCount Int      @default(0)
+  durationSec Int     @default(0)          // detected video duration in seconds
+
+  // Meta (JSON blob for extra info: transcript word count, etc.)
+  meta       String   @default("{}")
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([userId])
+  @@index([userId, status])
 }
