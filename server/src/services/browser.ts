@@ -18,6 +18,39 @@ const MAX_REDIRECTS = 8;
 const MAX_BYTES = 8 * 1024 * 1024; // 8 MB raw HTML cap
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 
+/** Sites known to refuse iframe embedding even with anti-frame-bust JS.
+ *  These auto-fallback to the external browser. The BrowserApp checks this
+ *  list (via the /api/browser/embeddable endpoint) before attempting to load. */
+const NON_EMBEDDABLE_HOSTS = new Set([
+  "youtube.com",
+  "www.youtube.com",
+  "m.youtube.com",
+  "accounts.google.com",
+  "login.microsoftonline.com",
+  "login.live.com",
+  "twitter.com",
+  "x.com",
+  "www.x.com",
+  "instagram.com",
+  "www.instagram.com",
+  "facebook.com",
+  "www.facebook.com",
+  "netflix.com",
+  "www.netflix.com",
+  "chatgpt.com",
+  "chat.openai.com",
+]);
+
+/** Check if a URL's host is known to refuse iframe embedding. */
+export function isEmbeddable(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return !NON_EMBEDDABLE_HOSTS.has(u.hostname);
+  } catch {
+    return true; // If we can't parse it, let the proxy try.
+  }
+}
+
 // ===== Per-user cookie jar =====
 
 interface CookieEntry {
@@ -236,6 +269,48 @@ async function fetchResource(
  *  - window.open: open real URLs directly in a new browser tab.
  *  - Reports the real final URL + title to the parent for address-bar sync.
  */
+// ===== Anti-frame-bust script =====
+// Injected at the VERY TOP of <head>, before any page scripts run. Makes
+// JS frame-busting code (if (top !== self) top.location = ...) think the
+// page is NOT in an iframe, so it doesn't try to break out. The sandbox
+// attribute (no allow-top-navigation) is a second layer of defense — even
+// if a script does try to navigate top, the browser blocks it.
+//
+// Also fakes document.URL / documentURI / referrer so scripts that check
+// the current URL see the real site URL, not the proxy URL. This is critical
+// for SPAs (Google, GitHub, Reddit) that redirect or hide content when they
+// detect they're not on the expected origin.
+
+const ANTI_FRAME_BUST_SCRIPT = `<script>(function(){
+  "use strict";
+  var REAL_URL = __ATHENA_FINAL_URL__;
+  try {
+    // Make window.top / parent / self all point to window itself.
+    Object.defineProperty(window, "top", { get: function() { return window; }, configurable: true });
+    Object.defineProperty(window, "parent", { get: function() { return window; }, configurable: true });
+    Object.defineProperty(window, "self", { get: function() { return window; }, configurable: true });
+    Object.defineProperty(window, "frameElement", { get: function() { return null; }, configurable: true });
+  } catch(e) {}
+  // Fake document URL properties so scripts see the real URL, not the proxy.
+  try {
+    Object.defineProperty(document, "URL", { get: function() { return REAL_URL; }, configurable: true });
+    Object.defineProperty(document, "documentURI", { get: function() { return REAL_URL; }, configurable: true });
+    Object.defineProperty(document, "baseURI", { get: function() { return REAL_URL; }, configurable: true });
+    Object.defineProperty(document, "referrer", { get: function() { return ""; }, configurable: true });
+    Object.defineProperty(document, "domain", { get: function() { try { return new URL(REAL_URL).hostname; } catch(e) { return ""; } }, configurable: true });
+  } catch(e) {}
+  // Try to fake location.href getter (may fail — location is non-configurable
+  // in some browsers). If it fails, the INTERCEPT_SCRIPT's location patches
+  // still handle navigation; only the getter (reading) is affected.
+  try {
+    var loc = window.location;
+    var fakeProps = { href: REAL_URL, origin: (function(){ try { var u = new URL(REAL_URL); return u.origin; } catch(e) { return ""; } })(), host: (function(){ try { var u = new URL(REAL_URL); return u.host; } catch(e) { return ""; } })(), hostname: (function(){ try { var u = new URL(REAL_URL); return u.hostname; } catch(e) { return ""; } })(), protocol: (function(){ try { var u = new URL(REAL_URL); return u.protocol; } catch(e) { return "https:"; } })(), pathname: (function(){ try { var u = new URL(REAL_URL); return u.pathname; } catch(e) { return "/"; } })(), search: (function(){ try { var u = new URL(REAL_URL); return u.search; } catch(e) { return ""; } })(), hash: (function(){ try { var u = new URL(REAL_URL); return u.hash; } catch(e) { return ""; } })() };
+    for (var key in fakeProps) {
+      try { Object.defineProperty(loc, key, { get: function() { return fakeProps[key]; }, configurable: true }); } catch(e) {}
+    }
+  } catch(e) {}
+})();<\/script>`;
+
 const INTERCEPT_SCRIPT = `<script>(function(){
   var ORIGIN = __ATHENA_ORIGIN__;
   var FINAL_URL = __ATHENA_FINAL_URL__;
@@ -586,6 +661,13 @@ export async function proxyPage(
   $('meta[http-equiv="X-Frame-Options"]').remove();
   $('meta[http-equiv="Content-Security-Policy"]').remove();
 
+  // Inject the anti-frame-bust script at the VERY TOP of <head>, before any
+  // page scripts run. This makes frame-busting JS think the page is not in an
+  // iframe and fakes document URL properties so SPAs don't detect the proxy.
+  const antiBustScript = ANTI_FRAME_BUST_SCRIPT
+    .replace("__ATHENA_FINAL_URL__", JSON.stringify(finalUrl));
+  $("head").prepend(antiBustScript);
+
   // Inject the runtime interception script (fetch/XHR/pushState + URL report)
   // at the TOP of <head> so it patches APIs before the page's scripts run.
   const interceptScript = INTERCEPT_SCRIPT
@@ -613,27 +695,40 @@ export interface BrowserPageText {
   truncated: boolean;
 }
 
-/** Fetch a URL through the user's cookie jar and extract main article text. */
+/** Fetch a URL through the user's cookie jar and extract main article text.
+ *  If `selector` is provided, extracts text only from elements matching that
+ *  CSS selector (used by Athena's get_browser_content for targeted reading). */
 export async function fetchPageText(
   userId: string,
   rawUrl: string,
-  maxChars = 20_000
+  maxChars = 20_000,
+  selector?: string
 ): Promise<BrowserPageText> {
   const u = validateUrl(rawUrl);
   const { buffer, finalUrl } = await fetchResource(userId, u);
   const html = buffer.toString("utf-8");
   const $ = load(html);
-  $("script, style, noscript, iframe, nav, header, footer, aside, form, button, svg").remove();
+  $("script, style, noscript, iframe, svg").remove();
   const title =
     $("title").first().text().trim() ||
     $("h1").first().text().trim() ||
     finalUrl;
-  const main =
-    $("article").first().text() ||
-    $("main").first().text() ||
-    $("[role=main]").first().text() ||
-    $(".content, .article, .post, .entry-content, #content").first().text() ||
-    $("body").text();
+
+  let main: string;
+  if (selector && selector.trim()) {
+    // Selector mode: extract text from all elements matching the CSS selector.
+    const elements = $(selector);
+    main = elements.length > 0 ? elements.text() : "";
+  } else {
+    // Auto-extract mode: remove boilerplate + pick the main content container.
+    $("nav, header, footer, aside, form, button").remove();
+    main =
+      $("article").first().text() ||
+      $("main").first().text() ||
+      $("[role=main]").first().text() ||
+      $(".content, .article, .post, .entry-content, #content").first().text() ||
+      $("body").text();
+  }
   let content = (main || "").replace(/\s{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
 
   let truncated = false;

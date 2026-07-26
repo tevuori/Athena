@@ -116,6 +116,7 @@ export default function AthenaApp({
   const setAthenaQuickOpen = useAthenaQuick((s) => s.setOpen);
   const browserUrls = useBrowser((s) => s.urls);
   const requestNav = useBrowser((s) => s.requestNav);
+  const issueCommand = useBrowser((s) => s.issueCommand);
 
   // Keep a ref to the latest windows + store actions so the client-action
   // dispatcher always sees current state even when multiple actions fire in
@@ -128,6 +129,8 @@ export default function AthenaApp({
   browserUrlsRef.current = browserUrls;
   const requestNavRef = useRef(requestNav);
   requestNavRef.current = requestNav;
+  const issueCmdRef = useRef(issueCommand);
+  issueCmdRef.current = issueCommand;
   // Ref to the send function so dispatchClientAction can trigger a chat
   // message (used by Quick Capture's open_athena client action).
   const sendRef = useRef<((text: string) => void) | null>(null);
@@ -489,14 +492,15 @@ export default function AthenaApp({
       }
       case "open_browser": {
         // Open the Browser app and navigate to a URL. If a Browser window is
-        // already open, focus it and navigate via the browser store; otherwise
-        // open a new window seeded with the URL payload.
+        // already open, focus it and open a new tab via the browser store;
+        // otherwise open a new window seeded with the URL payload.
         const url = String(payload.url ?? "");
         const existing = windowsRef.current.find((w) => w.appId === "browser");
         if (existing) {
           focusWindow(existing.id);
           if (existing.minimized) minimizeWindow(existing.id);
-          requestNavRef.current(existing.id, "navigate", url);
+          // Open a new tab in the existing window.
+          issueCmdRef.current(existing.id, "new_tab", { url });
         } else {
           openWindow({
             appId: "browser",
@@ -507,25 +511,113 @@ export default function AthenaApp({
         }
         break;
       }
+      case "new_tab": {
+        const url = String(payload.url ?? "");
+        const target = findBrowserWindow(payload.windowId);
+        if (target) {
+          issueCmdRef.current(target.id, "new_tab", { url });
+        } else {
+          // No browser window open — open one.
+          openWindow({
+            appId: "browser",
+            title: "Browser",
+            icon: "Globe",
+            payload: url ? { url } : undefined,
+          });
+        }
+        break;
+      }
+      case "close_tab": {
+        const target = findBrowserWindow(payload.windowId);
+        if (target) {
+          issueCmdRef.current(target.id, "close_tab", payload.tabId ? { tabId: String(payload.tabId) } : {});
+        }
+        break;
+      }
       case "navigate_browser": {
         const url = String(payload.url ?? "");
         const target = findBrowserWindow(payload.windowId);
-        if (target) requestNavRef.current(target.id, "navigate", url);
+        if (target) requestNavRef.current(target.id, "navigate", url, payload.tabId ? String(payload.tabId) : undefined);
         break;
       }
       case "browser_back": {
         const target = findBrowserWindow(payload.windowId);
-        if (target) requestNavRef.current(target.id, "back");
+        if (target) requestNavRef.current(target.id, "back", undefined, payload.tabId ? String(payload.tabId) : undefined);
         break;
       }
       case "browser_forward": {
         const target = findBrowserWindow(payload.windowId);
-        if (target) requestNavRef.current(target.id, "forward");
+        if (target) requestNavRef.current(target.id, "forward", undefined, payload.tabId ? String(payload.tabId) : undefined);
         break;
       }
       case "browser_reload": {
         const target = findBrowserWindow(payload.windowId);
-        if (target) requestNavRef.current(target.id, "reload");
+        if (target) requestNavRef.current(target.id, "reload", undefined, payload.tabId ? String(payload.tabId) : undefined);
+        break;
+      }
+      case "click_element": {
+        const target = findBrowserWindow(payload.windowId);
+        if (target) {
+          issueCmdRef.current(target.id, "click", {
+            selector: payload.selector ? String(payload.selector) : undefined,
+            text: payload.text ? String(payload.text) : undefined,
+            tabId: payload.tabId ? String(payload.tabId) : undefined,
+          });
+        }
+        break;
+      }
+      case "fill_field": {
+        const target = findBrowserWindow(payload.windowId);
+        if (target) {
+          issueCmdRef.current(target.id, "fill", {
+            selector: payload.selector ? String(payload.selector) : undefined,
+            text: payload.text ? String(payload.text) : undefined,
+            value: payload.value ? String(payload.value) : "",
+            tabId: payload.tabId ? String(payload.tabId) : undefined,
+          });
+        }
+        break;
+      }
+      case "submit_form": {
+        const target = findBrowserWindow(payload.windowId);
+        if (target) {
+          issueCmdRef.current(target.id, "submit", {
+            selector: payload.selector ? String(payload.selector) : undefined,
+            tabId: payload.tabId ? String(payload.tabId) : undefined,
+          });
+        }
+        break;
+      }
+      case "highlight_text": {
+        const target = findBrowserWindow(payload.windowId);
+        if (target) {
+          issueCmdRef.current(target.id, "highlight", {
+            text: payload.text ? String(payload.text) : undefined,
+            selector: payload.selector ? String(payload.selector) : undefined,
+            tabId: payload.tabId ? String(payload.tabId) : undefined,
+          });
+        }
+        break;
+      }
+      case "clear_browser_highlight": {
+        const target = findBrowserWindow(payload.windowId);
+        if (target) {
+          issueCmdRef.current(target.id, "clear_highlight", {
+            tabId: payload.tabId ? String(payload.tabId) : undefined,
+          });
+        }
+        break;
+      }
+      case "scroll_page": {
+        const target = findBrowserWindow(payload.windowId);
+        if (target) {
+          issueCmdRef.current(target.id, "scroll", {
+            direction: payload.direction ? String(payload.direction) : undefined,
+            text: payload.text ? String(payload.text) : undefined,
+            selector: payload.selector ? String(payload.selector) : undefined,
+            tabId: payload.tabId ? String(payload.tabId) : undefined,
+          });
+        }
         break;
       }
       default: {

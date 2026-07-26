@@ -4,6 +4,7 @@ import {
   proxyPage,
   fetchPageText,
   clearBrowserSession,
+  isEmbeddable,
 } from "../services/browser";
 
 const browser = new Hono();
@@ -38,20 +39,34 @@ browser.get("/proxy", async (c) => {
 });
 
 /**
- * GET /api/browser/content?url=...
+ * GET /api/browser/content?url=...&selector=...
  * Returns extracted main text of a page (used by Athena's get_browser_content).
+ * Optional selector extracts text from specific DOM elements only.
  */
 browser.get("/content", async (c) => {
   const { userId } = c.get("auth");
   const url = c.req.query("url");
   if (!url) return c.json({ error: "Missing url parameter" }, 400);
+  const selector = c.req.query("selector") || undefined;
   try {
-    const page = await fetchPageText(userId, url);
+    const page = await fetchPageText(userId, url, 20_000, selector);
     return c.json(page);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Fetch error";
     return c.json({ error: msg }, 502);
   }
+});
+
+/**
+ * GET /api/browser/embeddable?url=...
+ * Checks if a URL is known to be embeddable in an iframe (not in the
+ * non-embeddable blocklist). The BrowserApp calls this before attempting to
+ * load a page — if false, it opens the URL in the external browser instead.
+ */
+browser.get("/embeddable", (c) => {
+  const url = c.req.query("url");
+  if (!url) return c.json({ error: "Missing url parameter" }, 400);
+  return c.json({ embeddable: isEmbeddable(url) });
 });
 
 /** DELETE /api/browser/cookies — clear the user's browser cookie jar (log out). */
