@@ -122,11 +122,17 @@ export default function FlashcardsApp({ win }: { win: WindowInstance }) {
   };
 
   const deleteCard = async (cardId: string) => {
+    if (!confirm("Delete this card?")) return;
     try {
       await flashcardsApi.deleteCard(cardId);
       setCards((cs) => cs.filter((c) => c.id !== cardId));
       loadDecks();
     } catch (e) { setError((e as Error).message); }
+  };
+
+  const confirmDeleteDeck = (deck: FlashcardDeck & { _count: { cards: number } }) => {
+    if (!confirm(`Delete deck "${deck.name}" and all ${deck._count.cards} card${deck._count.cards === 1 ? "" : "s"}?`)) return;
+    deleteDeck(deck.id);
   };
 
   const startReview = async () => {
@@ -190,7 +196,12 @@ export default function FlashcardsApp({ win }: { win: WindowInstance }) {
           ) : (
             <div className="grid grid-cols-1 gap-3 @2xl:grid-cols-2 @4xl:grid-cols-3">
               {decks.map((deck) => (
-                <DeckCard key={deck.id} deck={deck} onOpen={() => openDeck(deck)} />
+                <DeckCard
+                  key={deck.id}
+                  deck={deck}
+                  onOpen={() => openDeck(deck)}
+                  onDelete={() => confirmDeleteDeck(deck)}
+                />
               ))}
             </div>
           )}
@@ -503,7 +514,7 @@ export default function FlashcardsApp({ win }: { win: WindowInstance }) {
   return null;
 }
 
-function DeckCard({ deck, onOpen }: { deck: FlashcardDeck & { _count: { cards: number } }; onOpen: () => void }) {
+function DeckCard({ deck, onOpen, onDelete }: { deck: FlashcardDeck & { _count: { cards: number } }; onOpen: () => void; onDelete: () => void }) {
   const [refreshSignal, setRefreshSignal] = useState(0);
   const { onDragOver, onDragEnter, onDragLeave, onDrop, isOver } = useLinkDrop(
     "flashcardDeck",
@@ -523,7 +534,7 @@ function DeckCard({ deck, onOpen }: { deck: FlashcardDeck & { _count: { cards: n
       onDragEnter={onDragEnter}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
-      className={`relative rounded-xl border bg-surface-2 p-4 transition hover:border-accent/50 ${
+      className={`group relative rounded-xl border bg-surface-2 p-4 transition hover:border-accent/50 ${
         isOver ? "border-accent ring-2 ring-accent/30" : "border-edge"
       }`}
     >
@@ -552,7 +563,19 @@ function DeckCard({ deck, onOpen }: { deck: FlashcardDeck & { _count: { cards: n
       </button>
       <div className="relative mt-2 flex items-center justify-between">
         <LinkDragHandle type="flashcardDeck" id={deck.id} title={deck.name} className="opacity-60" />
-        <LinkBadge type="flashcardDeck" id={deck.id} refreshSignal={refreshSignal} />
+        <div className="flex items-center gap-1">
+          <LinkBadge type="flashcardDeck" id={deck.id} refreshSignal={refreshSignal} />
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            title="Delete deck"
+            className="text-ink-muted opacity-0 transition hover:text-red-400 group-hover:opacity-100"
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
       </div>
     </div>
   );

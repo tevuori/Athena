@@ -7,6 +7,7 @@ import { pomodoroTools } from "./pomodoro";
 import { windowTools } from "./windows";
 import { workspaceTools } from "./workspaces";
 import { studyTools } from "./study";
+import { flashcardsTools } from "./flashcards";
 import { moodleTools } from "./moodle";
 import { calendarTools } from "./calendar";
 import { habitsTools } from "./habits";
@@ -35,6 +36,7 @@ export const ALL_TOOLS: ToolDef[] = [
   ...windowTools,
   ...workspaceTools,
   ...studyTools,
+  ...flashcardsTools,
   ...moodleTools,
   ...calendarTools,
   ...habitsTools,

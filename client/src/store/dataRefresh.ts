@@ -51,6 +51,8 @@ const TOOL_TO_APPS: Record<string, string[]> = {
 
   // --- Flashcards ---
   generate_flashcards: ["flashcards"],
+  delete_flashcard_deck: ["flashcards"],
+  delete_flashcard: ["flashcards"],
 
   // --- Ntfy ---
   create_cron_job: ["ntfy"],
