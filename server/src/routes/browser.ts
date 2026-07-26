@@ -28,6 +28,10 @@ browser.get("/proxy", async (c) => {
     c.header("X-Final-Url", page.finalUrl);
     if (page.kind === "raw") {
       c.header("Content-Type", page.contentType);
+      // Pass through the original HTTP status for non-HTML responses (e.g.
+      // 404 for a missing JS file, 500 for a failed API call) so the
+      // browser/SPA JS can handle errors gracefully instead of seeing a 502.
+      if (page.status) c.status(page.status as 200);
       return c.body(new Uint8Array(page.buffer));
     }
     c.header("Content-Type", "text/html; charset=utf-8");

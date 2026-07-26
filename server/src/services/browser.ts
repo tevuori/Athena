@@ -178,6 +178,8 @@ interface FetchResult {
   buffer: Buffer;
   finalUrl: string;
   contentType: string;
+  /** HTTP status code (for non-2xx pass-through of non-HTML responses). */
+  status?: number;
 }
 
 /** Fetch a resource following redirects manually, validating each hop + collecting cookies. */
@@ -222,7 +224,35 @@ async function fetchResource(
         continue;
       }
       if (!res.ok) {
-        throw new Error(`HTTP ${res.status} ${res.statusText}`);
+        const contentType = res.headers.get("content-type") ?? "";
+        // For non-HTML responses (JS, CSS, JSON, images, API calls), pass
+        // through error responses (4xx/5xx) so the browser/JS can handle
+        // them gracefully. Only throw for HTML pages (which are navigated
+        // to directly and need a meaningful error message).
+        if (/text\/html|application\/xhtml/i.test(contentType)) {
+          throw new Error(`HTTP ${res.status} ${res.statusText}`);
+        }
+        // Non-HTML error response — read the body and return it with the
+        // original status so the client sees the real error code.
+        const reader = res.body?.getReader();
+        if (!reader) {
+          return { buffer: Buffer.alloc(0), finalUrl: current.toString(), contentType: contentType || "application/octet-stream", status: res.status };
+        }
+        const chunks: Uint8Array[] = [];
+        let total = 0;
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) {
+            total += value.byteLength;
+            if (total > MAX_BYTES) {
+              await reader.cancel();
+              break;
+            }
+            chunks.push(value);
+          }
+        }
+        return { buffer: Buffer.concat(chunks), finalUrl: current.toString(), contentType: contentType || "application/octet-stream", status: res.status };
       }
       const contentType = res.headers.get("content-type") ?? "";
       // Read with a size cap.
@@ -333,11 +363,8 @@ const INTERCEPT_SCRIPT = `<script>(function(){
   // Capture the real proxy origin NOW — this script runs before the
   // ANTI_FRAME_BUST script fakes location properties, so window.location
   // is still the real proxy location (e.g. http://localhost:3001).
-  // This MUST be an absolute URL — a root-relative path like "/api/browser/proxy"
-  // would resolve against the <base> tag (which points to the real site
-  // origin), sending requests to the real site instead of the proxy,
-  // causing infinite recursion.
-  var PROXY = window.location.origin + "/api/browser/proxy?url=";
+  var PROXY_ORIGIN = window.location.origin;
+  var PROXY = PROXY_ORIGIN + "/api/browser/proxy?url=";
   var TOKEN = __ATHENA_TOKEN__;
   function toProxy(u) {
     try {
@@ -348,6 +375,13 @@ const INTERCEPT_SCRIPT = `<script>(function(){
       if (s.indexOf(PROXY) >= 0 || s.indexOf("/api/browser/proxy?url=") >= 0) return s;
       var abs = new URL(s, FINAL_URL);
       if (abs.protocol !== "http:" && abs.protocol !== "https:") return s;
+      // If the request points to the proxy/iframe origin (same-origin),
+      // it's a relative URL that the browser resolved against the iframe's
+      // actual origin (e.g. http://localhost:5173/api/foo) instead of the
+      // real site origin. Rewrite it to the real site's equivalent path.
+      if (abs.origin === PROXY_ORIGIN) {
+        abs = new URL(abs.pathname + abs.search, FINAL_URL);
+      }
       return PROXY + encodeURIComponent(abs.href) + (TOKEN ? "&token=" + encodeURIComponent(TOKEN) : "");
     } catch(e) { return u; }
   }
@@ -673,7 +707,7 @@ const TEACHER_SHOW_SCRIPT = `<script>(function(){
 
 export type ProxiedPage =
   | { kind: "html"; html: string; finalUrl: string; title: string }
-  | { kind: "raw"; buffer: Buffer; contentType: string; finalUrl: string };
+  | { kind: "raw"; buffer: Buffer; contentType: string; finalUrl: string; status?: number };
 
 /** Fetch + rewrite a page for iframe embedding (HTML) or pass through (non-HTML). */
 export async function proxyPage(
@@ -682,12 +716,12 @@ export async function proxyPage(
   token?: string
 ): Promise<ProxiedPage> {
   const u = validateUrl(rawUrl);
-  const { buffer, finalUrl, contentType } = await fetchResource(userId, u);
+  const { buffer, finalUrl, contentType, status } = await fetchResource(userId, u);
 
   // Non-HTML responses (JSON API calls, images, etc.) pass through untouched
   // so runtime fetch/XHR calls from SPAs work through the proxy.
   if (!/text\/html|application\/xhtml/i.test(contentType)) {
-    return { kind: "raw", buffer, contentType: contentType || "application/octet-stream", finalUrl };
+    return { kind: "raw", buffer, contentType: contentType || "application/octet-stream", finalUrl, status };
   }
 
   const html = buffer.toString("utf-8");
