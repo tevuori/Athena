@@ -2,7 +2,10 @@ import { api } from "./api";
 import type { Task, TaskStatus, TaskPriority } from "../types";
 
 export const tasksApi = {
-  list: () => api.get<{ tasks: Task[] }>("/api/tasks"),
+  list: (workspaceId?: string) =>
+    api.get<{ tasks: Task[] }>(
+      workspaceId ? `/api/tasks?workspaceId=${encodeURIComponent(workspaceId)}` : "/api/tasks"
+    ),
   create: (data: Partial<Task>) => api.post<{ task: Task }>("/api/tasks", data),
   update: (id: string, data: Partial<Task>) =>
     api.patch<{ task: Task }>(`/api/tasks/${id}`, data),

@@ -1,5 +1,6 @@
 import type { ToolDef } from "./plugin";
 import { taskTools } from "./tasks";
+import { taskWorkspaceTools } from "./task-workspaces";
 import { gradeTools } from "./grades";
 import { noteTools } from "./notes";
 import { fileTools } from "./files";
@@ -29,6 +30,7 @@ export { AthenaToolsPlugin, type ToolDef, type ToolContext, type ClientWindowInf
 /** All Athena tools, in registration order. */
 export const ALL_TOOLS: ToolDef[] = [
   ...taskTools,
+  ...taskWorkspaceTools,
   ...gradeTools,
   ...noteTools,
   ...fileTools,

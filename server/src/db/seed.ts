@@ -58,14 +58,17 @@ async function main() {
     ],
   });
 
-  // Demo tasks
+  // Demo task workspace + tasks
+  const taskWorkspace = await prisma.taskWorkspace.create({
+    data: { name: "Default", color: "#6366f1", userId: user.id },
+  });
   await prisma.task.createMany({
     data: [
-      { title: "Read Chapter 5", description: "Algorithms textbook", status: "TODO", priority: "HIGH", userId: user.id, order: 0 },
-      { title: "Problem Set 3", description: "Due Friday", status: "TODO", priority: "MEDIUM", userId: user.id, order: 1 },
-      { title: "Group project meeting", description: "Zoom 4pm", status: "IN_PROGRESS", priority: "MEDIUM", userId: user.id, order: 0 },
-      { title: "Submit Lab 2", status: "DONE", priority: "HIGH", userId: user.id, order: 0 },
-      { title: "Review flashcards", status: "DONE", priority: "LOW", userId: user.id, order: 1 },
+      { title: "Read Chapter 5", description: "Algorithms textbook", status: "TODO", priority: "HIGH", userId: user.id, workspaceId: taskWorkspace.id, order: 0 },
+      { title: "Problem Set 3", description: "Due Friday", status: "TODO", priority: "MEDIUM", userId: user.id, workspaceId: taskWorkspace.id, order: 1 },
+      { title: "Group project meeting", description: "Zoom 4pm", status: "IN_PROGRESS", priority: "MEDIUM", userId: user.id, workspaceId: taskWorkspace.id, order: 0 },
+      { title: "Submit Lab 2", status: "DONE", priority: "HIGH", userId: user.id, workspaceId: taskWorkspace.id, order: 0 },
+      { title: "Review flashcards", status: "DONE", priority: "LOW", userId: user.id, workspaceId: taskWorkspace.id, order: 1 },
     ],
   });
 

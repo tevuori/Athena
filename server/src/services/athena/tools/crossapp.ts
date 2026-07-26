@@ -6,6 +6,7 @@
 
 import type { ToolDef } from "./plugin";
 import prisma from "../../../db/client";
+import { resolveDefaultTaskWorkspace } from "./tasks";
 import { getUserConfig, buildModel, acquireLlmModel } from "../llm";
 import { generateJson, generateText } from "../../study/llm-json";
 import { syllabusTasksPrompt, syllabusTasksSchemaHint, type SyllabusTaskSpec } from "../../study/prompts";
@@ -66,6 +67,7 @@ export const crossAppTools: ToolDef[] = [
           description: `From note: "${note.title}" (noteId: ${note.id})`,
           priority,
           dueDate,
+          workspaceId: await resolveDefaultTaskWorkspace(userId),
         },
       });
 
@@ -114,6 +116,7 @@ export const crossAppTools: ToolDef[] = [
       if (tasks.length === 0) return { error: "No tasks found in the note." };
 
       let created = 0;
+      const workspaceId = await resolveDefaultTaskWorkspace(userId);
       for (const t of tasks) {
         const priority = ["LOW", "MEDIUM", "HIGH"].includes(t.priority ?? "")
           ? (t.priority as "LOW" | "MEDIUM" | "HIGH")
@@ -130,6 +133,7 @@ export const crossAppTools: ToolDef[] = [
             priority,
             dueDate,
             description: `From note: "${note.title}" (noteId: ${note.id})`,
+            workspaceId,
           },
         });
         created++;

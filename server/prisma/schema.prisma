@@ -30,6 +30,7 @@ model User {
   vutCreds    VutCredentials?
   aiCred      AiCredential?
   workspaces  Workspace[]
+  taskWorkspaces TaskWorkspace[]
   studySessions StudySession[]
   calendarEvents CalendarEvent[]
   habits      Habit[]
@@ -300,6 +301,20 @@ enum TaskPriority {
   HIGH
 }
 
+model TaskWorkspace {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  color     String   @default("#6366f1")
+  tasks     Task[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
 model Task {
   id          String       @id @default(cuid())
   title       String
@@ -311,10 +326,13 @@ model Task {
   order       Int          @default(0)
   userId      String
   user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspaceId String?
+  workspace   TaskWorkspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
   @@index([userId, status])
+  @@index([userId, workspaceId])
 }
 
 model VFolder {

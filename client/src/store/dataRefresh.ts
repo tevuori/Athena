@@ -25,6 +25,11 @@ const TOOL_TO_APPS: Record<string, string[]> = {
   create_task_from_note: ["tasks", "notes"],
   create_tasks_from_note: ["tasks", "notes"],
   schedule_task: ["calendar", "tasks"],
+  move_task: ["tasks"],
+
+  // --- Task workspaces ---
+  create_task_workspace: ["tasks"],
+  delete_task_workspace: ["tasks"],
 
   // --- Notes ---
   create_note: ["notes"],

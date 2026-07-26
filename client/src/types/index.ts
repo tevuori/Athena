@@ -92,6 +92,15 @@ export interface Note {
 export type TaskStatus = "TODO" | "IN_PROGRESS" | "DONE";
 export type TaskPriority = "LOW" | "MEDIUM" | "HIGH";
 
+export interface TaskWorkspace {
+  id: string;
+  name: string;
+  color: string;
+  taskCount?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -101,6 +110,7 @@ export interface Task {
   dueDate: string | null;
   recurring: string;
   order: number;
+  workspaceId: string | null;
   createdAt: string;
   updatedAt: string;
 }

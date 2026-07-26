@@ -2,11 +2,25 @@ import type { ToolDef } from "./plugin";
 import prisma from "../../../db/client";
 import { countLinksBatch } from "../../../db/links";
 
+/** Resolve the user's default task workspace (first by createdAt), creating
+ *  a "Default" one if none exists yet. Used by all task-creation tools so no
+ *  task is ever left without a workspace. */
+export async function resolveDefaultTaskWorkspace(userId: string): Promise<string> {
+  let ws = await prisma.taskWorkspace.findFirst({
+    where: { userId },
+    orderBy: { createdAt: "asc" },
+  });
+  if (!ws) {
+    ws = await prisma.taskWorkspace.create({ data: { name: "Default", userId } });
+  }
+  return ws.id;
+}
+
 export const taskTools: ToolDef[] = [
   {
     name: "create_task",
     description:
-      "Create a new todo task. Use when the user asks to add a task, reminder, or to-do item.",
+      "Create a new todo task. Use when the user asks to add a task, reminder, or to-do item. Optionally specify a workspaceId to put the task in a specific project workspace (use list_task_workspaces first); if omitted, the task goes to the user's default workspace.",
     parameters: [
       { name: "title", type: "string", description: "Short task title", required: true },
       { name: "description", type: "string", description: "Longer description / notes" },
@@ -17,8 +31,19 @@ export const taskTools: ToolDef[] = [
         enum: ["LOW", "MEDIUM", "HIGH"],
       },
       { name: "dueDate", type: "string", description: "ISO 8601 datetime (e.g. 2026-08-01T09:00:00Z)" },
+      { name: "workspaceId", type: "string", description: "Optional task workspace id (from list_task_workspaces) to group this task under a specific project" },
     ],
     handler: async (args, { userId }) => {
+      let workspaceId: string;
+      if (args.workspaceId) {
+        const ws = await prisma.taskWorkspace.findFirst({
+          where: { id: String(args.workspaceId), userId },
+        });
+        if (!ws) return { error: "Workspace not found" };
+        workspaceId = ws.id;
+      } else {
+        workspaceId = await resolveDefaultTaskWorkspace(userId);
+      }
       const task = await prisma.task.create({
         data: {
           userId,
@@ -26,6 +51,7 @@ export const taskTools: ToolDef[] = [
           description: String(args.description ?? ""),
           priority: (args.priority as any) ?? "MEDIUM",
           dueDate: args.dueDate ? new Date(args.dueDate) : null,
+          workspaceId,
         },
       });
       return { task, created: true };
@@ -34,7 +60,7 @@ export const taskTools: ToolDef[] = [
   {
     name: "list_tasks",
     description:
-      "List the user's tasks. Optionally filter by status. Returns id, title, status, priority, dueDate.",
+      "List the user's tasks. Optionally filter by status and/or workspace. Returns id, title, status, priority, dueDate, workspaceId, workspaceName. Use list_task_workspaces to get workspace ids.",
     parameters: [
       {
         name: "status",
@@ -42,14 +68,17 @@ export const taskTools: ToolDef[] = [
         description: "Filter by status",
         enum: ["TODO", "IN_PROGRESS", "DONE"],
       },
+      { name: "workspaceId", type: "string", description: "Filter by task workspace id (from list_task_workspaces)" },
     ],
     handler: async (args, { userId }) => {
       const where: Record<string, unknown> = { userId };
       if (args.status) where.status = args.status;
+      if (args.workspaceId) where.workspaceId = String(args.workspaceId);
       const tasks = await prisma.task.findMany({
         where: where as never,
         orderBy: [{ status: "asc" }, { order: "asc" }, { createdAt: "desc" }],
         take: 50,
+        include: { workspace: { select: { id: true, name: true } } },
       });
       const linkCounts = await countLinksBatch(userId, "task", tasks.map((t) => t.id));
       return {
@@ -61,6 +90,8 @@ export const taskTools: ToolDef[] = [
           priority: t.priority,
           dueDate: t.dueDate?.toISOString() ?? null,
           description: t.description,
+          workspaceId: t.workspaceId,
+          workspaceName: t.workspace?.name ?? null,
           linkCount: linkCounts.get(t.id) ?? 0,
         })),
       };

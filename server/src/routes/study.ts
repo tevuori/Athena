@@ -419,6 +419,8 @@ study.post("/syllabus-tasks", zValidator("json", syllabusSchema), async (c) => {
 
   let createdCount = 0;
   if (body.create) {
+    let ws = await prisma.taskWorkspace.findFirst({ where: { userId }, orderBy: { createdAt: "asc" } });
+    if (!ws) ws = await prisma.taskWorkspace.create({ data: { name: "Default", userId } });
     for (const t of tasks) {
       const priority = ["LOW", "MEDIUM", "HIGH"].includes(t.priority ?? "")
         ? (t.priority as "LOW" | "MEDIUM" | "HIGH")
@@ -434,6 +436,7 @@ study.post("/syllabus-tasks", zValidator("json", syllabusSchema), async (c) => {
           title: String(t.title).slice(0, 200),
           priority,
           dueDate,
+          workspaceId: ws.id,
         },
       });
       createdCount++;

@@ -84,7 +84,7 @@ export async function recentFilesContext(userId: string): Promise<string> {
 
 /** Lightweight workspace summary (counts) for the system prompt. */
 export async function workspaceSummary(userId: string): Promise<string> {
-  const [taskCount, noteCount, courseCount, fileCount, openTasks, dueFlashcards, lastStudySession] = await Promise.all([
+  const [taskCount, noteCount, courseCount, fileCount, openTasks, dueFlashcards, lastStudySession, taskWorkspaces] = await Promise.all([
     prisma.task.count({ where: { userId } }),
     prisma.note.count({ where: { userId } }),
     prisma.course.count({ where: { userId } }),
@@ -92,6 +92,11 @@ export async function workspaceSummary(userId: string): Promise<string> {
     prisma.task.count({ where: { userId, status: "TODO" } }),
     prisma.flashcard.count({ where: { dueDate: { lte: new Date() } } }),
     prisma.studySession.findFirst({ where: { userId }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
+    prisma.taskWorkspace.findMany({
+      where: { userId },
+      include: { _count: { select: { tasks: true } } },
+      orderBy: { createdAt: "asc" },
+    }),
   ]);
 
   const parts = [
@@ -100,6 +105,9 @@ export async function workspaceSummary(userId: string): Promise<string> {
     `Courses: ${courseCount}`,
     `Files: ${fileCount}`,
   ];
+  if (taskWorkspaces.length > 0) {
+    parts.push(`Task workspaces: ${taskWorkspaces.map((w) => `${w.name} (${w._count.tasks})`).join(", ")}`);
+  }
   if (dueFlashcards > 0) {
     parts.push(`Flashcards due: ${dueFlashcards}`);
   }
@@ -163,7 +171,7 @@ export async function buildSystemPrompt(
 ${dateLine}
 
 Capabilities (via tools):
-- Tasks: create_task, list_tasks, update_task_status, delete_task
+- Tasks: create_task, list_tasks, update_task_status, delete_task. Tasks are organized into task workspaces (project spaces): list_task_workspaces, create_task_workspace, delete_task_workspace, move_task. Each task belongs to exactly one workspace. Use list_task_workspaces to find workspace ids, then filter list_tasks by workspaceId or create_task with a workspaceId. If the user has multiple projects, ask which workspace to use or infer from context.
 - Grades: list_courses, get_course_grades
 - Notes: list_notes, read_note, create_note
 - Files: list_files, search_files, read_file, edit_file, create_file

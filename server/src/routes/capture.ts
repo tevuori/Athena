@@ -61,6 +61,9 @@ capture.post("/", zValidator("json", captureSchema), async (c) => {
   const title = (classification.title ?? text).slice(0, 200) || text.slice(0, 200);
 
   if (target === "task") {
+    // Ensure the task is assigned to a workspace (default to first/create "Default")
+    let ws = await prisma.taskWorkspace.findFirst({ where: { userId }, orderBy: { createdAt: "asc" } });
+    if (!ws) ws = await prisma.taskWorkspace.create({ data: { name: "Default", userId } });
     const task = await prisma.task.create({
       data: {
         userId,
@@ -68,6 +71,7 @@ capture.post("/", zValidator("json", captureSchema), async (c) => {
         description: classification.description ?? "",
         priority: (classification.priority as any) ?? "MEDIUM",
         dueDate: classification.dueDate ? new Date(classification.dueDate) : null,
+        workspaceId: ws.id,
       },
     });
     return c.json({

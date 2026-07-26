@@ -6,10 +6,15 @@ import {
 import { useDroppable } from "@dnd-kit/core";
 import { useSortable, SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Plus, Trash2, Flag, Calendar, Loader2, GripVertical } from "lucide-react";
+import {
+  Plus, Trash2, Calendar, Loader2, ChevronDown, Folder,
+  Check, Pencil,
+} from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import { tasksApi, STATUS_LABELS, STATUS_ORDER, PRIORITY_LABELS, PRIORITY_COLORS } from "../../services/tasks";
+import { taskWorkspacesApi } from "../../services/task-workspaces";
 import { linksApi } from "../../services/links";
-import type { Task, TaskStatus, TaskPriority } from "../../types";
+import type { Task, TaskStatus, TaskPriority, TaskWorkspace } from "../../types";
 import type { WindowInstance } from "../../store/windows";
 import LinkDragHandle from "../links/LinkDragHandle";
 import LinkBadge from "../links/LinkBadge";
@@ -17,42 +22,80 @@ import { useLinkDrop } from "../links/useLinkDrop";
 import { useDataRefreshVersion } from "../../store/dataRefresh";
 import { useFormFactor } from "../../store/formfactor";
 
+const WS_COLORS = ["#6366f1", "#ec4899", "#22c55e", "#f59e0b", "#06b6d4", "#8b5cf6", "#ef4444"];
+const ACTIVE_WS_KEY = "athena.activeTaskWorkspace";
+
 export default function TasksApp(_: { win: WindowInstance }) {
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [workspaces, setWorkspaces] = useState<(TaskWorkspace & { taskCount: number })[]>([]);
+  const [activeWsId, setActiveWsId] = useState<string | null>(() => localStorage.getItem(ACTIVE_WS_KEY));
   const [loading, setLoading] = useState(true);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [addingTo, setAddingTo] = useState<TaskStatus | null>(null);
   const [newTitle, setNewTitle] = useState("");
+  const [wsDropdownOpen, setWsDropdownOpen] = useState(false);
+  const [showWsForm, setShowWsForm] = useState(false);
+  const [editingWs, setEditingWs] = useState<TaskWorkspace | null>(null);
+  const [wsName, setWsName] = useState("");
+  const [wsColor, setWsColor] = useState(WS_COLORS[0]);
   const refreshVersion = useDataRefreshVersion("tasks");
   const isPhone = useFormFactor((s) => s.mode === "phone");
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    // Touch: require a deliberate press-and-hold before drag starts so a tap
-    // doesn't accidentally begin a drag. delay 200ms + tolerance 8px.
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } })
   );
+
+  const loadWorkspaces = useCallback(async () => {
+    try {
+      const { workspaces: ws } = await taskWorkspacesApi.list();
+      setWorkspaces(ws);
+      // If the active workspace no longer exists, reset to "All" (null)
+      if (activeWsId && !ws.some((w) => w.id === activeWsId)) {
+        setActiveWsId(null);
+        localStorage.removeItem(ACTIVE_WS_KEY);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, [activeWsId]);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const { tasks } = await tasksApi.list();
-      setTasks(tasks);
+      const { tasks: list } = await tasksApi.list(activeWsId ?? undefined);
+      setTasks(list);
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [activeWsId]);
+
+  useEffect(() => {
+    loadWorkspaces();
+  }, [loadWorkspaces]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  // Refresh when Athena mutates tasks data (create_task, update_task_status, etc.)
+  // Refresh when Athena mutates tasks data
   useEffect(() => {
-    if (refreshVersion > 0) load();
-  }, [refreshVersion, load]);
+    if (refreshVersion > 0) {
+      load();
+      loadWorkspaces();
+    }
+  }, [refreshVersion, load, loadWorkspaces]);
+
+  const activeWs = workspaces.find((w) => w.id === activeWsId) ?? null;
+
+  const selectWs = (id: string | null) => {
+    setActiveWsId(id);
+    if (id) localStorage.setItem(ACTIVE_WS_KEY, id);
+    else localStorage.removeItem(ACTIVE_WS_KEY);
+    setWsDropdownOpen(false);
+  };
 
   const byStatus = (status: TaskStatus) => tasks.filter((t) => t.status === status);
 
@@ -64,7 +107,6 @@ export default function TasksApp(_: { win: WindowInstance }) {
     if (!over) return;
     const activeTask = tasks.find((t) => t.id === active.id);
     if (!activeTask) return;
-    // over.id can be a column id ("TODO") or a task id
     const overId = String(over.id);
     let newStatus: TaskStatus | null = null;
     if (STATUS_ORDER.includes(overId as TaskStatus)) {
@@ -87,10 +129,15 @@ export default function TasksApp(_: { win: WindowInstance }) {
   const createTask = async (status: TaskStatus) => {
     if (!newTitle.trim()) return;
     try {
-      const { task } = await tasksApi.create({ title: newTitle, status });
+      const { task } = await tasksApi.create({
+        title: newTitle,
+        status,
+        workspaceId: activeWsId ?? undefined,
+      });
       setTasks((prev) => [...prev, task]);
       setNewTitle("");
       setAddingTo(null);
+      loadWorkspaces();
     } catch (e) {
       console.error(e);
     }
@@ -110,8 +157,57 @@ export default function TasksApp(_: { win: WindowInstance }) {
     setTasks((prev) => prev.filter((t) => t.id !== id));
     try {
       await tasksApi.delete(id);
+      loadWorkspaces();
     } catch {
       load();
+    }
+  };
+
+  // ===== Workspace CRUD =====
+  const openNewWsForm = () => {
+    setEditingWs(null);
+    setWsName("");
+    setWsColor(WS_COLORS[0]);
+    setShowWsForm(true);
+    setWsDropdownOpen(false);
+  };
+
+  const openEditWsForm = (ws: TaskWorkspace) => {
+    setEditingWs(ws);
+    setWsName(ws.name);
+    setWsColor(ws.color);
+    setShowWsForm(true);
+    setWsDropdownOpen(false);
+  };
+
+  const saveWs = async () => {
+    if (!wsName.trim()) return;
+    try {
+      if (editingWs) {
+        await taskWorkspacesApi.update(editingWs.id, { name: wsName, color: wsColor });
+      } else {
+        const { workspace } = await taskWorkspacesApi.create({ name: wsName, color: wsColor });
+        // Auto-switch to the newly created workspace
+        selectWs(workspace.id);
+      }
+      setShowWsForm(false);
+      loadWorkspaces();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const deleteWs = async (ws: TaskWorkspace) => {
+    const wsWithCount = workspaces.find((w) => w.id === ws.id);
+    const count = wsWithCount?.taskCount ?? 0;
+    if (!confirm(`Delete workspace "${ws.name}" and all ${count} task${count === 1 ? "" : "s"} in it?`)) return;
+    try {
+      await taskWorkspacesApi.delete(ws.id);
+      if (activeWsId === ws.id) selectWs(null);
+      loadWorkspaces();
+      load();
+    } catch (e) {
+      console.error(e);
     }
   };
 
@@ -127,10 +223,82 @@ export default function TasksApp(_: { win: WindowInstance }) {
 
   return (
     <div className="flex h-full flex-col bg-surface">
-      <div className="border-b border-edge px-4 py-2.5">
-        <h2 className="text-sm font-semibold text-ink">Tasks</h2>
+      {/* Header with workspace dropdown */}
+      <div className="flex items-center justify-between border-b border-edge px-4 py-2.5">
+        <div className="flex items-center gap-3">
+          {/* Workspace dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setWsDropdownOpen((v) => !v)}
+              className="flex items-center gap-1.5 rounded-lg border border-edge bg-surface-2 px-2.5 py-1.5 text-sm font-semibold text-ink transition hover:bg-surface-3"
+            >
+              {activeWs ? (
+                <>
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: activeWs.color }} />
+                  <span className="max-w-[140px] truncate">{activeWs.name}</span>
+                </>
+              ) : (
+                <>
+                  <Folder size={14} className="text-ink-muted" />
+                  <span>All Tasks</span>
+                </>
+              )}
+              <ChevronDown size={14} className="text-ink-muted" />
+            </button>
+            {wsDropdownOpen && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setWsDropdownOpen(false)} />
+                <div className="absolute left-0 top-full z-40 mt-1 min-w-[200px] rounded-lg border border-edge bg-surface p-1 shadow-window">
+                  {/* All Tasks */}
+                  <button
+                    onClick={() => selectWs(null)}
+                    className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition hover:bg-surface-3 ${
+                      !activeWsId ? "bg-surface-3 text-ink" : "text-ink-muted"
+                    }`}
+                  >
+                    <Folder size={14} />
+                    <span className="flex-1 text-left">All Tasks</span>
+                    {!activeWsId && <Check size={14} />}
+                  </button>
+                  {workspaces.length > 0 && <div className="my-1 border-t border-edge" />}
+                  {workspaces.map((ws) => (
+                    <div key={ws.id} className="group flex items-center">
+                      <button
+                        onClick={() => selectWs(ws.id)}
+                        className={`flex flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm transition hover:bg-surface-3 ${
+                          activeWsId === ws.id ? "bg-surface-3 text-ink" : "text-ink-muted"
+                        }`}
+                      >
+                        <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: ws.color }} />
+                        <span className="flex-1 truncate text-left">{ws.name}</span>
+                        <span className="text-[10px] text-ink-muted">{ws.taskCount}</span>
+                        {activeWsId === ws.id && <Check size={14} />}
+                      </button>
+                      <button
+                        onClick={() => openEditWsForm(ws)}
+                        className="rounded p-1 text-ink-muted opacity-0 transition hover:bg-surface-3 hover:text-ink group-hover:opacity-100"
+                        title="Edit workspace"
+                      >
+                        <Pencil size={12} />
+                      </button>
+                    </div>
+                  ))}
+                  <div className="my-1 border-t border-edge" />
+                  <button
+                    onClick={openNewWsForm}
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-accent transition hover:bg-surface-3"
+                  >
+                    <Plus size={14} />
+                    <span>New Workspace</span>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
         <p className="text-xs text-ink-muted">
-          {tasks.length} total{isPhone ? " · swipe columns →" : " · drag cards between columns"}
+          {tasks.length} task{tasks.length === 1 ? "" : "s"}
+          {isPhone ? " · swipe →" : " · drag between columns"}
         </p>
       </div>
 
@@ -156,6 +324,68 @@ export default function TasksApp(_: { win: WindowInstance }) {
           {activeTask ? <TaskCard task={activeTask} dragging /> : null}
         </DragOverlay>
       </DndContext>
+
+      {/* Workspace create/edit modal */}
+      <AnimatePresence>
+        {showWsForm && (
+          <div
+            className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+            onClick={() => setShowWsForm(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-sm rounded-xl border border-edge bg-surface p-5 shadow-window"
+            >
+              <h3 className="mb-4 text-sm font-semibold text-ink">
+                {editingWs ? "Edit Workspace" : "New Workspace"}
+              </h3>
+              <input
+                autoFocus
+                value={wsName}
+                onChange={(e) => setWsName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") saveWs(); }}
+                placeholder="Workspace name (e.g. Thesis, Side Project)"
+                className="mb-3 w-full rounded-lg border border-edge bg-surface-2 px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+              />
+              <div className="mb-4 flex gap-2">
+                {WS_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => setWsColor(c)}
+                    className={`h-7 w-7 rounded-full transition ${wsColor === c ? "ring-2 ring-offset-2 ring-offset-surface ring-accent" : ""}`}
+                    style={{ backgroundColor: c }}
+                  />
+                ))}
+              </div>
+              <div className="flex justify-end gap-2">
+                {editingWs && (
+                  <button
+                    onClick={() => deleteWs(editingWs)}
+                    className="mr-auto flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs text-red-400 transition hover:bg-red-500/10"
+                  >
+                    <Trash2 size={12} /> Delete
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowWsForm(false)}
+                  className="rounded-lg px-3 py-1.5 text-xs text-ink-muted hover:text-ink"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveWs}
+                  className="rounded-lg bg-accent px-4 py-1.5 text-xs font-medium text-white hover:bg-accent/90"
+                >
+                  {editingWs ? "Save" : "Create"}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -295,8 +525,6 @@ function TaskCard({
     }
   );
 
-  // Detect whether the description is being clamped (overflowing 2 lines) so
-  // we only show the "show more" affordance when there's hidden text.
   useLayoutEffect(() => {
     const el = descRef.current;
     if (!el) { setDescClamped(false); return; }
@@ -351,8 +579,6 @@ function TaskCard({
               }
             }}
             onPointerDown={(e) => {
-              // Prevent the sortable drag listener from picking up the click
-              // intent when the user is just trying to expand the description.
               if (descClamped || descExpanded) e.stopPropagation();
             }}
             className={`text-[11px] text-ink-muted ${

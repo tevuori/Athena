@@ -5,6 +5,7 @@
 
 import type { ToolDef } from "./plugin";
 import prisma from "../../../db/client";
+import { resolveDefaultTaskWorkspace } from "./tasks";
 import { getUserConfig, buildModel, acquireLlmModel } from "../llm";
 import { resolveSource } from "../../study/source";
 import { generateJson, generateText } from "../../study/llm-json";
@@ -192,6 +193,7 @@ export const studyTools: ToolDef[] = [
       if (tasks.length === 0) return { error: "No tasks extracted." };
 
       let created = 0;
+      const workspaceId = await resolveDefaultTaskWorkspace(userId);
       for (const t of tasks) {
         const priority = ["LOW", "MEDIUM", "HIGH"].includes(t.priority ?? "")
           ? (t.priority as "LOW" | "MEDIUM" | "HIGH")
@@ -202,7 +204,7 @@ export const studyTools: ToolDef[] = [
           if (!isNaN(parsed.getTime())) dueDate = parsed;
         }
         await prisma.task.create({
-          data: { userId, title: String(t.title).slice(0, 200), priority, dueDate },
+          data: { userId, title: String(t.title).slice(0, 200), priority, dueDate, workspaceId },
         });
         created++;
       }
