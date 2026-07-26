@@ -402,6 +402,84 @@ const INTERCEPT_SCRIPT = `<script>(function(){
     arguments[1] = toProxy(url);
     return origOpen.apply(this, arguments);
   };
+  // --- Dynamic <script> / <link> / <img> src/href interception ---
+  // SPAs like DuckDuckGo dynamically create <script> tags to load data
+  // (e.g. DDG.deep.initialize creates a <script src="/d.js?...&jsa=...">
+  // to complete a bot-detection challenge). Without interception, the
+  // relative URL resolves against the iframe's actual origin (localhost)
+  // instead of the real site, so the request never reaches the real server.
+  // We override the src/href property setters on the relevant element
+  // prototypes so any dynamically-created resource URL is proxied.
+  function patchElementSrc(proto, attr) {
+    try {
+      var desc = Object.getOwnPropertyDescriptor(proto, attr);
+      if (!desc) return;
+      var origSet = desc.set;
+      Object.defineProperty(proto, attr, {
+        get: desc.get,
+        set: function(v) {
+          try { v = toProxy(v); } catch(e) {}
+          if (origSet) return origSet.call(this, v);
+          // Fallback: use setAttribute
+          this.setAttribute(attr, v);
+        },
+        configurable: true,
+      });
+    } catch(e) {}
+  }
+  patchElementSrc(HTMLScriptElement.prototype, "src");
+  patchElementSrc(HTMLImageElement.prototype, "src");
+  patchElementSrc(HTMLLinkElement.prototype, "href");
+  // Also intercept setAttribute('src'/'href', ...) calls on these elements.
+  var origSetAttribute = Element.prototype.setAttribute;
+  Element.prototype.setAttribute = function(name, value) {
+    try {
+      if (this instanceof HTMLScriptElement && name === "src") value = toProxy(value);
+      else if (this instanceof HTMLImageElement && name === "src") value = toProxy(value);
+      else if (this instanceof HTMLLinkElement && name === "href") value = toProxy(value);
+    } catch(e) {}
+    return origSetAttribute.call(this, name, value);
+  };
+  // MutationObserver as a safety net: catch any <script>/<link>/<img> that
+  // was inserted into the DOM without going through the property setter
+  // (e.g. via innerHTML, document.write, or insertAdjacentHTML).
+  try {
+    var observer = new MutationObserver(function(mutations) {
+      for (var i = 0; i < mutations.length; i++) {
+        var added = mutations[i].addedNodes;
+        for (var j = 0; j < added.length; j++) {
+          var node = added[j];
+          if (node.nodeType !== 1) continue;
+          // Check the node itself + its descendants (for innerHTML batches).
+          var els = [node];
+          if (node.querySelectorAll) {
+            var children = node.querySelectorAll("script[src], img[src], link[href]");
+            for (var k = 0; k < children.length; k++) els.push(children[k]);
+          }
+          for (var k = 0; k < els.length; k++) {
+            var el = els[k];
+            if (el.tagName === "SCRIPT") {
+              var s = el.getAttribute("src");
+              if (s && s.indexOf("/api/browser/proxy") < 0) {
+                try { el.setAttribute("src", toProxy(s)); } catch(e) {}
+              }
+            } else if (el.tagName === "IMG") {
+              var s = el.getAttribute("src");
+              if (s && s.indexOf("/api/browser/proxy") < 0) {
+                try { el.setAttribute("src", toProxy(s)); } catch(e) {}
+              }
+            } else if (el.tagName === "LINK") {
+              var h = el.getAttribute("href");
+              if (h && h.indexOf("/api/browser/proxy") < 0) {
+                try { el.setAttribute("href", toProxy(h)); } catch(e) {}
+              }
+            }
+          }
+        }
+      }
+    });
+    observer.observe(document.documentElement || document, { childList: true, subtree: true });
+  } catch(e) {}
   // --- history.pushState / replaceState ---
   // SPAs (GitHub, DuckDuckGo, Google) use pushState for client-side routing.
   // We must NOT navigate the iframe on pushState — that would reload the page,
