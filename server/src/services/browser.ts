@@ -283,7 +283,12 @@ async function fetchResource(
 
 const ANTI_FRAME_BUST_SCRIPT = `<script>(function(){
   "use strict";
-  var REAL_URL = __ATHENA_FINAL_URL__;
+  var INITIAL_URL = __ATHENA_FINAL_URL__;
+  // Mutable real-URL state. The INTERCEPT_SCRIPT updates this when
+  // pushState/replaceState is called so fake location getters return the
+  // current (not initial) URL — critical for SPA client-side routing.
+  window.__athenaRealUrl = window.__athenaRealUrl || INITIAL_URL;
+  function realUrl() { return window.__athenaRealUrl || INITIAL_URL; }
   try {
     // Make window.top / parent / self all point to window itself.
     Object.defineProperty(window, "top", { get: function() { return window; }, configurable: true });
@@ -292,21 +297,32 @@ const ANTI_FRAME_BUST_SCRIPT = `<script>(function(){
     Object.defineProperty(window, "frameElement", { get: function() { return null; }, configurable: true });
   } catch(e) {}
   // Fake document URL properties so scripts see the real URL, not the proxy.
+  // Use dynamic getters so they stay in sync after pushState/replaceState.
   try {
-    Object.defineProperty(document, "URL", { get: function() { return REAL_URL; }, configurable: true });
-    Object.defineProperty(document, "documentURI", { get: function() { return REAL_URL; }, configurable: true });
-    Object.defineProperty(document, "baseURI", { get: function() { return REAL_URL; }, configurable: true });
+    Object.defineProperty(document, "URL", { get: realUrl, configurable: true });
+    Object.defineProperty(document, "documentURI", { get: realUrl, configurable: true });
+    Object.defineProperty(document, "baseURI", { get: realUrl, configurable: true });
     Object.defineProperty(document, "referrer", { get: function() { return ""; }, configurable: true });
-    Object.defineProperty(document, "domain", { get: function() { try { return new URL(REAL_URL).hostname; } catch(e) { return ""; } }, configurable: true });
+    Object.defineProperty(document, "domain", { get: function() { try { return new URL(realUrl()).hostname; } catch(e) { return ""; } }, configurable: true });
   } catch(e) {}
-  // Try to fake location.href getter (may fail — location is non-configurable
-  // in some browsers). If it fails, the INTERCEPT_SCRIPT's location patches
-  // still handle navigation; only the getter (reading) is affected.
+  // Try to fake location properties (may fail — location is non-configurable
+  // in some browsers). Use dynamic getters derived from realUrl() so they
+  // stay in sync after pushState/replaceState.
   try {
     var loc = window.location;
-    var fakeProps = { href: REAL_URL, origin: (function(){ try { var u = new URL(REAL_URL); return u.origin; } catch(e) { return ""; } })(), host: (function(){ try { var u = new URL(REAL_URL); return u.host; } catch(e) { return ""; } })(), hostname: (function(){ try { var u = new URL(REAL_URL); return u.hostname; } catch(e) { return ""; } })(), protocol: (function(){ try { var u = new URL(REAL_URL); return u.protocol; } catch(e) { return "https:"; } })(), pathname: (function(){ try { var u = new URL(REAL_URL); return u.pathname; } catch(e) { return "/"; } })(), search: (function(){ try { var u = new URL(REAL_URL); return u.search; } catch(e) { return ""; } })(), hash: (function(){ try { var u = new URL(REAL_URL); return u.hash; } catch(e) { return ""; } })() };
-    for (var key in fakeProps) {
-      try { Object.defineProperty(loc, key, { get: function() { return fakeProps[key]; }, configurable: true }); } catch(e) {}
+    var props = ["href", "origin", "host", "hostname", "protocol", "pathname", "search", "hash"];
+    for (var i = 0; i < props.length; i++) {
+      var key = props[i];
+      try {
+        Object.defineProperty(loc, key, {
+          get: (function(k) {
+            return function() {
+              try { var u = new URL(realUrl()); return u[k]; } catch(e) { return ""; }
+            };
+          })(key),
+          configurable: true,
+        });
+      } catch(e) {}
     }
   } catch(e) {}
 })();<\/script>`;
@@ -353,6 +369,22 @@ const INTERCEPT_SCRIPT = `<script>(function(){
     return origOpen.apply(this, arguments);
   };
   // --- history.pushState / replaceState ---
+  // SPAs (GitHub, DuckDuckGo, Google) use pushState for client-side routing.
+  // We must NOT navigate the iframe on pushState — that would reload the page,
+  // re-init the SPA, which calls pushState again → infinite loop.
+  // Instead, let pushState/replaceState execute normally (SPA routing works
+  // inside the iframe) and just report the new URL to the parent for address
+  // bar sync using __athenaBrowser (which updates without navigating).
+  function reportUrlToParent(url) {
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ __athenaBrowser: true, url: new URL(url, FINAL_URL).href, title: document.title || "" }, "*");
+      }
+    } catch(e) {}
+  }
+  // navToParent asks the BrowserApp to navigate the iframe to a new proxy URL
+  // (pushes onto history). Used for link clicks and form submits — genuine
+  // user-initiated navigations that should load a new page.
   function navToParent(url) {
     try {
       if (window.parent && window.parent !== window) {
@@ -362,26 +394,56 @@ const INTERCEPT_SCRIPT = `<script>(function(){
   }
   var origPush = history.pushState;
   history.pushState = function(state, title, url) {
-    if (url) { navToParent(url); return; }
-    return origPush.apply(this, arguments);
+    if (url) {
+      try { window.__athenaRealUrl = new URL(url, FINAL_URL).href; } catch(e) {}
+    }
+    var result = origPush.apply(this, arguments);
+    if (url) reportUrlToParent(url);
+    return result;
   };
   var origReplace = history.replaceState;
   history.replaceState = function(state, title, url) {
-    if (url) { navToParent(url); return; }
-    return origReplace.apply(this, arguments);
+    if (url) {
+      try { window.__athenaRealUrl = new URL(url, FINAL_URL).href; } catch(e) {}
+    }
+    var result = origReplace.apply(this, arguments);
+    if (url) reportUrlToParent(url);
+    return result;
   };
   // --- location.href / .assign / .replace ---
+  // Intercept navigation to proxy the target URL. BUT: if the target real URL
+  // is the same as the current real URL (window.__athenaRealUrl), skip the
+  // navigation entirely — SPAs often read location.href (which we fake to the
+  // real URL), "normalize" it, and call location.replace(normalizedUrl). Without
+  // this guard, that would proxy the URL → iframe navigates → page reloads →
+  // SPA normalizes again → infinite loop.
+  function resolveReal(url) {
+    try { return new URL(url, FINAL_URL).href; } catch(e) { return null; }
+  }
+  function isSamePage(url) {
+    var target = resolveReal(url);
+    return target && target === window.__athenaRealUrl;
+  }
   try {
     var origAssign = Location.prototype.assign;
-    Location.prototype.assign = function(url) { return origAssign.call(this, toProxy(url)); };
+    Location.prototype.assign = function(url) {
+      if (isSamePage(url)) return;
+      return origAssign.call(this, toProxy(url));
+    };
     var origReplaceLoc = Location.prototype.replace;
-    Location.prototype.replace = function(url) { return origReplaceLoc.call(this, toProxy(url)); };
+    Location.prototype.replace = function(url) {
+      if (isSamePage(url)) return;
+      return origReplaceLoc.call(this, toProxy(url));
+    };
     var hrefDesc = Object.getOwnPropertyDescriptor(Location.prototype, "href");
     if (hrefDesc && hrefDesc.set) {
       var origHrefSet = hrefDesc.set;
       Object.defineProperty(Location.prototype, "href", {
         get: hrefDesc.get,
-        set: function(url) { return origHrefSet.call(this, toProxy(url)); },
+        set: function(url) {
+          if (isSamePage(url)) return;
+          return origHrefSet.call(this, toProxy(url));
+        },
         configurable: true,
       });
     }

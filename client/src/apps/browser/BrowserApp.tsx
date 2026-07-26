@@ -51,7 +51,15 @@ function newTabId(): string {
 
 interface Tab {
   id: string;
+  /** Display URL (address bar). Updated by __athenaBrowser reports (pushState,
+   *  redirects) without reloading the iframe. */
   url: string;
+  /** The URL the iframe was last loaded with (proxy src). Only updated on
+   *  explicit navigation (navigate, back, forward, reload) — NOT by in-page
+   *  pushState/replaceState reports. This prevents reload loops where a SPA
+   *  calls pushState on load → URL report → proxySrc change → iframe reload →
+   *  SPA calls pushState again → infinite loop. */
+  loadedUrl: string;
   title: string;
   history: string[];
   historyIdx: number;
@@ -67,6 +75,7 @@ function createTab(url: string): Tab {
   return {
     id: newTabId(),
     url,
+    loadedUrl: url,
     title: url === HOME_URL ? "Home" : "",
     history: [url],
     historyIdx: 0,
@@ -183,13 +192,14 @@ export default function BrowserApp({ win }: { win: WindowInstance }) {
           if (opts?.replace && t.history.length > 0) {
             const next = [...t.history];
             next[t.historyIdx] = url;
-            return { ...t, url, history: next, error: null, renderFailed: false, embeddable: null };
+            return { ...t, url, loadedUrl: url, history: next, error: null, renderFailed: false, embeddable: null };
           }
           const base = t.history.slice(0, t.historyIdx + 1);
           if (base[base.length - 1] === url) return t;
           return {
             ...t,
             url,
+            loadedUrl: url,
             history: [...base, url],
             historyIdx: base.length,
             error: null,
@@ -207,7 +217,8 @@ export default function BrowserApp({ win }: { win: WindowInstance }) {
     setTabsState((prev) =>
       prev.map((t) => {
         if (t.id !== targetId || t.historyIdx <= 0) return t;
-        return { ...t, historyIdx: t.historyIdx - 1, url: t.history[t.historyIdx - 1], error: null, renderFailed: false, embeddable: null };
+        const url = t.history[t.historyIdx - 1];
+        return { ...t, historyIdx: t.historyIdx - 1, url, loadedUrl: url, error: null, renderFailed: false, embeddable: null };
       })
     );
   }, []);
@@ -217,7 +228,8 @@ export default function BrowserApp({ win }: { win: WindowInstance }) {
     setTabsState((prev) =>
       prev.map((t) => {
         if (t.id !== targetId || t.historyIdx >= t.history.length - 1) return t;
-        return { ...t, historyIdx: t.historyIdx + 1, url: t.history[t.historyIdx + 1], error: null, renderFailed: false, embeddable: null };
+        const url = t.history[t.historyIdx + 1];
+        return { ...t, historyIdx: t.historyIdx + 1, url, loadedUrl: url, error: null, renderFailed: false, embeddable: null };
       })
     );
   }, []);
@@ -225,7 +237,7 @@ export default function BrowserApp({ win }: { win: WindowInstance }) {
   const reload = useCallback((tabId?: string) => {
     const targetId = tabId ?? activeTabIdRef.current;
     setTabsState((prev) =>
-      prev.map((t) => (t.id === targetId ? { ...t, iframeKey: t.iframeKey + 1, error: null, renderFailed: false, embeddable: null } : t))
+      prev.map((t) => (t.id === targetId ? { ...t, iframeKey: t.iframeKey + 1, loadedUrl: t.url, error: null, renderFailed: false, embeddable: null } : t))
     );
   }, []);
 
@@ -241,19 +253,19 @@ export default function BrowserApp({ win }: { win: WindowInstance }) {
   useEffect(() => {
     iframeLoadedRef.current = false;
     pendingCmdsRef.current = [];
-  }, [activeTab?.url, activeTab?.iframeKey]);
+  }, [activeTab?.loadedUrl, activeTab?.iframeKey]);
 
   // When a tab navigates to a new URL, check if it's embeddable. If not,
   // auto-open in external browser and show a notice in the tab.
   useEffect(() => {
-    if (!activeTab || activeTab.url === HOME_URL || activeTab.embeddable !== null) return;
+    if (!activeTab || activeTab.loadedUrl === HOME_URL || activeTab.embeddable !== null) return;
     let cancelled = false;
-    browserApi.embeddable(activeTab.url).then((res) => {
+    browserApi.embeddable(activeTab.loadedUrl).then((res) => {
       if (cancelled) return;
       const embeddable = res?.embeddable ?? true;
       if (!embeddable) {
         // Auto-open in external browser.
-        window.open(activeTab.url, "_blank", "noopener,noreferrer");
+        window.open(activeTab.loadedUrl, "_blank", "noopener,noreferrer");
         updateTab(activeTab.id, { embeddable: false, loading: false, renderFailed: false });
       } else {
         updateTab(activeTab.id, { embeddable: true });
@@ -283,7 +295,10 @@ export default function BrowserApp({ win }: { win: WindowInstance }) {
       // TEACHER_SHOW_SCRIPT's message listener is now ready to receive
       // highlight/scroll commands.
       iframeLoadedRef.current = true;
-      // Update the active tab with the real (post-redirect) URL.
+      // Update the display URL (address bar) + title, but do NOT update
+      // loadedUrl — that would change proxySrc and reload the iframe,
+      // causing a loop (SPA calls pushState → reports URL → proxySrc
+      // changes → iframe reloads → SPA calls pushState again → ...).
       const tid = activeTabIdRef.current;
       setTabsState((prev) =>
         prev.map((t) => {
@@ -556,7 +571,7 @@ export default function BrowserApp({ win }: { win: WindowInstance }) {
       clearTimeout(failTimerRef.current);
       failTimerRef.current = null;
     }
-    if (!activeTab || activeTab.url === HOME_URL || activeTab.embeddable === false) {
+    if (!activeTab || activeTab.loadedUrl === HOME_URL || activeTab.embeddable === false) {
       return;
     }
     if (!activeTab.embeddable) return; // Still checking embeddability — don't start timer yet.
@@ -573,7 +588,7 @@ export default function BrowserApp({ win }: { win: WindowInstance }) {
         failTimerRef.current = null;
       }
     };
-  }, [activeTab?.url, activeTab?.iframeKey, activeTab?.embeddable, activeTab?.id, updateTab]);
+  }, [activeTab?.loadedUrl, activeTab?.iframeKey, activeTab?.embeddable, activeTab?.id, updateTab]);
 
   // ===== UI handlers =====
 
@@ -605,11 +620,11 @@ export default function BrowserApp({ win }: { win: WindowInstance }) {
 
   const proxySrc = useMemo(
     () => {
-      if (!activeTab || activeTab.url === HOME_URL || activeTab.embeddable === false) return "";
+      if (!activeTab || activeTab.loadedUrl === HOME_URL || activeTab.embeddable === false) return "";
       if (activeTab.embeddable === null) return ""; // Wait for embeddability check.
-      return browserApi.proxyUrl(activeTab.url);
+      return browserApi.proxyUrl(activeTab.loadedUrl);
     },
-    [activeTab?.url, activeTab?.embeddable, activeTab?.iframeKey]
+    [activeTab?.loadedUrl, activeTab?.embeddable, activeTab?.iframeKey]
   );
 
   const isHome = activeTab?.url === HOME_URL;
