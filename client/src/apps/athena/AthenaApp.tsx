@@ -381,16 +381,25 @@ export default function AthenaApp({
         break;
       }
       case "open_study_hub": {
+        const studyPayload: Record<string, any> = {};
+        if (payload.mode) studyPayload.mode = payload.mode;
+        if (payload.sourceKind) studyPayload.sourceKind = payload.sourceKind;
+        if (payload.sourceId) studyPayload.sourceId = payload.sourceId;
+        if (payload.text) studyPayload.text = payload.text;
+        if (payload.quizId) studyPayload.quizId = payload.quizId;
+        if (payload.chatId) studyPayload.chatId = payload.chatId;
+        if (payload.podcastId) studyPayload.podcastId = payload.podcastId;
+        if (payload.workspaceId) studyPayload.workspaceId = payload.workspaceId;
+        if (payload.sessionId) studyPayload.sessionId = payload.sessionId;
+        if (payload.appendDeckId) {
+          studyPayload.appendDeckId = payload.appendDeckId;
+          if (payload.appendDeckName) studyPayload.appendDeckName = payload.appendDeckName;
+        }
         openWindow({
           appId: "study",
           title: "Study Hub",
           icon: APP_ICONS["study"] ?? "GraduationCap",
-          payload: {
-            mode: payload.mode ?? undefined,
-            sourceKind: payload.sourceKind ?? undefined,
-            sourceId: payload.sourceId ?? undefined,
-            quizId: payload.quizId ?? undefined,
-          },
+          payload: Object.keys(studyPayload).length > 0 ? studyPayload : undefined,
         });
         break;
       }

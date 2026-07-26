@@ -226,25 +226,32 @@ export const studyTools: ToolDef[] = [
   {
     name: "open_study_hub",
     description:
-      "Open the AI Study Hub app on the user's desktop. Optionally preselect a mode (flashcards, summarize, quiz, explain, study_guide, syllabus) and a source.",
+      "Open the AI Study Hub app on the user's desktop. Optionally preselect a mode (home, chat, teach, podcast, flashcards, summarize, quiz, explain, study_guide, syllabus, recent) and a source. Can also deep-link to a specific chat, podcast, workspace, or teacher session by id.",
     clientAction: true,
     parameters: [
       {
         name: "mode",
         type: "string",
         description: "Preselect a Study Hub mode",
-        enum: ["flashcards", "summarize", "quiz", "explain", "study_guide", "syllabus"],
+        enum: ["home", "chat", "teach", "podcast", "flashcards", "summarize", "quiz", "explain", "study_guide", "syllabus", "recent"],
       },
-      { name: "sourceKind", type: "string", description: "Preselect source kind", enum: ["note", "file", "paste"] },
+      { name: "sourceKind", type: "string", description: "Preselect source kind", enum: ["note", "file", "paste", "url", "moodle"] },
       { name: "sourceId", type: "string", description: "Preselected note id or file id" },
+      { name: "chatId", type: "string", description: "Deep-link to a specific Study Chat (from start_study_chat or list_study_chats)" },
+      { name: "podcastId", type: "string", description: "Deep-link to a specific podcast (from generate_podcast or list_podcasts)" },
+      { name: "workspaceId", type: "string", description: "Deep-link to a learning workspace (from list_learning_workspaces)" },
+      { name: "sessionId", type: "string", description: "Deep-link to a Teach Me session (from start_teacher_session or list_teacher_sessions)" },
     ],
     handler: async (args) => {
-      return {
-        action: "open_study_hub",
-        mode: args.mode ?? null,
-        sourceKind: args.sourceKind ?? null,
-        sourceId: args.sourceId ?? null,
-      };
+      const out: Record<string, any> = { action: "open_study_hub" };
+      if (args.mode) out.mode = args.mode;
+      if (args.sourceKind) out.sourceKind = args.sourceKind;
+      if (args.sourceId) out.sourceId = args.sourceId;
+      if (args.chatId) out.chatId = args.chatId;
+      if (args.podcastId) out.podcastId = args.podcastId;
+      if (args.workspaceId) out.workspaceId = args.workspaceId;
+      if (args.sessionId) out.sessionId = args.sessionId;
+      return out;
     },
   },
   {

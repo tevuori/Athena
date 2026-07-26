@@ -84,7 +84,7 @@ export async function recentFilesContext(userId: string): Promise<string> {
 
 /** Lightweight workspace summary (counts) for the system prompt. */
 export async function workspaceSummary(userId: string): Promise<string> {
-  const [taskCount, noteCount, courseCount, fileCount, openTasks, dueFlashcards, lastStudySession, taskWorkspaces] = await Promise.all([
+  const [taskCount, noteCount, courseCount, fileCount, openTasks, dueFlashcards, lastStudySession, taskWorkspaces, studySourceCount, studyChatCount, podcastCount, teacherSessionCount, learningWorkspaceCount] = await Promise.all([
     prisma.task.count({ where: { userId } }),
     prisma.note.count({ where: { userId } }),
     prisma.course.count({ where: { userId } }),
@@ -97,6 +97,11 @@ export async function workspaceSummary(userId: string): Promise<string> {
       include: { _count: { select: { tasks: true } } },
       orderBy: { createdAt: "asc" },
     }),
+    prisma.studySource.count({ where: { userId } }),
+    prisma.studyChat.count({ where: { userId } }),
+    prisma.podcast.count({ where: { userId } }),
+    prisma.teacherSession.count({ where: { userId } }),
+    prisma.learningWorkspace.count({ where: { userId } }),
   ]);
 
   const parts = [
@@ -119,6 +124,13 @@ export async function workspaceSummary(userId: string): Promise<string> {
   } else {
     parts.push("Last studied: never");
   }
+  const studyHubParts: string[] = [];
+  if (studySourceCount > 0) studyHubParts.push(`${studySourceCount} sources`);
+  if (learningWorkspaceCount > 0) studyHubParts.push(`${learningWorkspaceCount} workspaces`);
+  if (studyChatCount > 0) studyHubParts.push(`${studyChatCount} chats`);
+  if (podcastCount > 0) studyHubParts.push(`${podcastCount} podcasts`);
+  if (teacherSessionCount > 0) studyHubParts.push(`${teacherSessionCount} teacher sessions`);
+  if (studyHubParts.length > 0) parts.push(`Study Hub: ${studyHubParts.join(", ")}`);
   return parts.join(" | ");
 }
 
@@ -177,7 +189,16 @@ Capabilities (via tools):
 - Files: list_files, search_files, read_file, edit_file, create_file
 - Habits: list_habits, create_habit, log_habit, delete_habit
 - Focus: start_pomodoro (opens the Pomodoro timer on the user's desktop)
-- Study Hub: generate_flashcards (creates a deck + opens the Flashcards app), summarize_note (saves a summary note), explain_note (saves an explanation note), generate_study_guide (consolidates notes into a study guide), start_quiz (generates quiz questions + opens Study Hub in quiz mode), create_tasks_from_text (extracts tasks from a note/file/text), open_study_hub (opens the Study Hub app with an optional preselected mode)
+- Study Hub (full access — every Study Hub feature is available as a tool):
+  • Generation: generate_flashcards (creates a deck + opens the Flashcards app), summarize_note (saves a summary note), explain_note (saves an explanation note), generate_study_guide (consolidates notes into a study guide), start_quiz (generates quiz questions + opens Study Hub in quiz mode), create_tasks_from_text (extracts tasks from a note/file/text), take_notes_from_source (structured notes from a note/file/url/paste — cornell/outline/summary/bullets)
+  • Source library: list_study_sources (list saved sources), create_study_source (add a note/file/url/paste to the library), delete_study_source
+  • Learning workspaces (source groups): list_learning_workspaces, create_learning_workspace (named group of sources), delete_learning_workspace
+  • Grounded chat (NotebookLM-style Q&A with [n] citations): start_study_chat (create + open a chat grounded on sources), list_study_chats, ask_study_chat (send a question + get a cited answer), delete_study_chat
+  • Podcasts (2-host audio overview, played via browser TTS): generate_podcast (generate script from sources + open in Study Hub), list_podcasts, delete_podcast
+  • Teacher Mode (interactive live tutoring): start_teacher_session (start a Teach Me session grounded on sources + open in Study Hub), list_teacher_sessions, delete_teacher_session
+  • Quiz answering: answer_quiz_question (grade a single answer for a quiz started with start_quiz)
+  • History: list_study_sessions (recent Study Hub activity log)
+  • Navigation: open_study_hub (open the Study Hub app with an optional preselected mode, or deep-link to a specific chat/podcast/workspace/teacher session by id)
 - Moodle: list_moodle_courses (lists enrolled VUT Moodle courses), get_moodle_course_contents (lists sections + activities in a course), read_moodle_resource (fetches text content of a Moodle page/file). Requires VUT credentials. Use these to find study materials on Moodle, then generate_flashcards or summarize from them.
 - Window management: open_app, close_window, focus_window, minimize_window, resize_window, move_window, list_open_windows, tile_windows
 - Workspaces: save_workspace, open_workspace, list_workspaces, delete_workspace

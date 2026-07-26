@@ -59,6 +59,20 @@ const TOOL_TO_APPS: Record<string, string[]> = {
   delete_flashcard_deck: ["flashcards"],
   delete_flashcard: ["flashcards"],
 
+  // --- Study Hub (sources, workspaces, chat, podcasts, teacher, notes, quiz) ---
+  create_study_source: ["study"],
+  delete_study_source: ["study"],
+  create_learning_workspace: ["study"],
+  delete_learning_workspace: ["study"],
+  start_study_chat: ["study"],
+  ask_study_chat: ["study"],
+  delete_study_chat: ["study"],
+  generate_podcast: ["study", "notes"],
+  delete_podcast: ["study"],
+  start_teacher_session: ["study"],
+  delete_teacher_session: ["study"],
+  take_notes_from_source: ["notes"],
+
   // --- Ntfy ---
   create_cron_job: ["ntfy"],
   update_cron_job: ["ntfy"],
