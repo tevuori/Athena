@@ -22,7 +22,10 @@ export interface ClientWindowInfo {
 
 export interface ToolContext {
   userId: string;
-  /** Current open windows on the client (sent with the chat request). */
+  /** Current open windows on the client (sent with the chat request).
+   *  Mutable — browser tools update this when open_browser/new_tab/navigate
+   *  are called, so subsequent server-side tools (get_browser_content) in the
+   *  same turn can see the newly opened browser window. */
   windows: ClientWindowInfo[];
 }
 

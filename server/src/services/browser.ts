@@ -284,6 +284,10 @@ async function fetchResource(
 const ANTI_FRAME_BUST_SCRIPT = `<script>(function(){
   "use strict";
   var REAL_URL = __ATHENA_FINAL_URL__;
+  // Capture the real proxy origin BEFORE we fake location properties below.
+  // The INTERCEPT_SCRIPT uses this to build absolute proxy URLs that don't
+  // get mangled by the <base> tag (which points to the real site origin).
+  window.__ATHENA_PROXY_ORIGIN__ = window.location.origin;
   try {
     // Make window.top / parent / self all point to window itself.
     Object.defineProperty(window, "top", { get: function() { return window; }, configurable: true });
@@ -314,14 +318,20 @@ const ANTI_FRAME_BUST_SCRIPT = `<script>(function(){
 const INTERCEPT_SCRIPT = `<script>(function(){
   var ORIGIN = __ATHENA_ORIGIN__;
   var FINAL_URL = __ATHENA_FINAL_URL__;
-  var PROXY = "/api/browser/proxy?url=";
+  // Use the proxy origin captured by the ANTI_FRAME_BUST script (before it
+  // faked location). This MUST be an absolute URL — a root-relative path like
+  // "/api/browser/proxy" would resolve against the <base> tag (which points
+  // to the real site origin), sending requests to the real site instead of
+  // the proxy, causing infinite recursion.
+  var PROXY = (window.__ATHENA_PROXY_ORIGIN__ || "") + "/api/browser/proxy?url=";
   var TOKEN = __ATHENA_TOKEN__;
   function toProxy(u) {
     try {
       if (!u) return u;
       var s = String(u);
       if (!s || s.charAt(0) === "#" || /^(javascript|mailto|tel|data|blob):/i.test(s)) return s;
-      if (s.indexOf(PROXY) >= 0 || s.indexOf("/api/browser/") === 0) return s;
+      // Skip URLs that already point to the proxy (absolute or relative).
+      if (s.indexOf(PROXY) >= 0 || s.indexOf("/api/browser/proxy?url=") >= 0) return s;
       var abs = new URL(s, FINAL_URL);
       if (abs.protocol !== "http:" && abs.protocol !== "https:") return s;
       return PROXY + encodeURIComponent(abs.href) + (TOKEN ? "&token=" + encodeURIComponent(TOKEN) : "");
@@ -384,7 +394,7 @@ const INTERCEPT_SCRIPT = `<script>(function(){
     try {
       if (url) {
         var s = String(url);
-        if (/^https?:/i.test(s) && s.indexOf(PROXY) < 0) {
+        if (/^https?:/i.test(s) && s.indexOf("/api/browser/proxy") < 0) {
           return origWinOpen.call(this, s, target || "_blank", features);
         }
       }

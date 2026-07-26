@@ -100,6 +100,11 @@ export default function BrowserApp({ win }: { win: WindowInstance }) {
   const failTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeTabIdRef = useRef(activeTabId);
   activeTabIdRef.current = activeTabId;
+  // Track whether the iframe has finished loading the current page.
+  // Commands (highlight/scroll/click/fill) sent before the page reports
+  // loaded are queued and replayed once the TEACHER_SHOW_SCRIPT is ready.
+  const iframeLoadedRef = useRef(false);
+  const pendingCmdsRef = useRef<BrowserCommand[]>([]);
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
 
@@ -230,6 +235,14 @@ export default function BrowserApp({ win }: { win: WindowInstance }) {
 
   // ===== Embeddability check + external fallback =====
 
+  // Reset iframe loaded state when the active tab navigates (new URL or
+  // reload via iframeKey bump). The TEACHER_SHOW_SCRIPT will set it back to
+  // true when it reports via postMessage.
+  useEffect(() => {
+    iframeLoadedRef.current = false;
+    pendingCmdsRef.current = [];
+  }, [activeTab?.url, activeTab?.iframeKey]);
+
   // When a tab navigates to a new URL, check if it's embeddable. If not,
   // auto-open in external browser and show a notice in the tab.
   useEffect(() => {
@@ -266,6 +279,10 @@ export default function BrowserApp({ win }: { win: WindowInstance }) {
       const realUrl = String(data.url ?? "");
       const pageTitle = String(data.title ?? "");
       if (!realUrl) return;
+      // The iframe page has loaded and reported its real URL — the
+      // TEACHER_SHOW_SCRIPT's message listener is now ready to receive
+      // highlight/scroll commands.
+      iframeLoadedRef.current = true;
       // Update the active tab with the real (post-redirect) URL.
       const tid = activeTabIdRef.current;
       setTabsState((prev) =>
@@ -280,6 +297,15 @@ export default function BrowserApp({ win }: { win: WindowInstance }) {
       if (failTimerRef.current) {
         clearTimeout(failTimerRef.current);
         failTimerRef.current = null;
+      }
+      // Replay any commands that were queued while the page was loading.
+      if (pendingCmdsRef.current.length > 0) {
+        const queued = pendingCmdsRef.current;
+        pendingCmdsRef.current = [];
+        // Small delay to let the page's DOM settle after the report.
+        setTimeout(() => {
+          for (const c of queued) executeCommandRef.current(c);
+        }, 100);
       }
     };
     window.addEventListener("message", handler);
@@ -311,6 +337,8 @@ export default function BrowserApp({ win }: { win: WindowInstance }) {
   // ===== Process DOM automation commands from Athena =====
 
   const currentCmd = commands[win.id];
+  // Ref to executeCommand so the postMessage handler can replay queued cmds.
+  const executeCommandRef = useRef<(cmd: BrowserCommand) => void>(() => {});
   useEffect(() => {
     if (!currentCmd || currentCmd.seq === lastProcessedCmd.current) return;
     lastProcessedCmd.current = currentCmd.seq;
@@ -319,7 +347,7 @@ export default function BrowserApp({ win }: { win: WindowInstance }) {
 
   /** Execute a DOM automation command on the active tab's iframe document. */
   const executeCommand = useCallback((cmd: BrowserCommand) => {
-    // Handle tab management commands first.
+    // Handle tab management commands first (these don't need the iframe loaded).
     if (cmd.kind === "new_tab") {
       newTab(cmd.url || HOME_URL);
       return;
@@ -327,6 +355,15 @@ export default function BrowserApp({ win }: { win: WindowInstance }) {
     if (cmd.kind === "close_tab") {
       const targetId = cmd.tabId ?? activeTabIdRef.current;
       closeTab(targetId);
+      return;
+    }
+
+    // DOM commands that use postMessage (highlight, clear_highlight, scroll)
+    // require the TEACHER_SHOW_SCRIPT to be loaded. If the iframe hasn't
+    // reported loaded yet, queue the command for replay when it does.
+    const needsPostMessage = cmd.kind === "highlight" || cmd.kind === "clear_highlight" || cmd.kind === "scroll";
+    if (needsPostMessage && !iframeLoadedRef.current) {
+      pendingCmdsRef.current.push(cmd);
       return;
     }
 
@@ -467,6 +504,12 @@ export default function BrowserApp({ win }: { win: WindowInstance }) {
     } catch { /* never let a DOM command error crash the app */ }
   }, [newTab, closeTab]);
 
+  // Keep executeCommandRef in sync so the postMessage handler can replay
+  // queued commands using the latest executeCommand closure.
+  useEffect(() => {
+    executeCommandRef.current = executeCommand;
+  }, [executeCommand]);
+
   // ===== Show-control (Teacher highlight/scroll) =====
 
   const showCommands = useShowControl((s) => s.commands);
@@ -476,6 +519,17 @@ export default function BrowserApp({ win }: { win: WindowInstance }) {
   useEffect(() => {
     if (!showCmd || showCmd.seq === lastShowSeq.current) return;
     lastShowSeq.current = showCmd.seq;
+    // Queue if the iframe hasn't loaded yet — the TEACHER_SHOW_SCRIPT
+    // listener won't be ready. The pending commands are replayed when
+    // the iframe reports loaded via __athenaBrowser postMessage.
+    if (!iframeLoadedRef.current) {
+      pendingCmdsRef.current.push({
+        kind: showCmd.kind === "scroll_to" ? "scroll" : showCmd.kind === "highlight" ? "highlight" : "clear_highlight",
+        text: showCmd.text,
+        selector: showCmd.selector,
+      } as BrowserCommand);
+      return;
+    }
     const iframe = iframeRef.current;
     if (!iframe || !iframe.contentWindow) return;
     if (showCmd.kind === "scroll_to" || showCmd.kind === "highlight" || showCmd.kind === "clear_highlight") {

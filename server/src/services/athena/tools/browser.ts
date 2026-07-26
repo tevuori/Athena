@@ -34,8 +34,27 @@ export const browserTools: ToolDef[] = [
         required: true,
       },
     ],
-    handler: async (args) => {
+    handler: async (args, ctx) => {
       const target = resolveTargetUrl(String(args.url ?? ""));
+      // Update the server-side window context so subsequent server-side tools
+      // (get_browser_content, list_tabs) in the same turn can see the browser
+      // window. The client will assign the real window id; we use a synthetic
+      // id here so get_browser_content can find the URL.
+      const existing = ctx.windows.find((w) => w.appId === "browser");
+      if (existing) {
+        existing.browserUrl = target;
+        existing.focused = true;
+      } else {
+        ctx.windows.push({
+          id: `browser-${Date.now()}`,
+          appId: "browser",
+          title: "Browser",
+          rect: { x: 0, y: 0, width: 960, height: 700 },
+          minimized: false,
+          focused: true,
+          browserUrl: target,
+        });
+      }
       return { action: "open_browser", url: target };
     },
   },
@@ -54,8 +73,15 @@ export const browserTools: ToolDef[] = [
         required: true,
       },
     ],
-    handler: async (args) => {
+    handler: async (args, ctx) => {
       const target = resolveTargetUrl(String(args.url ?? ""));
+      // Update the server-side window context so get_browser_content in the
+      // same turn reads the new URL.
+      const wins = ctx.windows.filter((w) => w.appId === "browser");
+      let target2: any;
+      if (args.windowId) target2 = wins.find((w) => w.id === String(args.windowId));
+      if (!target2) target2 = wins.find((w) => w.focused) ?? wins[wins.length - 1];
+      if (target2) target2.browserUrl = target;
       return {
         action: "navigate_browser",
         url: target,
@@ -120,8 +146,15 @@ export const browserTools: ToolDef[] = [
         required: true,
       },
     ],
-    handler: async (args) => {
+    handler: async (args, ctx) => {
       const target = resolveTargetUrl(String(args.url ?? ""));
+      // Update the server-side window context — a new tab changes the active
+      // URL of the browser window.
+      const wins = ctx.windows.filter((w) => w.appId === "browser");
+      let target2: any;
+      if (args.windowId) target2 = wins.find((w) => w.id === String(args.windowId));
+      if (!target2) target2 = wins.find((w) => w.focused) ?? wins[wins.length - 1];
+      if (target2) target2.browserUrl = target;
       return {
         action: "new_tab",
         url: target,
