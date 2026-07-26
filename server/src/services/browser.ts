@@ -708,9 +708,29 @@ export async function proxyPage(
     $("head").prepend(`<base href="${finalUrl}">`);
   }
 
-  // Make relative resource URLs absolute (CSS/JS/images) so they load directly
-  // from origin (not through the proxy — avoids content-type issues).
-  $("link[href], script[src], img[src], source[src], video[src], audio[src], iframe[src]").each((_, el) => {
+  // Rewrite resource URLs:
+  // - <script src>: proxy through /api/browser/proxy so they load same-origin
+  //   as the iframe. This is critical for `type="module"` scripts, which
+  //   require CORS when loaded cross-origin — without proxying, they fail
+  //   silently and SPAs like DuckDuckGo render blank.
+  // - Other resources (CSS, images, etc.): make absolute against the real
+  //   origin so they load directly (cross-origin loading works for these).
+  const proxyBase = `/api/browser/proxy?url=`;
+  const tokenSuffix = token ? `&token=${encodeURIComponent(token)}` : "";
+
+  $("script[src]").each((_, el) => {
+    const val = $(el).attr("src");
+    if (!val || val.startsWith("data:") || val.startsWith("#")) return;
+    try {
+      let abs: string;
+      if (val.startsWith("//")) abs = new URL(val, `https:${val}`).href;
+      else if (val.startsWith("http")) abs = val;
+      else abs = new URL(val, final).href;
+      $(el).attr("src", proxyBase + encodeURIComponent(abs) + tokenSuffix);
+    } catch { /* leave */ }
+  });
+
+  $("link[href], img[src], source[src], video[src], audio[src], iframe[src]").each((_, el) => {
     const tag = el.tagName;
     const attr = tag === "link" ? "href" : "src";
     const val = $(el).attr(attr);
@@ -727,9 +747,12 @@ export async function proxyPage(
     }
   });
 
-  // Strip frame-blocking meta tags.
+  // Strip frame-blocking meta tags and meta refresh redirects (DDG uses one
+  // to redirect to the non-JS site as a fallback; if scripts load slowly,
+  // the meta refresh can fire before JS renders, showing a blank page).
   $('meta[http-equiv="X-Frame-Options"]').remove();
   $('meta[http-equiv="Content-Security-Policy"]').remove();
+  $('meta[http-equiv="refresh"]').remove();
 
   // Inject the anti-frame-bust script at the VERY TOP of <head>, before any
   // page scripts run. This makes frame-busting JS think the page is not in an
