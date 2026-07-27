@@ -25,6 +25,8 @@ import type { WindowInstance } from "../../store/windows";
 import { setLinkPayload, readLinkPayload, allowLinkDrop } from "../links/linkDnd";
 import LinkBadge from "../links/LinkBadge";
 import { useCodemirrorShowControl } from "../shared/useCodemirrorShowControl";
+import { useCodemirrorHighlights } from "../shared/useCodemirrorHighlights";
+import CodemirrorHighlightToolbar from "../shared/CodemirrorHighlightToolbar";
 import { useShowControl } from "../../store/showControl";
 import NotesFromPdfModal from "./NotesFromPdfModal";
 import type { NotesFromSourceResult } from "../../services/study";
@@ -399,14 +401,49 @@ export default function NotesApp({ win }: { win: WindowInstance }) {
 
   // Interactive Teacher: wire this note window to the show-control channel so
   // Athena can scroll to / highlight passages while teaching.
-  const { extensions: showExtensions, onCreateEditor } = useCodemirrorShowControl(win.id);
+  const { extensions: showExtensions, onCreateEditor: onCreateEditorShow } = useCodemirrorShowControl(win.id);
   const removeShowWindow = useShowControl((s) => s.removeWindow);
   useEffect(() => {
     return () => { if (win.id) removeShowWindow(win.id); };
   }, [win.id, removeShowWindow]);
 
+  // Persistent user highlights (Study Hub feature). Scoped to the note id.
+  const {
+    extensions: hlExtensions, onCreateEditor: onCreateEditorHl,
+    selection: hlSelection, clearSelection: clearHlSelection,
+    createHighlight: hlCreate, updateHighlight: hlUpdate, removeHighlight: hlRemove,
+  } = useCodemirrorHighlights({
+    winId: win.id,
+    scope: "note",
+    scopeId: selectedId ?? undefined,
+    sourceName: selected ? `Note: ${selected.title}` : undefined,
+  });
+  const onCreateEditor = useCallback(
+    (view: EditorView) => {
+      onCreateEditorShow(view);
+      onCreateEditorHl(view);
+    },
+    [onCreateEditorShow, onCreateEditorHl]
+  );
+
   return (
     <div className="relative flex h-full">
+      <CodemirrorHighlightToolbar
+        selection={hlSelection}
+        onCreate={(color, annotation) => {
+          void hlCreate({
+            text: hlSelection!.text,
+            contextBefore: hlSelection!.contextBefore,
+            contextAfter: hlSelection!.contextAfter,
+            color,
+            annotation,
+          });
+          clearHlSelection();
+        }}
+        onUpdate={hlUpdate}
+        onDelete={hlRemove}
+        onDismiss={clearHlSelection}
+      />
       {/* Backdrop for overlay sidebars (narrow only) */}
       {(overlayFolders || overlayNotes) && (
         <div
@@ -843,6 +880,7 @@ export default function NotesApp({ win }: { win: WindowInstance }) {
               isDark={isDark}
               extensions={markdownExtensions}
               showExtensions={showExtensions}
+              hlExtensions={hlExtensions}
               onCreateEditor={onCreateEditor}
               onChange={(content) => updateNote(selected.id, { content })}
               onBlur={() => void flushSave(selected.id)}
@@ -925,6 +963,7 @@ function NoteEditor({
   isDark,
   extensions,
   showExtensions,
+  hlExtensions,
   onCreateEditor,
   onChange,
   onBlur,
@@ -935,6 +974,7 @@ function NoteEditor({
   isDark: boolean;
   extensions: Extension[];
   showExtensions?: Extension[];
+  hlExtensions?: Extension[];
   onCreateEditor?: (view: EditorView) => void;
   onChange: (content: string) => void;
   onBlur: () => void;
@@ -954,7 +994,7 @@ function NoteEditor({
           <CodeMirror
             value={note.content}
             onChange={onChange}
-            extensions={[markdown(), ...extensions, ...(showExtensions ?? [])]}
+            extensions={[markdown(), ...extensions, ...(showExtensions ?? []), ...(hlExtensions ?? [])]}
             theme={isDark ? oneDark : "light"}
             height="100%"
             className="h-full text-sm"

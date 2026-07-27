@@ -17,6 +17,7 @@ import {
   Languages,
   Presentation,
   Video,
+  Highlighter,
 } from "lucide-react";
 import type { WindowInstance } from "../../store/windows";
 import type { SourceDescriptor, SourceKind, StudyLanguage } from "../../services/study";
@@ -33,6 +34,7 @@ import SourceChat from "./SourceChat";
 import Podcast from "./Podcast";
 import TeacherMode from "./TeacherMode";
 import LectureNotes from "./LectureNotes";
+import Highlights from "./Highlights";
 
 type Mode =
   | "home"
@@ -46,7 +48,8 @@ type Mode =
   | "study_guide"
   | "quiz"
   | "syllabus"
-  | "recent";
+  | "recent"
+  | "highlights";
 
 const MODES: { id: Mode; label: string; icon: typeof Brain; desc: string }[] = [
   { id: "home", label: "Home", icon: Home, desc: "Overview & quick actions" },
@@ -61,6 +64,7 @@ const MODES: { id: Mode; label: string; icon: typeof Brain; desc: string }[] = [
   { id: "study_guide", label: "Study Guide", icon: BookOpen, desc: "Consolidate notes into a cheat sheet" },
   { id: "syllabus", label: "Syllabus → Tasks", icon: ListTodo, desc: "Extract tasks from a syllabus" },
   { id: "recent", label: "Recent", icon: History, desc: "Your study activity" },
+  { id: "highlights", label: "Highlights", icon: Highlighter, desc: "Your saved highlights & annotations" },
 ];
 
 export default function StudyApp({ win }: { win: WindowInstance }) {
@@ -199,6 +203,7 @@ export default function StudyApp({ win }: { win: WindowInstance }) {
             {mode === "quiz" && <QuizMe initialSource={initialSource} preloadedQuizId={preloadedQuizId} language={language} />}
             {mode === "syllabus" && <SyllabusTasks initialSource={initialSource} language={language} />}
             {mode === "recent" && <RecentActivity />}
+            {mode === "highlights" && <Highlights />}
           </div>
         )}
       </div>

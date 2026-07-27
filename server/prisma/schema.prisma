@@ -56,6 +56,47 @@ model User {
   focusSessions   FocusSession[]
   flashcardReviews FlashcardReview[]
   gamificationState GamificationState?
+  studyHighlights   StudyHighlight[]
+}
+
+// ===== Study Hub: persistent user highlights & annotations =====
+// A user-created highlight on a Study Hub reading surface (AI output, cited
+// chat answer, or source document). Anchored by text snippet + before/after
+// context (re-located via search on render) and scoped to a contentKey (hash
+// of the rendered content) so highlights reappear when the same content is
+// shown again. The central "Highlights" Study Hub mode lists all of them and
+// can export a selection to a Note.
+
+model StudyHighlight {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Where the highlight was made: "chat" | "teacher" | "summarize" | "explain"
+  // | "study_guide" | "podcast" | "note" | "editor"
+  scope         String
+  // Id of the containing entity (chatId, sessionId, noteId, fileId, ...) or
+  // a synthetic key for transient AI outputs.
+  scopeId       String
+  // Fast hash of the rendered content — highlights are re-anchored only when
+  // the same content is rendered again.
+  contentKey    String
+  // The highlighted passage.
+  text          String
+  // Up to ~80 chars of surrounding text for disambiguation on re-anchor.
+  contextBefore String   @default("")
+  contextAfter  String   @default("")
+  // One of: yellow | green | blue | pink | purple
+  color         String   @default("yellow")
+  // Optional user annotation / note attached to the highlight.
+  annotation    String?
+  // Optional human label for the source content (shown in the Highlights list).
+  sourceName    String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId])
+  @@index([userId, scope, scopeId])
+  @@index([userId, contentKey])
 }
 
 // ===== Refresh tokens (device-remembering) =====

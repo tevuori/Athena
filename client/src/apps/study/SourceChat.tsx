@@ -19,7 +19,7 @@ import { studySourcesApi, type StudySource } from "../../services/study-sources"
 import { studyWorkspacesApi } from "../../services/study-workspaces";
 import { notesApi } from "../../services/notes";
 import WorkspaceSourceSelector from "./WorkspaceSourceSelector";
-import CitationMarkdown from "./CitationMarkdown";
+import HighlightableMarkdown from "./HighlightableMarkdown";
 import { ActionButton, ErrorBanner, Loading } from "./ui";
 import { useWindows } from "../../store/windows";
 
@@ -466,8 +466,11 @@ export default function SourceChat({ initialChatId, initialWorkspaceId, language
                 {m.role === "user" ? (
                   <div className="whitespace-pre-wrap">{m.content}</div>
                 ) : (
-                  <CitationMarkdown
+                  <HighlightableMarkdown
                     content={m.content}
+                    scope="chat"
+                    scopeId={chatId ? `${chatId}#msg-${i}` : `msg-${i}`}
+                    sourceName={chat?.title ? `Chat: ${chat.title}` : "Study chat"}
                     citations={citationMeta(m.citations)}
                     onOpenCitation={(idx) => {
                       const cite = m.citations?.find((c) => c.index === idx);
@@ -482,7 +485,13 @@ export default function SourceChat({ initialChatId, initialWorkspaceId, language
             <div className="flex flex-col items-start gap-1">
               <div className="max-w-[85%] rounded-lg border border-edge bg-surface px-3 py-2 text-xs">
                 {streamText ? (
-                  <CitationMarkdown content={streamText} />
+                  <HighlightableMarkdown
+                    content={streamText}
+                    scope="chat"
+                    scopeId={chatId ? `${chatId}#stream` : "stream"}
+                    sourceName={chat?.title ? `Chat: ${chat.title}` : "Study chat"}
+                    enabled={false}
+                  />
                 ) : (
                   <Loader2 size={13} className="animate-spin text-accent" />
                 )}

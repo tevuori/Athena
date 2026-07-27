@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import { Sparkles, FileText, GraduationCap } from "lucide-react";
-import { ActionButton, ErrorBanner, Loading, MarkdownView, SuccessBanner } from "./ui";
+import { ActionButton, ErrorBanner, Loading, SuccessBanner } from "./ui";
 import { studyApi, type SourceDescriptor } from "../../services/study";
 import { studySourcesApi, type StudySource } from "../../services/study-sources";
 import WorkspaceSourceSelector, { studySourceToDescriptor } from "./WorkspaceSourceSelector";
 import { useWindows } from "../../store/windows";
+import HighlightableMarkdown from "./HighlightableMarkdown";
 
 export default function StudyGuide({ language }: { language?: "en" | "cs" }) {
   const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(new Set());
@@ -126,7 +127,14 @@ export default function StudyGuide({ language }: { language?: "en" | "cs" }) {
           )}
         </div>
       )}
-      {guide && <MarkdownView content={guide} />}
+      {guide && (
+        <HighlightableMarkdown
+          content={guide}
+          scope="study_guide"
+          scopeId={noteId ?? "study-guide"}
+          sourceName={title.trim() || noteId ? `Study Guide${noteId ? ` (note ${noteId})` : ""}` : "Study Guide"}
+        />
+      )}
     </div>
   );
 }

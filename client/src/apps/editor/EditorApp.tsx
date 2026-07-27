@@ -16,6 +16,8 @@ import { useSettings } from "../../store/settings";
 import { useWindows } from "../../store/windows";
 import { useShowControl } from "../../store/showControl";
 import { useCodemirrorShowControl } from "../shared/useCodemirrorShowControl";
+import { useCodemirrorHighlights } from "../shared/useCodemirrorHighlights";
+import CodemirrorHighlightToolbar from "../shared/CodemirrorHighlightToolbar";
 import type { WindowInstance } from "../../store/windows";
 import type { VFile } from "../../types";
 
@@ -194,11 +196,30 @@ export default function EditorApp({ win }: { win: WindowInstance }) {
   );
 
   // Interactive Teacher: wire this editor window to the show-control channel.
-  const { extensions: showExtensions, onCreateEditor } = useCodemirrorShowControl(win.id);
+  const { extensions: showExtensions, onCreateEditor: onCreateEditorShow } = useCodemirrorShowControl(win.id);
   const removeShowWindow = useShowControl((s) => s.removeWindow);
   useEffect(() => {
     return () => { if (win.id) removeShowWindow(win.id); };
   }, [win.id, removeShowWindow]);
+
+  // Persistent user highlights (Study Hub feature). Scoped to the file id.
+  const {
+    extensions: hlExtensions, onCreateEditor: onCreateEditorHl,
+    selection: hlSelection, clearSelection: clearHlSelection,
+    createHighlight: hlCreate, updateHighlight: hlUpdate, removeHighlight: hlRemove,
+  } = useCodemirrorHighlights({
+    winId: win.id,
+    scope: "editor",
+    scopeId: currentFileId,
+    sourceName: currentFileId ? `Editor: ${name}` : undefined,
+  });
+  const onCreateEditor = useCallback(
+    (view: EditorView) => {
+      onCreateEditorShow(view);
+      onCreateEditorHl(view);
+    },
+    [onCreateEditorShow, onCreateEditorHl]
+  );
 
   if (loading) {
     return (
@@ -222,6 +243,22 @@ export default function EditorApp({ win }: { win: WindowInstance }) {
 
   return (
     <div className="flex h-full flex-col">
+      <CodemirrorHighlightToolbar
+        selection={hlSelection}
+        onCreate={(color, annotation) => {
+          void hlCreate({
+            text: hlSelection!.text,
+            contextBefore: hlSelection!.contextBefore,
+            contextAfter: hlSelection!.contextAfter,
+            color,
+            annotation,
+          });
+          clearHlSelection();
+        }}
+        onUpdate={hlUpdate}
+        onDelete={hlRemove}
+        onDismiss={clearHlSelection}
+      />
       {/* Toolbar */}
       <div className="flex items-center gap-2 border-b border-edge bg-surface-2 px-3 py-1.5">
         <div className="flex items-center gap-1.5 text-xs text-ink">
@@ -283,7 +320,7 @@ export default function EditorApp({ win }: { win: WindowInstance }) {
             <CodeMirror
               value={content}
               onChange={(val) => setContent(val)}
-              extensions={[...extensions, ...showExtensions]}
+              extensions={[...extensions, ...showExtensions, ...hlExtensions]}
               theme={isDark ? oneDark : "light"}
               height="100%"
               className="h-full text-sm"

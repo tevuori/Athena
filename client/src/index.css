@@ -182,3 +182,33 @@ mark.athena-teacher-highlight {
   transition: background 0.2s ease;
   scroll-margin-block: 40vh;
 }
+
+/* ===== Study Hub: persistent user highlights (markdown <mark>) ===== */
+/* Applied by HighlightableMarkdown's post-render DOM walk. Each <mark> carries
+   data-color + data-highlight-id; the active (hovered/selected) mark gets
+   .athena-hl-active for an outline. */
+mark.athena-hl {
+  border-radius: 3px;
+  color: inherit;
+  padding: 0 1px;
+  cursor: pointer;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+  scroll-margin-block: 30vh;
+}
+mark.athena-hl-yellow  { background: rgba(250, 204, 21, 0.45); box-shadow: 0 0 0 1px rgba(250, 204, 21, 0.55); }
+mark.athena-hl-green   { background: rgba(74, 222, 128, 0.40); box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.55); }
+mark.athena-hl-blue    { background: rgba(96, 165, 250, 0.40); box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.55); }
+mark.athena-hl-pink    { background: rgba(244, 114, 182, 0.40); box-shadow: 0 0 0 1px rgba(244, 114, 182, 0.55); }
+mark.athena-hl-purple  { background: rgba(192, 132, 252, 0.40); box-shadow: 0 0 0 1px rgba(192, 132, 252, 0.55); }
+mark.athena-hl.athena-hl-active {
+  box-shadow: 0 0 0 2px rgb(var(--accent) / 0.9);
+}
+
+/* ===== Study Hub: persistent user highlights (CodeMirror marks) ===== */
+.cm-study-hl { border-radius: 3px; padding: 0 1px; }
+.cm-study-hl-yellow  { background: rgba(250, 204, 21, 0.45); box-shadow: 0 0 0 1px rgba(250, 204, 21, 0.55); }
+.cm-study-hl-green   { background: rgba(74, 222, 128, 0.40); box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.55); }
+.cm-study-hl-blue    { background: rgba(96, 165, 250, 0.40); box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.55); }
+.cm-study-hl-pink    { background: rgba(244, 114, 182, 0.40); box-shadow: 0 0 0 1px rgba(244, 114, 182, 0.55); }
+.cm-study-hl-purple  { background: rgba(192, 132, 252, 0.40); box-shadow: 0 0 0 1px rgba(192, 132, 252, 0.55); }
+

@@ -4,9 +4,10 @@ import { useState } from "react";
 import { Sparkles, FileText, GraduationCap } from "lucide-react";
 import WorkspaceSourceSelector, { studySourceToDescriptor } from "./WorkspaceSourceSelector";
 import { studySourcesApi, type StudySource } from "../../services/study-sources";
-import { ActionButton, ErrorBanner, Loading, MarkdownView, SuccessBanner, TruncationNote } from "./ui";
+import { ActionButton, ErrorBanner, Loading, SuccessBanner, TruncationNote } from "./ui";
 import { studyApi, type SourceDescriptor } from "../../services/study";
 import { useWindows } from "../../store/windows";
+import HighlightableMarkdown from "./HighlightableMarkdown";
 
 export default function Explain({ initialSource, language }: { initialSource?: SourceDescriptor | null; language?: "en" | "cs" }) {
   const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(new Set());
@@ -114,7 +115,14 @@ export default function Explain({ initialSource, language }: { initialSource?: S
           )}
         </div>
       )}
-      {explanation && <MarkdownView content={explanation} />}
+      {explanation && (
+        <HighlightableMarkdown
+          content={explanation}
+          scope="explain"
+          scopeId={noteId ?? "explain"}
+          sourceName={noteId ? `Explanation (note ${noteId})` : "Explanation"}
+        />
+      )}
     </div>
   );
 }

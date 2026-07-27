@@ -4,9 +4,10 @@ import { useState } from "react";
 import { Sparkles, FileText, GraduationCap } from "lucide-react";
 import WorkspaceSourceSelector, { studySourceToDescriptor } from "./WorkspaceSourceSelector";
 import { studySourcesApi, type StudySource } from "../../services/study-sources";
-import { ActionButton, ErrorBanner, Loading, MarkdownView, SuccessBanner, TruncationNote } from "./ui";
+import { ActionButton, ErrorBanner, Loading, SuccessBanner, TruncationNote } from "./ui";
 import { studyApi, type SourceDescriptor } from "../../services/study";
 import { useWindows } from "../../store/windows";
+import HighlightableMarkdown from "./HighlightableMarkdown";
 
 export default function Summarize({ initialSource, language }: { initialSource?: SourceDescriptor | null; language?: "en" | "cs" }) {
   const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(new Set());
@@ -114,7 +115,14 @@ export default function Summarize({ initialSource, language }: { initialSource?:
           )}
         </div>
       )}
-      {summary && <MarkdownView content={summary} />}
+      {summary && (
+        <HighlightableMarkdown
+          content={summary}
+          scope="summarize"
+          scopeId={noteId ?? "summary"}
+          sourceName={noteId ? `Summary (note ${noteId})` : "Summary"}
+        />
+      )}
     </div>
   );
 }

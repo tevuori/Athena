@@ -32,7 +32,7 @@ import {
 } from "../../services/teacher";
 import { studySourcesApi, type StudySource } from "../../services/study-sources";
 import WorkspaceSourceSelector from "./WorkspaceSourceSelector";
-import CitationMarkdown from "./CitationMarkdown";
+import HighlightableMarkdown from "./HighlightableMarkdown";
 import { ActionButton, ErrorBanner, Loading } from "./ui";
 import { useWindows } from "../../store/windows";
 import { useShowControl } from "../../store/showControl";
@@ -685,8 +685,11 @@ export default function TeacherMode({ initialSessionId, language = "en" }: Props
               }`}>
                 {m.role === "assistant" ? (
                   <>
-                    <CitationMarkdown
+                    <HighlightableMarkdown
                       content={m.content}
+                      scope="teacher"
+                      scopeId={sessionId ? `${sessionId}#msg-${i}` : `msg-${i}`}
+                      sourceName={session?.title ? `Teach Me: ${session.title}` : "Teach Me"}
                       citations={citationMeta}
                       onOpenCitation={openCitation}
                     />
@@ -709,10 +712,14 @@ export default function TeacherMode({ initialSessionId, language = "en" }: Props
           {streamText && (
             <div className="flex justify-start">
               <div className="max-w-[85%] rounded-lg bg-surface-2 px-3 py-2 text-sm">
-                <CitationMarkdown
+                <HighlightableMarkdown
                   content={streamText}
+                  scope="teacher"
+                  scopeId={sessionId ? `${sessionId}#stream` : "stream"}
+                  sourceName={session?.title ? `Teach Me: ${session.title}` : "Teach Me"}
                   citations={citationMeta}
                   onOpenCitation={openCitation}
+                  enabled={false}
                 />
                 <span className="ml-1 inline-block h-3 w-1.5 animate-pulse bg-accent align-middle" />
               </div>

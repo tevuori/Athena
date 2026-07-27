@@ -12,7 +12,7 @@ import { studyPodcastsApi, type Podcast as PodcastRow } from "../../services/stu
 import { studySourcesApi, type StudySource } from "../../services/study-sources";
 import { studyWorkspacesApi } from "../../services/study-workspaces";
 import WorkspaceSourceSelector from "./WorkspaceSourceSelector";
-import CitationMarkdown from "./CitationMarkdown";
+import HighlightableMarkdown from "./HighlightableMarkdown";
 import { ActionButton, ErrorBanner, Loading, SuccessBanner } from "./ui";
 import { usePodcastTts } from "./usePodcastTts";
 import { useWindows } from "../../store/windows";
@@ -321,7 +321,12 @@ export default function Podcast({ initialPodcastId, initialWorkspaceId, language
                 Full script
               </summary>
               <div className="border-t border-edge p-3">
-                <CitationMarkdown content={active.script} />
+                <HighlightableMarkdown
+                  content={active.script}
+                  scope="podcast"
+                  scopeId={active.id}
+                  sourceName={`Podcast: ${active.title}`}
+                />
               </div>
             </details>
           )}
