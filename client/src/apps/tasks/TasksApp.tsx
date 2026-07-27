@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useLayoutEffect, useRef } from "react";
 import {
   DndContext, DragEndEvent, DragOverlay, DragStartEvent,
-  PointerSensor, TouchSensor, useSensor, useSensors,
+  PointerSensor, useSensor, useSensors,
 } from "@dnd-kit/core";
 import { useDroppable } from "@dnd-kit/core";
 import { useSortable, SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
@@ -20,7 +20,6 @@ import LinkDragHandle from "../links/LinkDragHandle";
 import LinkBadge from "../links/LinkBadge";
 import { useLinkDrop } from "../links/useLinkDrop";
 import { useDataRefreshVersion } from "../../store/dataRefresh";
-import { useFormFactor } from "../../store/formfactor";
 
 const WS_COLORS = ["#6366f1", "#ec4899", "#22c55e", "#f59e0b", "#06b6d4", "#8b5cf6", "#ef4444"];
 const ACTIVE_WS_KEY = "athena.activeTaskWorkspace";
@@ -39,12 +38,8 @@ export default function TasksApp(_: { win: WindowInstance }) {
   const [wsName, setWsName] = useState("");
   const [wsColor, setWsColor] = useState(WS_COLORS[0]);
   const refreshVersion = useDataRefreshVersion("tasks");
-  const isPhone = useFormFactor((s) => s.mode === "phone");
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } })
-  );
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const loadWorkspaces = useCallback(async () => {
     try {
@@ -297,8 +292,7 @@ export default function TasksApp(_: { win: WindowInstance }) {
           </div>
         </div>
         <p className="text-xs text-ink-muted">
-          {tasks.length} task{tasks.length === 1 ? "" : "s"}
-          {isPhone ? " · swipe →" : " · drag between columns"}
+          {tasks.length} task{tasks.length === 1 ? "" : "s"} · drag between columns
         </p>
       </div>
 
@@ -316,7 +310,6 @@ export default function TasksApp(_: { win: WindowInstance }) {
               onCreate={() => createTask(status)}
               onUpdate={updateTask}
               onDelete={deleteTask}
-              isPhone={isPhone}
             />
           ))}
         </div>
@@ -391,7 +384,7 @@ export default function TasksApp(_: { win: WindowInstance }) {
 }
 
 function Column({
-  status, tasks, addingTo, setAddingTo, newTitle, setNewTitle, onCreate, onUpdate, onDelete, isPhone,
+  status, tasks, addingTo, setAddingTo, newTitle, setNewTitle, onCreate, onUpdate, onDelete,
 }: {
   status: TaskStatus;
   tasks: Task[];
@@ -402,11 +395,10 @@ function Column({
   onCreate: () => void;
   onUpdate: (id: string, data: Partial<Task>) => void;
   onDelete: (id: string) => void;
-  isPhone: boolean;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
   return (
-    <div className={`flex shrink-0 snap-center flex-col rounded-xl border border-edge bg-surface-2 ${isPhone ? "w-[85vw] max-w-[320px]" : "w-72"}`}>
+    <div className="flex w-72 shrink-0 flex-col rounded-xl border border-edge bg-surface-2">
       <div className="sticky top-0 z-10 flex items-center justify-between rounded-t-xl bg-surface-2 px-3 py-2.5">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-ink">{STATUS_LABELS[status]}</span>
@@ -428,7 +420,7 @@ function Column({
       >
         <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
           {tasks.map((task) => (
-            <SortableCard key={task.id} task={task} onUpdate={onUpdate} onDelete={onDelete} isPhone={isPhone} />
+            <SortableCard key={task.id} task={task} onUpdate={onUpdate} onDelete={onDelete} />
           ))}
         </SortableContext>
 
@@ -477,12 +469,11 @@ function Column({
 }
 
 function SortableCard({
-  task, onUpdate, onDelete, isPhone,
+  task, onUpdate, onDelete,
 }: {
   task: Task;
   onUpdate: (id: string, data: Partial<Task>) => void;
   onDelete: (id: string) => void;
-  isPhone: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: task.id,
@@ -494,19 +485,18 @@ function SortableCard({
   };
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <TaskCard task={task} onUpdate={onUpdate} onDelete={onDelete} isPhone={isPhone} />
+      <TaskCard task={task} onUpdate={onUpdate} onDelete={onDelete} />
     </div>
   );
 }
 
 function TaskCard({
-  task, onUpdate, onDelete, dragging, isPhone,
+  task, onUpdate, onDelete, dragging,
 }: {
   task: Task;
   onUpdate?: (id: string, data: Partial<Task>) => void;
   onDelete?: (id: string) => void;
   dragging?: boolean;
-  isPhone?: boolean;
 }) {
   const [refreshSignal, setRefreshSignal] = useState(0);
   const [descExpanded, setDescExpanded] = useState(false);
@@ -543,8 +533,8 @@ function TaskCard({
     >
       <div className="flex items-start justify-between gap-2">
         <p className="flex-1 text-sm text-ink">{task.title}</p>
-        <div className={`flex shrink-0 items-center gap-1 transition ${isPhone ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
-          {!isPhone && <LinkDragHandle type="task" id={task.id} title={task.title} />}
+        <div className="flex shrink-0 items-center gap-1 opacity-0 transition group-hover:opacity-100">
+          <LinkDragHandle type="task" id={task.id} title={task.title} />
           {onUpdate && (
             <>
               <select

@@ -20,7 +20,6 @@ import { linksApi } from "../../services/links";
 import { useSettings } from "../../store/settings";
 import { useWindows } from "../../store/windows";
 import { useDataRefreshVersion } from "../../store/dataRefresh";
-import { useFormFactor } from "../../store/formfactor";
 import type { Note, NoteFolder } from "../../types";
 import type { WindowInstance } from "../../store/windows";
 import { setLinkPayload, readLinkPayload, allowLinkDrop } from "../links/linkDnd";
@@ -38,7 +37,6 @@ export default function NotesApp({ win }: { win: WindowInstance }) {
   const isDark = useSettings((s) => s.theme === "dark");
   const openWindow = useWindows((s) => s.open);
   const refreshVersion = useDataRefreshVersion("notes");
-  const isPhone = useFormFactor((s) => s.mode === "phone");
 
   const [folders, setFolders] = useState<NoteFolder[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
@@ -510,7 +508,7 @@ export default function NotesApp({ win }: { win: WindowInstance }) {
                     e.stopPropagation();
                     setFolderMenu({ x: e.clientX, y: e.clientY, folderId: f.id });
                   }}
-                  className={`shrink-0 rounded p-1 text-ink-muted transition hover:bg-surface-3 hover:text-ink active:bg-surface-3 ${isPhone ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                  className="shrink-0 rounded p-1 text-ink-muted opacity-0 transition hover:bg-surface-3 hover:text-ink active:bg-surface-3 group-hover:opacity-100"
                   title="More options"
                 >
                   <MoreVertical size={14} />
@@ -667,7 +665,7 @@ export default function NotesApp({ win }: { win: WindowInstance }) {
                         e.stopPropagation();
                         setNoteMenu({ x: e.clientX, y: e.clientY, noteId: note.id });
                       }}
-                      className={`rounded p-1 text-ink-muted transition hover:bg-surface-3 hover:text-ink active:bg-surface-3 ${isPhone ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                      className="rounded p-1 text-ink-muted opacity-0 transition hover:bg-surface-3 hover:text-ink active:bg-surface-3 group-hover:opacity-100"
                       title="More options"
                     >
                       <MoreVertical size={14} />

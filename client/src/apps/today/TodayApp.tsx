@@ -35,7 +35,6 @@ import { habitsApi } from "../../services/habits";
 import { studySourcesApi } from "../../services/study-sources";
 import { studyChatApi } from "../../services/study-chat";
 import { studyPodcastsApi } from "../../services/study-podcasts";
-import { usePullToRefresh } from "../../shell/mobile/usePullToRefresh";
 import type { Task, TaskPriority, VutTimetableSlot, CalendarEvent, Habit, HabitStats } from "../../types";
 
 const DAYS_FULL = ["Pondělí", "Úterý", "Středa", "Čtvrtek", "Pátek", "Sobota", "Neděle"];
@@ -180,8 +179,6 @@ export default function TodayApp() {
     return () => clearInterval(id);
   }, [refresh]);
 
-  // Pull-to-refresh (mobile-native gesture)
-  const ptr = usePullToRefresh(refresh);
 
   const openApp = (appId: AppId, title: string, icon: string, payload?: Record<string, unknown>) => {
     openWindow({ appId, title, icon, payload });
@@ -214,23 +211,7 @@ export default function TodayApp() {
   });
 
   return (
-    <div ref={ptr.ref} {...ptr.bind} className="h-full overflow-y-auto bg-surface">
-      {/* Pull-to-refresh indicator */}
-      {(ptr.distance > 0 || ptr.refreshing) && (
-        <div
-          className="flex items-center justify-center py-2 text-accent"
-          style={{ height: ptr.distance }}
-        >
-          {ptr.refreshing ? (
-            <Loader2 size={20} className="animate-spin" />
-          ) : (
-            <RefreshCw
-              size={20}
-              style={{ opacity: ptr.progress, transform: `rotate(${ptr.progress * 360}deg)` }}
-            />
-          )}
-        </div>
-      )}
+    <div className="h-full overflow-y-auto bg-surface">
       <div className="mx-auto max-w-none @5xl:max-w-3xl p-6">
         {/* Header */}
         <div className="mb-6 flex items-start justify-between gap-4">

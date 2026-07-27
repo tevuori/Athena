@@ -16,7 +16,6 @@ import type { VFile, VFolder, FolderTreeNode, StorageInfo } from "../../types";
 import type { WindowInstance } from "../../store/windows";
 import { useWindows } from "../../store/windows";
 import { useDataRefreshVersion } from "../../store/dataRefresh";
-import { useFormFactor } from "../../store/formfactor";
 import ContextMenu, { type MenuItem } from "../../shell/ContextMenu";
 import CollapsibleSidebar from "../../wm/CollapsibleSidebar";
 import { setLinkPayload } from "../links/linkDnd";
@@ -35,7 +34,6 @@ interface ClipboardItem {
 export default function FilesApp(_: { win: WindowInstance }) {
   const { open: openWindow } = useWindows();
   const refreshVersion = useDataRefreshVersion("files");
-  const isPhone = useFormFactor((s) => s.mode === "phone");
 
   // ---- State ----
   const [folders, setFolders] = useState<VFolder[]>([]);
@@ -78,11 +76,6 @@ export default function FilesApp(_: { win: WindowInstance }) {
   // Suppresses the click that fires after a rubber-band drag ends, so the
   // file-area click handler doesn't wipe the selection we just made.
   const suppressNextClick = useRef(false);
-
-  // Touch long-press state for mobile context menus (delegated on file area).
-  const touchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const touchStart = useRef<{ x: number; y: number } | null>(null);
-  const touchLongPressed = useRef(false);
 
   // ---- Data loading ----
   const loadTree = useCallback(async () => {
@@ -624,28 +617,6 @@ export default function FilesApp(_: { win: WindowInstance }) {
     setContextMenu({ x: e.clientX, y: e.clientY, items });
   }, [selected, openFile, openWindow, download, duplicateFile, toggleStar, deleteFile]);
 
-  // Long-press variant: open file context menu at a given screen position
-  // (used by mobile touch long-press via delegated handler on file area).
-  const openFileMenuAt = useCallback((pos: { x: number; y: number }, file: VFile) => {
-    if (!selected.has(file.id)) {
-      setSelected(new Set([file.id]));
-      setLastSelected(file.id);
-    }
-    const items: MenuItem[] = [
-      { label: "Open", icon: <FileSymlink size={14} />, onClick: () => openFile(file) },
-      ...(isTextFile(file) ? [{ label: "Open in Editor", icon: <FileCode size={14} />, onClick: () => openWindow({ appId: "editor", title: file.name, icon: "Code2", payload: { fileId: file.id } }) }] : []),
-      ...(isImageFile(file) || isPdfFile(file) || isAudioFile(file) || isVideoFile(file) ? [{ label: "Open in Viewer", icon: <ImageIcon size={14} />, onClick: () => openWindow({ appId: "viewer", title: file.name, icon: "Eye", payload: { fileId: file.id } }) }] : []),
-      { separator: true },
-      { label: "Download", icon: <Download size={14} />, onClick: () => download(file) },
-      { label: "Rename", icon: <Pencil size={14} />, onClick: () => setRenaming({ type: "file", id: file.id, value: file.name }) },
-      { label: "Duplicate", icon: <Copy size={14} />, onClick: () => duplicateFile(file) },
-      { label: file.starred ? "Unstar" : "Star", icon: <Star size={14} />, onClick: () => toggleStar(file) },
-      { separator: true },
-      { label: "Delete", icon: <Trash2 size={14} />, danger: true, onClick: () => deleteFile(file) },
-    ];
-    setContextMenu({ x: pos.x, y: pos.y, items });
-  }, [selected, openFile, openWindow, download, duplicateFile, toggleStar, deleteFile]);
-
   const showFolderContextMenu = useCallback((e: React.MouseEvent, folder: VFolder) => {
     e.preventDefault();
     e.stopPropagation();
@@ -657,18 +628,6 @@ export default function FilesApp(_: { win: WindowInstance }) {
       { label: "Delete", icon: <Trash2 size={14} />, danger: true, onClick: () => deleteFolder(folder) },
     ];
     setContextMenu({ x: e.clientX, y: e.clientY, items });
-  }, [navigateToFolder, downloadFolderZip, deleteFolder]);
-
-  // Long-press variant for folders.
-  const openFolderMenuAt = useCallback((pos: { x: number; y: number }, folder: VFolder) => {
-    const items: MenuItem[] = [
-      { label: "Open", icon: <Folder size={14} />, onClick: () => navigateToFolder(folder) },
-      { label: "Rename", icon: <Pencil size={14} />, onClick: () => setRenaming({ type: "folder", id: folder.id, value: folder.name }) },
-      { label: "Download as ZIP", icon: <Archive size={14} />, onClick: () => downloadFolderZip(folder) },
-      { separator: true },
-      { label: "Delete", icon: <Trash2 size={14} />, danger: true, onClick: () => deleteFolder(folder) },
-    ];
-    setContextMenu({ x: pos.x, y: pos.y, items });
   }, [navigateToFolder, downloadFolderZip, deleteFolder]);
 
   const showEmptyContextMenu = useCallback((e: React.MouseEvent) => {
@@ -849,8 +808,8 @@ export default function FilesApp(_: { win: WindowInstance }) {
 
       {/* Main panel */}
       <div className="flex flex-1 flex-col">
-        {/* Toolbar — horizontally scrollable on phone to avoid overflow */}
-        <div className={`flex items-center gap-1.5 border-b border-edge px-3 py-2 ${isPhone ? "overflow-x-auto" : ""}`}>
+        {/* Toolbar */}
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-edge px-3 py-2">
           <button
             onClick={goUp}
             disabled={breadcrumb.length <= 1}
@@ -863,13 +822,13 @@ export default function FilesApp(_: { win: WindowInstance }) {
             onClick={() => createFolder()}
             className="flex shrink-0 items-center gap-1.5 rounded-lg border border-edge px-2.5 py-1.5 text-xs text-ink hover:bg-surface-2 active:bg-surface-2"
           >
-            <FolderPlus size={14} />{!isPhone && "New Folder"}
+            <FolderPlus size={14} />New Folder
           </button>
           <button
             onClick={() => createTextFile()}
             className="flex shrink-0 items-center gap-1.5 rounded-lg border border-edge px-2.5 py-1.5 text-xs text-ink hover:bg-surface-2 active:bg-surface-2"
           >
-            <FilePlus size={14} />{!isPhone && "New File"}
+            <FilePlus size={14} />New File
           </button>
           <button
             onClick={() => fileInputRef.current?.click()}
@@ -877,7 +836,7 @@ export default function FilesApp(_: { win: WindowInstance }) {
             className="flex shrink-0 items-center gap-1.5 rounded-lg bg-accent px-2.5 py-1.5 text-xs text-accent-fg hover:opacity-90 active:opacity-90 disabled:opacity-50"
           >
             {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-            {!isPhone ? "Upload" : uploading ? "…" : ""}
+            Upload
           </button>
           <input
             ref={fileInputRef}
@@ -887,7 +846,7 @@ export default function FilesApp(_: { win: WindowInstance }) {
             className="hidden"
           />
 
-          <div className={`flex items-center gap-1.5 ${isPhone ? "shrink-0" : "ml-auto"}`}>
+          <div className="ml-auto flex items-center gap-1.5">
             {/* Search */}
             <div className="relative shrink-0">
               <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-ink-muted" />
@@ -896,7 +855,7 @@ export default function FilesApp(_: { win: WindowInstance }) {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search..."
-                className={`rounded-lg border border-edge bg-surface-2 py-1.5 pl-7 pr-2 text-xs text-ink placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-accent ${isPhone ? "w-24 focus:w-32" : "w-36 focus:w-48"} transition-all`}
+                className="w-36 rounded-lg border border-edge bg-surface-2 py-1.5 pl-7 pr-2 text-xs text-ink placeholder:text-ink-muted transition-all focus:w-48 focus:outline-none focus:ring-1 focus:ring-accent"
               />
             </div>
 
@@ -942,7 +901,7 @@ export default function FilesApp(_: { win: WindowInstance }) {
 
         {/* Breadcrumb + inline selection actions (merged so selecting files
             doesn't shift the file area down by inserting a new row) */}
-        <div className={`flex items-center gap-1 border-b border-edge px-3 py-1.5 text-xs text-ink-muted ${isPhone ? "overflow-x-auto" : ""}`}>
+        <div className="flex flex-wrap items-center gap-1 border-b border-edge px-3 py-1.5 text-xs text-ink-muted">
           {breadcrumb.map((b, i) => (
             <span key={i} className="flex shrink-0 items-center gap-1">
               {i > 0 && <ChevronRight size={12} />}
@@ -994,48 +953,7 @@ export default function FilesApp(_: { win: WindowInstance }) {
           onMouseDown={onFileAreaMouseDown}
           onMouseMove={onFileAreaMouseMove}
           onMouseUp={onFileAreaMouseUp}
-          onPointerDown={(e) => {
-            if (e.pointerType !== "touch") return;
-            touchStart.current = { x: e.clientX, y: e.clientY };
-            touchLongPressed.current = false;
-            if (touchTimer.current) clearTimeout(touchTimer.current);
-            touchTimer.current = setTimeout(() => {
-              touchLongPressed.current = true;
-              // Find the closest file/folder item from the touch target.
-              const target = e.target as HTMLElement;
-              const fileEl = target.closest("[data-file-id]") as HTMLElement | null;
-              const folderEl = target.closest("[data-folder-id]") as HTMLElement | null;
-              const pos = touchStart.current ?? { x: e.clientX, y: e.clientY };
-              if (fileEl) {
-                const fid = fileEl.dataset.fileId;
-                const file = files.find((f) => f.id === fid);
-                if (file) openFileMenuAt(pos, file);
-              } else if (folderEl) {
-                const gfid = folderEl.dataset.folderId;
-                const folder = folders.find((f) => f.id === gfid) ?? allFolders.find((f) => f.id === gfid);
-                if (folder) openFolderMenuAt(pos, folder);
-              }
-            }, 500);
-          }}
-          onPointerMove={(e) => {
-            if (e.pointerType !== "touch" || !touchStart.current) return;
-            const dx = Math.abs(e.clientX - touchStart.current.x);
-            const dy = Math.abs(e.clientY - touchStart.current.y);
-            if (dx > 10 || dy > 10) {
-              if (touchTimer.current) { clearTimeout(touchTimer.current); touchTimer.current = null; }
-              touchStart.current = null;
-            }
-          }}
-          onPointerUp={(e) => {
-            if (e.pointerType !== "touch") return;
-            if (touchTimer.current) { clearTimeout(touchTimer.current); touchTimer.current = null; }
-            touchStart.current = null;
-          }}
           onClick={() => {
-            if (touchLongPressed.current) {
-              touchLongPressed.current = false;
-              return;
-            }
             if (suppressNextClick.current) {
               suppressNextClick.current = false;
               return;

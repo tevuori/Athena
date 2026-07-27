@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Play, Pause, RotateCcw, SkipForward, Coffee, Brain, Volume2, VolumeX } from "lucide-react";
 import { useSettings } from "../../store/settings";
-import { useFormFactor } from "../../store/formfactor";
 import type { WindowInstance } from "../../store/windows";
 
 type Phase = "focus" | "short-break" | "long-break";
@@ -47,7 +46,6 @@ export default function PomodoroApp({ win }: { win: WindowInstance }) {
   const [muted, setMuted] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { setDoNotDisturb } = useSettings();
-  const isPhone = useFormFactor((s) => s.mode === "phone");
 
   // Honor an auto-start payload sent by the Athena assistant (start_pomodoro).
   useEffect(() => {
@@ -172,9 +170,9 @@ export default function PomodoroApp({ win }: { win: WindowInstance }) {
   const dashOffset = circumference * (1 - progress);
 
   return (
-    <div className={`flex h-full flex-col items-center bg-gradient-to-b from-surface to-surface-2 ${isPhone ? "safe-bottom px-4 pb-4 pt-2" : "p-6"}`}>
-      {/* Phase tabs — segmented control (scrollable on phone) */}
-      <div className={`mb-6 flex gap-1 rounded-full bg-surface-2 p-1 ${isPhone ? "w-full max-w-sm overflow-x-auto" : ""}`}>
+    <div className="flex h-full flex-col items-center bg-gradient-to-b from-surface to-surface-2 p-6">
+      {/* Phase tabs — segmented control */}
+      <div className="mb-6 flex gap-1 rounded-full bg-surface-2 p-1">
         {(Object.keys(PHASE_CONFIG) as Phase[]).map((p) => (
           <button
             key={p}

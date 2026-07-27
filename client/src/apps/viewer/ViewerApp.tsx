@@ -1,13 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Loader2, Download, ZoomIn, ZoomOut, Maximize, Minimize, Expand,
-  AlertCircle, File as FileIcon, ChevronLeft,
+  AlertCircle, File as FileIcon,
 } from "lucide-react";
 import {
   filesApi, isImageFile, isPdfFile, isAudioFile, isVideoFile, formatBytes,
 } from "../../services/files";
 import { useWindows } from "../../store/windows";
-import { useFormFactor } from "../../store/formfactor";
 import { useShowControl, type ShowCommand } from "../../store/showControl";
 import type { WindowInstance } from "../../store/windows";
 import type { VFile } from "../../types";
@@ -15,8 +14,6 @@ import type { VFile } from "../../types";
 export default function ViewerApp({ win }: { win: WindowInstance }) {
   const fileId = win.payload?.fileId as string | undefined;
   const setTitle = useWindows((s) => s.setTitle);
-  const mobileBack = useWindows((s) => s.mobileBack);
-  const isPhone = useFormFactor((s) => s.mode === "phone");
   const [file, setFile] = useState<VFile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -121,29 +118,19 @@ export default function ViewerApp({ win }: { win: WindowInstance }) {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Toolbar / mobile header */}
-      <div className={`flex items-center gap-2 border-b border-edge bg-surface-2 px-3 ${isPhone ? "safe-top py-2.5" : "py-1.5"}`}>
-        {isPhone && (
-          <button
-            onClick={() => mobileBack()}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-ink hover:bg-surface-3"
-            title="Back"
-          >
-            <ChevronLeft size={22} />
-          </button>
-        )}
+      <div className="flex items-center gap-2 border-b border-edge bg-surface-2 px-3 py-1.5">
         <span className="line-clamp-1 text-xs font-medium text-ink">{file.name}</span>
-        {!isPhone && <span className="text-[11px] text-ink-muted">{formatBytes(file.size)}</span>}
+        <span className="text-[11px] text-ink-muted">{formatBytes(file.size)}</span>
         <button
           onClick={download}
           className="ml-auto flex items-center gap-1.5 rounded-lg border border-edge px-2 py-1 text-xs text-ink-muted hover:bg-surface-3 hover:text-ink"
         >
-          <Download size={13} /> {!isPhone && "Download"}
+          <Download size={13} /> Download
         </button>
       </div>
 
       <div className="flex-1 overflow-hidden" data-viewer-win={win.id}>
-        {isImageFile(file) && <ImageViewer file={file} isPhone={isPhone} command={activeShowCmd} />}
+        {isImageFile(file) && <ImageViewer file={file} command={activeShowCmd} />}
         {isPdfFile(file) && (
           <iframe
             key={pdfSearch ?? "default"}
@@ -176,19 +163,17 @@ export default function ViewerApp({ win }: { win: WindowInstance }) {
   );
 }
 
-function ImageViewer({ file, isPhone, command }: { file: VFile; isPhone?: boolean; command?: ShowCommand }) {
+function ImageViewer({ file, command }: { file: VFile; command?: ShowCommand }) {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [fit, setFit] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
-  const [controlsVisible, setControlsVisible] = useState(true);
   const dragRef = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Touch pinch-to-zoom state
+  // Pointer pinch-to-zoom state
   const pointers = useRef<Map<number, { x: number; y: number }>>(new Map());
   const pinchStart = useRef<{ dist: number; zoom: number } | null>(null);
-  const lastTap = useRef<number>(0);
   const lastCmdSeq = useRef(0);
 
   // Interactive Teacher: react to show-control commands. For images we can't
@@ -260,27 +245,6 @@ function ImageViewer({ file, isPhone, command }: { file: VFile; isPhone?: boolea
     }
   }, []);
 
-  // Double-tap to toggle zoom (mobile)
-  const onContainerClick = useCallback(() => {
-    if (!isPhone) return;
-    const now = Date.now();
-    if (now - lastTap.current < 300) {
-      // Double tap → toggle between fit and 2x
-      if (fit || zoom <= 1) {
-        setFit(false);
-        setZoom(2);
-        setPan({ x: 0, y: 0 });
-      } else {
-        resetView();
-      }
-      lastTap.current = 0;
-    } else {
-      lastTap.current = now;
-      // Single tap → toggle controls visibility
-      setControlsVisible((v) => !v);
-    }
-  }, [isPhone, fit, zoom]);
-
   const resetView = () => {
     setZoom(1);
     setPan({ x: 0, y: 0 });
@@ -304,7 +268,6 @@ function ImageViewer({ file, isPhone, command }: { file: VFile; isPhone?: boolea
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
-      onClick={onContainerClick}
       className="relative flex h-full w-full touch-none items-center justify-center overflow-hidden bg-surface-3"
       style={{ cursor: zoom > 1 && !fit ? "grab" : "default" }}
     >
@@ -322,9 +285,8 @@ function ImageViewer({ file, isPhone, command }: { file: VFile; isPhone?: boolea
           (e.currentTarget.style.display = "none");
         }}
       />
-      {/* Zoom controls — auto-hide on mobile after tap */}
-      {(!isPhone || controlsVisible) && (
-        <div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-lg border border-edge bg-surface-2 p-1 shadow-window">
+      {/* Zoom controls */}
+      <div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-lg border border-edge bg-surface-2 p-1 shadow-window">
           <ViewerBtn onClick={() => { setFit(false); setZoom((z) => Math.max(0.1, z / 1.2)); }} title="Zoom out">
             <ZoomOut size={15} />
           </ViewerBtn>
@@ -344,7 +306,6 @@ function ImageViewer({ file, isPhone, command }: { file: VFile; isPhone?: boolea
             {fullscreen ? <Minimize size={15} /> : <Maximize size={15} />}
           </ViewerBtn>
         </div>
-      )}
     </div>
   );
 }
