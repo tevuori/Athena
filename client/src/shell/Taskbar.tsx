@@ -5,9 +5,16 @@ import { useWindows } from "../store/windows";
 import { APPS } from "../apps/registry";
 import StartMenu from "./StartMenu";
 import SystemTray from "./SystemTray";
+import WorkspaceSwitcher from "../wm/WorkspaceSwitcher";
 
-export default function Taskbar() {
+interface Props {
+  onOpenOverview?: () => void;
+}
+
+export default function Taskbar({ onOpenOverview }: Props) {
   const { windows, focusedId, restoreOrMinimize, open } = useWindows();
+  const activeWorkspaceId = useWindows((s) => s.activeWorkspaceId);
+  const switchWorkspace = useWindows((s) => s.switchWorkspace);
   const [startOpen, setStartOpen] = useState(false);
 
   // Escape closes the start menu (the Win/Meta key is not bound here because it
@@ -38,6 +45,7 @@ export default function Taskbar() {
             <LayoutGrid size={18} />
           </button>
           <div className="mx-1 h-6 w-px bg-edge" />
+          <WorkspaceSwitcher onOpenOverview={() => onOpenOverview?.()} />
         </div>
 
         {/* Center: Pinned + running apps (GNOME-style centered dash) */}
@@ -54,8 +62,14 @@ export default function Taskbar() {
                   if (appWindows.length === 0) {
                     open({ appId: app.id, title: app.name, icon: app.icon });
                   } else {
-                    // Focus the topmost window of this app
-                    const top = [...appWindows].sort((a, b) => b.zIndex - a.zIndex)[0];
+                    // Prefer the topmost window of this app on the current workspace.
+                    const onCurrent = appWindows.filter((w) => w.workspaceId === activeWorkspaceId);
+                    const top = [...(onCurrent.length > 0 ? onCurrent : appWindows)]
+                      .sort((a, b) => b.zIndex - a.zIndex)[0];
+                    // If the chosen window is on another workspace, switch to it.
+                    if (top.workspaceId !== activeWorkspaceId) {
+                      switchWorkspace(top.workspaceId);
+                    }
                     restoreOrMinimize(top.id);
                   }
                 }}

@@ -5,6 +5,7 @@ import * as Lucide from "lucide-react";
 /** Alt+Tab (and Shift+Alt+Tab) window switcher overlay. */
 export default function AltTabSwitcher() {
   const { windows, focusedId, cycleFocus } = useWindows();
+  const activeWorkspaceId = useWindows((s) => s.activeWorkspaceId);
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -40,7 +41,9 @@ export default function AltTabSwitcher() {
 
   if (!visible) return null;
 
-  const sorted = [...windows].filter((w) => !w.minimized).sort((a, b) => b.zIndex - a.zIndex);
+  const sorted = [...windows]
+    .filter((w) => !w.minimized && w.workspaceId === activeWorkspaceId)
+    .sort((a, b) => b.zIndex - a.zIndex);
 
   return (
     <div className="pointer-events-none fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 backdrop-blur-sm">

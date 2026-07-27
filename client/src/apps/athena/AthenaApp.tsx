@@ -112,6 +112,7 @@ export default function AthenaApp({
   const minimizeWindow = useWindows((s) => s.minimize);
   const setRect = useWindows((s) => s.setRect);
   const closeAll = useWindows((s) => s.closeAll);
+  const closeAllEverywhere = useWindows((s) => s.closeAllEverywhere);
   const retile = useWindows((s) => s.retile);
   const athenaRollEdge = useSettings((s) => s.athenaRollEdge);
   const setAthenaRollEdge = useSettings((s) => s.setAthenaRollEdge);
@@ -125,8 +126,8 @@ export default function AthenaApp({
   // quick succession during a single SSE stream (e.g. open_app x2 then tile).
   const windowsRef = useRef(windows);
   windowsRef.current = windows;
-  const storeRef = useRef({ openWindow, closeWindow, focusWindow, minimizeWindow, setRect, closeAll, retile });
-  storeRef.current = { openWindow, closeWindow, focusWindow, minimizeWindow, setRect, closeAll, retile };
+  const storeRef = useRef({ openWindow, closeWindow, focusWindow, minimizeWindow, setRect, closeAll, closeAllEverywhere, retile });
+  storeRef.current = { openWindow, closeWindow, focusWindow, minimizeWindow, setRect, closeAll, closeAllEverywhere, retile };
   const browserUrlsRef = useRef(browserUrls);
   browserUrlsRef.current = browserUrls;
   const requestNavRef = useRef(requestNav);
@@ -139,6 +140,7 @@ export default function AthenaApp({
 
   // Build the window state snapshot to send with each chat request.
   const buildWindowState = useCallback((): AthenaWindowState[] => {
+    const wsMap = useWindows.getState().workspaces;
     return windows.map((w) => ({
       id: w.id,
       appId: w.appId,
@@ -146,6 +148,7 @@ export default function AthenaApp({
       rect: { x: w.rect.x, y: w.rect.y, width: w.rect.width, height: w.rect.height },
       minimized: w.minimized,
       focused: focusedId === w.id,
+      workspace: wsMap.find((ws) => ws.id === w.workspaceId)?.name,
       ...(w.appId === "browser" && browserUrls[w.id] ? { browserUrl: browserUrls[w.id] } : {}),
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -349,7 +352,7 @@ export default function AthenaApp({
   // etc.), this still works because p.action === action.tool.
   const dispatchClientAction = useCallback((action: AthenaClientAction) => {
     const p = action.payload as Record<string, any>;
-    const { openWindow, closeWindow, focusWindow, minimizeWindow, setRect, closeAll, retile } = storeRef.current;
+    const { openWindow, closeWindow, focusWindow, minimizeWindow, setRect, closeAll, closeAllEverywhere, retile } = storeRef.current;
     // Some calendar tools historically used a nested clientAction pattern.
     // Unwrap it if present so the date/params are at the top level.
     const payload: Record<string, any> = p.clientAction?.payload
@@ -461,7 +464,7 @@ export default function AthenaApp({
         break;
       }
       case "open_workspace": {
-        closeAll();
+        closeAllEverywhere();
         const savedWindows = (payload.windows as Array<{
           appId: string;
           title: string;

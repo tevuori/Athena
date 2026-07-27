@@ -4,10 +4,12 @@ import Window from "./Window";
 
 export default function WindowLayer() {
   const windows = useWindows((s) => s.windows);
+  const activeWorkspaceId = useWindows((s) => s.activeWorkspaceId);
+  const visible = windows.filter((w) => w.workspaceId === activeWorkspaceId);
 
   return (
     <>
-      {windows.map((win) => {
+      {visible.map((win) => {
         const def = APP_MAP[win.appId];
         if (!def) return null;
         const App = def.component;

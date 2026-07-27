@@ -2,6 +2,7 @@ import { useRef, useCallback, useState, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { Minus, Square, X, Copy } from "lucide-react";
 import { useWindows, type WindowInstance, type SnapZone } from "../store/windows";
+import ContextMenu, { type MenuItem } from "../shell/ContextMenu";
 
 interface Props {
   win: WindowInstance;
@@ -43,6 +44,8 @@ function detectSnapZone(clientX: number, clientY: number): SnapZone {
 
 export default function Window({ win, children }: Props) {
   const { focus, close, minimize, toggleMaximize, snap, setRect } = useWindows();
+  const workspaces = useWindows((s) => s.workspaces);
+  const moveWindowToWorkspace = useWindows((s) => s.moveWindowToWorkspace);
   const dragState = useRef<{
     mode: DragMode;
     startX: number;
@@ -53,6 +56,9 @@ export default function Window({ win, children }: Props) {
   const snapPreviewRef = useRef<SnapZone>("none");
   // Track whether the user is actively dragging/resizing to disable CSS transitions.
   const [isInteracting, setIsInteracting] = useState(false);
+  // Title-bar context menu (right-click) for workspace management.
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const [ctxSubmenu, setCtxSubmenu] = useState(false);
 
   const onPointerDown = useCallback(
     (mode: DragMode) => (e: React.PointerEvent) => {
@@ -214,6 +220,11 @@ export default function Window({ win, children }: Props) {
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onDoubleClick={() => toggleMaximize(win.id)}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setCtxSubmenu(false);
+          setCtxMenu({ x: e.clientX, y: e.clientY });
+        }}
         className="flex h-9 shrink-0 cursor-grab select-none items-center justify-between border-b border-edge bg-surface-2 px-2 active:cursor-grabbing"
       >
         <div className="flex items-center gap-2 px-1 text-sm font-medium text-ink">
@@ -263,6 +274,46 @@ export default function Window({ win, children }: Props) {
           <div onPointerDown={onPointerDown("ne")} onPointerMove={onPointerMove} onPointerUp={onPointerUp} className="absolute top-0 right-0 h-3 w-3 cursor-ne-resize" />
           <div onPointerDown={onPointerDown("nw")} onPointerMove={onPointerMove} onPointerUp={onPointerUp} className="absolute top-0 left-0 h-3 w-3 cursor-nw-resize" />
         </>
+      )}
+
+      {/* Title-bar context menu: Move to workspace / Close */}
+      {ctxMenu && (
+        <ContextMenu
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          items={ctxSubmenu
+            ? [
+                { label: "← Back", keepOpen: true, onClick: () => setCtxSubmenu(false) },
+                { separator: true },
+                ...workspaces.map((ws) => ({
+                  label: ws.name,
+                  disabled: ws.id === win.workspaceId,
+                  keepOpen: false,
+                  onClick: () => {
+                    moveWindowToWorkspace(win.id, ws.id);
+                    setCtxMenu(null);
+                  },
+                })),
+              ] as MenuItem[]
+            : [
+                {
+                  label: "Move to workspace…",
+                  keepOpen: true,
+                  onClick: () => setCtxSubmenu(true),
+                },
+                { separator: true },
+                {
+                  label: "Close",
+                  danger: true,
+                  onClick: () => {
+                    close(win.id);
+                    setCtxMenu(null);
+                  },
+                },
+              ] as MenuItem[]
+          }
+          onClose={() => setCtxMenu(null)}
+        />
       )}
     </motion.div>
   );

@@ -16,6 +16,8 @@ export interface AthenaWindowState {
   rect: { x: number; y: number; width: number; height: number };
   minimized: boolean;
   focused: boolean;
+  /** Name of the workspace this window is on. */
+  workspace?: string;
   /** For Browser windows: the URL currently displayed. */
   browserUrl?: string;
 }

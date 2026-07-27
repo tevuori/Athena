@@ -55,12 +55,23 @@ export interface WindowInstance {
   alwaysOnTop?: boolean; // window stays above all others (e.g. Athena)
   /** When true, position/size changes animate via CSS transition (auto-tiling). */
   tiling?: boolean;
+  /** Workspace this window belongs to. */
+  workspaceId: string;
   // Optional payload passed to the app (e.g. noteId to open)
   payload?: Record<string, unknown>;
 }
 
+export interface Workspace {
+  id: string;
+  name: string;
+  /** True when the user renamed it (affects auto-naming on reorder). */
+  custom?: boolean;
+}
+
 interface WindowsState {
   windows: WindowInstance[];
+  workspaces: Workspace[];
+  activeWorkspaceId: string;
   focusedId: string | null;
   zCounter: number;
 
@@ -83,14 +94,77 @@ interface WindowsState {
   setTitle: (id: string, title: string) => void;
   restoreOrMinimize: (id: string) => void; // taskbar click behavior
   cycleFocus: (direction: 1 | -1) => void; // Alt+Tab
+  /** Close all windows on the active workspace. */
   closeAll: () => void;
+  /** Close all windows across every workspace. */
+  closeAllEverywhere: () => void;
   /** Re-tile all visible windows into a grid. Called automatically on open/close. */
   retile: () => void;
 
+  // ----- workspace actions -----
+  switchWorkspace: (id: string) => void;
+  switchRelative: (direction: 1 | -1) => void;
+  moveWindowToWorkspace: (winId: string, workspaceId: string) => void;
+  moveFocusedToWorkspace: (workspaceId: string) => void;
+  moveFocusedRelative: (direction: 1 | -1) => void;
+  createWorkspace: (name?: string) => string;
+  renameWorkspace: (id: string, name: string) => void;
+  removeWorkspace: (id: string) => void;
+  reorderWorkspace: (id: string, direction: 1 | -1) => void;
 }
 
 let idCounter = 0;
 const nextId = () => `win-${++idCounter}`;
+
+let wsIdCounter = 0;
+const nextWsId = () => `ws-${++wsIdCounter}`;
+
+const WS_STORAGE_KEY = "athena.workspaces";
+
+function defaultWorkspaceName(n: number): string {
+  return `Workspace ${n}`;
+}
+
+/** Auto-name workspaces by position, preserving custom names. */
+function renumberWorkspaces(workspaces: Workspace[]): Workspace[] {
+  let auto = 0;
+  return workspaces.map((ws) => {
+    if (ws.custom) return ws;
+    auto++;
+    return { ...ws, name: defaultWorkspaceName(auto) };
+  });
+}
+
+/** Load persisted workspace structure from localStorage. Returns null if none. */
+function loadPersistedWorkspaces(): { workspaces: Workspace[]; activeWorkspaceId: string } | null {
+  try {
+    const raw = localStorage.getItem(WS_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.workspaces) || parsed.workspaces.length === 0) return null;
+    // Ensure the trailing empty workspace exists (dynamic workspace invariant).
+    const workspaces = parsed.workspaces as Workspace[];
+    const active = typeof parsed.activeWorkspaceId === "string" ? parsed.activeWorkspaceId : workspaces[0].id;
+    return { workspaces, activeWorkspaceId: active };
+  } catch {
+    return null;
+  }
+}
+
+function saveWorkspaces(workspaces: Workspace[], activeWorkspaceId: string) {
+  try {
+    localStorage.setItem(WS_STORAGE_KEY, JSON.stringify({ workspaces, activeWorkspaceId }));
+  } catch { /* non-fatal */ }
+}
+
+/** Seed the initial workspace set: one default workspace + one trailing empty. */
+function seedWorkspaces(): { workspaces: Workspace[]; activeWorkspaceId: string } {
+  const persisted = loadPersistedWorkspaces();
+  if (persisted) return persisted;
+  const w1: Workspace = { id: nextWsId(), name: defaultWorkspaceName(1) };
+  const w2: Workspace = { id: nextWsId(), name: defaultWorkspaceName(2) };
+  return { workspaces: [w1, w2], activeWorkspaceId: w1.id };
+}
 
 const DEFAULT_SIZE: Record<AppId, WindowRect> = {
   notes: { x: 120, y: 80, width: 880, height: 600 },
@@ -154,14 +228,16 @@ function computeRestoredRect(win: WindowInstance): WindowRect {
 }
 
 /**
- * Compute a grid layout for the given windows.
+ * Compute a grid layout for the given windows (on a specific workspace).
  * Returns a map of windowId → rect.
  * Always-on-top, minimized, and closing windows are excluded.
  */
-function computeGridLayout(windows: WindowInstance[]): Record<string, WindowRect> {
+function computeGridLayout(windows: WindowInstance[], workspaceId: string): Record<string, WindowRect> {
   const vw = window.innerWidth;
   const vh = window.innerHeight - TASKBAR_H;
-  const tileable = windows.filter((w) => !w.alwaysOnTop && !w.minimized && !w.closing);
+  const tileable = windows.filter(
+    (w) => w.workspaceId === workspaceId && !w.alwaysOnTop && !w.minimized && !w.closing
+  );
   if (tileable.length === 0) return {};
 
   // Single window → full screen
@@ -187,18 +263,26 @@ function computeGridLayout(windows: WindowInstance[]): Record<string, WindowRect
   return result;
 }
 
+const initialWs = seedWorkspaces();
+
 export const useWindows = create<WindowsState>((set, get) => ({
   windows: [],
+  workspaces: initialWs.workspaces,
+  activeWorkspaceId: initialWs.activeWorkspaceId,
   focusedId: null,
   zCounter: 10,
 
   open: ({ appId, title, icon, payload, rect }) => {
     const state = get();
-    // If a window for this app+payload already exists, focus it.
+    // If a window for this app+payload already exists, focus it (and switch to
+    // its workspace — GNOME dash behavior).
     const existing = state.windows.find(
       (w) => w.appId === appId && JSON.stringify(w.payload) === JSON.stringify(payload)
     );
     if (existing) {
+      if (existing.workspaceId !== state.activeWorkspaceId) {
+        get().switchWorkspace(existing.workspaceId);
+      }
       get().focus(existing.id);
       if (existing.minimized) get().minimize(existing.id);
       return existing.id;
@@ -229,6 +313,7 @@ export const useWindows = create<WindowsState>((set, get) => ({
       minimized: false,
       closing: false,
       alwaysOnTop,
+      workspaceId: state.activeWorkspaceId,
       payload,
     };
     set({ windows: [...state.windows, win], focusedId: id, zCounter: z });
@@ -261,20 +346,28 @@ export const useWindows = create<WindowsState>((set, get) => ({
       windows: s.windows.filter((w) => w.id !== id),
     })),
 
-  focus: (id) =>
-    set((s) => {
-      const target = s.windows.find((w) => w.id === id);
-      if (!target) return s;
+  focus: (id) => {
+    const s = get();
+    const target = s.windows.find((w) => w.id === id);
+    if (!target) return;
+    // Focusing a window on another workspace switches to it (GNOME behavior).
+    if (target.workspaceId !== s.activeWorkspaceId) {
+      get().switchWorkspace(target.workspaceId);
+    }
+    set((st) => {
+      const t = st.windows.find((w) => w.id === id);
+      if (!t) return st;
       // Always-on-top windows get z in the 10000+ range; normal windows stay below.
-      const z = target.alwaysOnTop ? 10000 + s.zCounter + 1 : s.zCounter + 1;
+      const z = t.alwaysOnTop ? 10000 + st.zCounter + 1 : st.zCounter + 1;
       return {
-        zCounter: s.zCounter + 1,
+        zCounter: st.zCounter + 1,
         focusedId: id,
-        windows: s.windows.map((w) =>
+        windows: st.windows.map((w) =>
           w.id === id ? { ...w, zIndex: z, minimized: false } : w
         ),
       };
-    }),
+    });
+  },
 
   minimize: (id) => {
     set((s) => ({
@@ -383,6 +476,10 @@ export const useWindows = create<WindowsState>((set, get) => ({
   restoreOrMinimize: (id) => {
     const w = get().windows.find((x) => x.id === id);
     if (!w) return;
+    // If the window is on another workspace, switch to it first.
+    if (w.workspaceId !== get().activeWorkspaceId) {
+      get().switchWorkspace(w.workspaceId);
+    }
     if (w.minimized) {
       // Restoring from minimized — un-minimize and retile so the window
       // fits into the grid alongside the others (instead of overlapping).
@@ -397,7 +494,9 @@ export const useWindows = create<WindowsState>((set, get) => ({
 
   cycleFocus: (direction) => {
     const s = get();
-    const visible = s.windows.filter((w) => !w.minimized);
+    const visible = s.windows.filter(
+      (w) => !w.minimized && w.workspaceId === s.activeWorkspaceId
+    );
     if (visible.length === 0) return;
     const sorted = [...visible].sort((a, b) => a.zIndex - b.zIndex);
     const currentIdx = sorted.findIndex((w) => w.id === s.focusedId);
@@ -410,10 +509,19 @@ export const useWindows = create<WindowsState>((set, get) => ({
     get().focus(sorted[nextIdx].id);
   },
 
-  closeAll: () => set({ windows: [], focusedId: null }),
+  closeAll: () => {
+    const wsId = get().activeWorkspaceId;
+    set((s) => ({
+      windows: s.windows.filter((w) => w.workspaceId !== wsId),
+      focusedId: null,
+    }));
+  },
+
+  closeAllEverywhere: () => set({ windows: [], focusedId: null }),
 
   retile: () => {
-    const layout = computeGridLayout(get().windows);
+    const wsId = get().activeWorkspaceId;
+    const layout = computeGridLayout(get().windows, wsId);
     if (Object.keys(layout).length === 0) return;
     set((s) => ({
       windows: s.windows.map((w) => {
@@ -435,4 +543,144 @@ export const useWindows = create<WindowsState>((set, get) => ({
     }, 350);
   },
 
+  // ===== workspace actions =====
+
+  switchWorkspace: (id) => {
+    const s = get();
+    if (id === s.activeWorkspaceId) return;
+    if (!s.workspaces.some((ws) => ws.id === id)) return;
+    set({ activeWorkspaceId: id, focusedId: null });
+    saveWorkspaces(s.workspaces, id);
+    // Retile the newly-active workspace's windows.
+    get().retile();
+  },
+
+  switchRelative: (direction) => {
+    const s = get();
+    const idx = s.workspaces.findIndex((ws) => ws.id === s.activeWorkspaceId);
+    if (idx === -1) return;
+    const next = (idx + direction + s.workspaces.length) % s.workspaces.length;
+    get().switchWorkspace(s.workspaces[next].id);
+  },
+
+  moveWindowToWorkspace: (winId, workspaceId) => {
+    const s = get();
+    const win = s.windows.find((w) => w.id === winId);
+    if (!win) return;
+    if (win.workspaceId === workspaceId) return;
+    const targetExists = s.workspaces.some((ws) => ws.id === workspaceId);
+    if (!targetExists) return;
+    let workspaces = s.workspaces;
+    // Dynamic workspace: if the target is the last (trailing empty) workspace,
+    // append a new empty workspace so there's always a fresh one.
+    const isLast = s.workspaces[s.workspaces.length - 1]?.id === workspaceId;
+    if (isLast) {
+      const newWs: Workspace = { id: nextWsId(), name: `Workspace ${s.workspaces.length + 1}` };
+      workspaces = [...s.workspaces, newWs];
+    }
+    const wasFocused = s.focusedId === winId;
+    set((st) => ({
+      workspaces,
+      windows: st.windows.map((w) =>
+        w.id === winId ? { ...w, workspaceId, snap: "none" } : w
+      ),
+    }));
+    saveWorkspaces(workspaces, s.activeWorkspaceId);
+    // If the moved window was focused, follow it to the target workspace.
+    if (wasFocused) {
+      get().switchWorkspace(workspaceId);
+      get().focus(winId);
+    } else {
+      // Retile both the source and target workspaces if either is active.
+      get().retile();
+    }
+  },
+
+  moveFocusedToWorkspace: (workspaceId) => {
+    const fid = get().focusedId;
+    if (fid) get().moveWindowToWorkspace(fid, workspaceId);
+  },
+
+  moveFocusedRelative: (direction) => {
+    const s = get();
+    const fid = s.focusedId;
+    if (!fid) return;
+    const win = s.windows.find((w) => w.id === fid);
+    if (!win) return;
+    const idx = s.workspaces.findIndex((ws) => ws.id === win.workspaceId);
+    if (idx === -1) return;
+    const next = (idx + direction + s.workspaces.length) % s.workspaces.length;
+    get().moveWindowToWorkspace(fid, s.workspaces[next].id);
+  },
+
+  createWorkspace: (name) => {
+    const s = get();
+    // Insert before the trailing empty workspace so the fresh empty stays last.
+    const newWs: Workspace = {
+      id: nextWsId(),
+      name: name?.trim() || `Workspace ${s.workspaces.length}`,
+      custom: !!name?.trim(),
+    };
+    const workspaces = [
+      ...s.workspaces.slice(0, -1),
+      newWs,
+      ...s.workspaces.slice(-1),
+    ];
+    const renumbered = renumberWorkspaces(workspaces);
+    set({ workspaces: renumbered });
+    saveWorkspaces(renumbered, s.activeWorkspaceId);
+    return newWs.id;
+  },
+
+  renameWorkspace: (id, name) => {
+    const s = get();
+    const trimmed = name.trim();
+    const workspaces = s.workspaces.map((ws) =>
+      ws.id === id ? { ...ws, name: trimmed || ws.name, custom: !!trimmed } : ws
+    );
+    const renumbered = renumberWorkspaces(workspaces);
+    set({ workspaces: renumbered });
+    saveWorkspaces(renumbered, s.activeWorkspaceId);
+  },
+
+  removeWorkspace: (id) => {
+    const s = get();
+    if (s.workspaces.length <= 1) return; // never remove the last workspace
+    const idx = s.workspaces.findIndex((ws) => ws.id === id);
+    if (idx === -1) return;
+    // Move this workspace's windows to the previous workspace (or next if first).
+    const targetIdx = idx > 0 ? idx - 1 : idx + 1;
+    const targetWsId = s.workspaces[targetIdx].id;
+    const windows = s.windows.map((w) =>
+      w.workspaceId === id ? { ...w, workspaceId: targetWsId } : w
+    );
+    let workspaces = s.workspaces.filter((ws) => ws.id !== id);
+    // Ensure there's always a trailing empty workspace.
+    const last = workspaces[workspaces.length - 1];
+    const hasWindowsOnLast = windows.some((w) => w.workspaceId === last.id);
+    if (hasWindowsOnLast) {
+      workspaces = [...workspaces, { id: nextWsId(), name: `Workspace ${workspaces.length + 1}` }];
+    }
+    const renumbered = renumberWorkspaces(workspaces);
+    let activeWorkspaceId = s.activeWorkspaceId;
+    if (activeWorkspaceId === id) {
+      activeWorkspaceId = targetWsId;
+    }
+    set({ workspaces: renumbered, windows, activeWorkspaceId, focusedId: null });
+    saveWorkspaces(renumbered, activeWorkspaceId);
+    get().retile();
+  },
+
+  reorderWorkspace: (id, direction) => {
+    const s = get();
+    const idx = s.workspaces.findIndex((ws) => ws.id === id);
+    if (idx === -1) return;
+    const swapWith = idx + direction;
+    if (swapWith < 0 || swapWith >= s.workspaces.length) return;
+    const workspaces = [...s.workspaces];
+    [workspaces[idx], workspaces[swapWith]] = [workspaces[swapWith], workspaces[idx]];
+    const renumbered = renumberWorkspaces(workspaces);
+    set({ workspaces: renumbered });
+    saveWorkspaces(renumbered, s.activeWorkspaceId);
+  },
 }));

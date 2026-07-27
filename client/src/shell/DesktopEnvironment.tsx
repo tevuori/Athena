@@ -5,6 +5,7 @@ import Taskbar from "./Taskbar";
 import WindowLayer from "../wm/WindowLayer";
 import SnapPreview from "../wm/SnapPreview";
 import AltTabSwitcher from "../wm/AltTabSwitcher";
+import WorkspaceOverview from "../wm/WorkspaceOverview";
 import CommandPalette from "./CommandPalette";
 import QuickCapture from "./QuickCapture";
 import AthenaQuickPanel from "./AthenaQuickPanel";
@@ -12,12 +13,15 @@ import OnboardingOverlay from "./OnboardingOverlay";
 import { useWindows } from "../store/windows";
 import { useAthenaQuick } from "../store/athenaQuick";
 import { useSettings } from "../store/settings";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 export default function DesktopEnvironment() {
   const { open, focusedId, snap, toggleMaximize, close } = useWindows();
+  const switchRelative = useWindows((s) => s.switchRelative);
+  const moveFocusedRelative = useWindows((s) => s.moveFocusedRelative);
   const toggleAthenaQuick = useAthenaQuick((s) => s.toggle);
   const hasOnboarded = useSettings((s) => s.hasOnboarded);
+  const [overviewOpen, setOverviewOpen] = useState(false);
 
   // Win + Y → toggle Athena quick panel (rolls in from the selected edge)
   useEffect(() => {
@@ -104,6 +108,47 @@ export default function DesktopEnvironment() {
     return () => window.removeEventListener("keydown", onKey);
   }, [focusedId, snap, toggleMaximize, close]);
 
+  // Workspace keyboard shortcuts (Ctrl-based to avoid Super/GNOME conflicts):
+  //   Ctrl+Alt+PgUp / Ctrl+Alt+PgDn  → switch to prev/next workspace
+  //   Ctrl+Shift+PgUp / Ctrl+Shift+PgDn → move focused window to prev/next workspace
+  //   Alt+Space                       → toggle workspace overview
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // Don't interfere when typing in inputs
+      const target = e.target as HTMLElement;
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) {
+        return;
+      }
+
+      // Alt+Space → toggle overview (no Ctrl/Meta required)
+      if (e.altKey && !e.ctrlKey && !e.metaKey && e.key === " ") {
+        e.preventDefault();
+        setOverviewOpen((v) => !v);
+        return;
+      }
+
+      // Ctrl-based workspace shortcuts — explicitly exclude Meta (Super) so
+      // they don't fire when GNOME intercepts Super+PgUp/PgDn at the OS level.
+      if (!e.ctrlKey || e.metaKey) return;
+
+      if (e.altKey && !e.shiftKey && e.key === "PageUp") {
+        e.preventDefault();
+        switchRelative(-1);
+      } else if (e.altKey && !e.shiftKey && e.key === "PageDown") {
+        e.preventDefault();
+        switchRelative(1);
+      } else if (e.shiftKey && !e.altKey && e.key === "PageUp") {
+        e.preventDefault();
+        moveFocusedRelative(-1);
+      } else if (e.shiftKey && !e.altKey && e.key === "PageDown") {
+        e.preventDefault();
+        moveFocusedRelative(1);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [switchRelative, moveFocusedRelative]);
+
   return (
     <div className="relative h-full w-full overflow-hidden">
       <Wallpaper />
@@ -112,8 +157,9 @@ export default function DesktopEnvironment() {
       <WindowLayer />
       <AthenaQuickPanel />
       <SnapPreview />
-      <Taskbar />
+      <Taskbar onOpenOverview={() => setOverviewOpen(true)} />
       <AltTabSwitcher />
+      <WorkspaceOverview open={overviewOpen} onClose={() => setOverviewOpen(false)} />
       <CommandPalette />
       <QuickCapture />
       {!hasOnboarded && <OnboardingOverlay />}
