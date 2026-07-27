@@ -24,7 +24,7 @@ export default function MobileShell() {
     <main className="relative flex h-full w-full overflow-hidden bg-slate-950 text-slate-100" aria-label="Athena mobile">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_0%,rgba(99,102,241,.22),transparent_34%),radial-gradient(circle_at_100%_18%,rgba(14,165,233,.12),transparent_28%)]" />
       <div className="relative flex min-h-0 flex-1 flex-col">
-        <section className="min-h-0 flex-1 overflow-y-auto pb-24">
+        <section className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pb-24">
           {route === "home" && <MobileHome onNavigate={setRoute} />}
           {route === "tasks" && <MobileTasks />}
           {route === "calendar" && <MobileCalendar />}
@@ -32,8 +32,8 @@ export default function MobileShell() {
           {route === "more" && <MobileLauncher onClose={() => setRoute("home")} onOpen={(nextTool) => setTool(nextTool)} />}
           {tool && <MobileToolPage tool={tool} onClose={() => setTool(null)} />}
         </section>
-        <nav className="absolute inset-x-0 bottom-0 z-20 border-t border-white/10 bg-slate-950/90 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur-xl" aria-label="Primary navigation">
-          <div className="mx-auto flex max-w-md items-center justify-around">
+        <nav className="absolute inset-x-0 bottom-0 z-20 border-t border-white/10 bg-slate-950/90 px-1 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur-xl" aria-label="Primary navigation">
+          <div className="mx-auto flex max-w-md items-stretch justify-between gap-0.5">
             {TABS.map(({ id, label, icon: Icon }) => {
               const active = route === id;
               return (
@@ -41,7 +41,7 @@ export default function MobileShell() {
                   key={id}
                   type="button"
                   onClick={() => setRoute(id)}
-                  className={`flex min-w-14 flex-col items-center gap-1 rounded-xl px-3 py-1.5 text-[11px] font-medium transition ${active ? "bg-indigo-500/20 text-indigo-300" : "text-slate-400"}`}
+                  className={`flex flex-1 flex-col items-center gap-1 rounded-xl py-1.5 text-[11px] font-medium transition ${active ? "bg-indigo-500/20 text-indigo-300" : "text-slate-400"}`}
                 >
                   <Icon size={20} strokeWidth={active ? 2.5 : 2} />
                   {label}
@@ -51,7 +51,7 @@ export default function MobileShell() {
             <button
               type="button"
               onClick={() => setRoute("more")}
-              className={`flex min-w-14 flex-col items-center gap-1 rounded-xl px-3 py-1.5 text-[11px] font-medium transition ${route === "more" ? "bg-indigo-500/20 text-indigo-300" : "text-slate-400"}`}
+              className={`flex flex-1 flex-col items-center gap-1 rounded-xl py-1.5 text-[11px] font-medium transition ${route === "more" ? "bg-indigo-500/20 text-indigo-300" : "text-slate-400"}`}
             >
               <MoreHorizontal size={20} strokeWidth={route === "more" ? 2.5 : 2} />
               More
