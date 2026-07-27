@@ -94,13 +94,15 @@ export default function AthenaApp({
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [loadingConv, setLoadingConv] = useState(false);
-  const [titleGenerated, setTitleGenerated] = useState(false);
 
-  // Ref to track the latest turns for auto-save (avoids stale closures)
+  // Refs to track the latest values for callbacks that close over stale state.
   const turnsRef = useRef<ChatTurn[]>([]);
   turnsRef.current = turns;
   const activeConvIdRef = useRef<string | null>(null);
   activeConvIdRef.current = activeConvId;
+  const conversationsRef = useRef<ConversationSummary[]>([]);
+  conversationsRef.current = conversations;
+  const titleGeneratingRef = useRef(false);
 
   const windows = useWindows((s) => s.windows);
   const focusedId = useWindows((s) => s.focusedId);
@@ -157,6 +159,30 @@ export default function AthenaApp({
     return () => handleRef.current?.abort();
   }, []);
 
+  // Persist the latest conversation state when the component unmounts. This
+  // prevents losing the most recent turn when the Athena window is closed or
+  // the Win+Y quick panel is dismissed.
+  useEffect(() => {
+    return () => {
+      const convId = activeConvIdRef.current;
+      const turns = turnsRef.current;
+      if (!convId || turns.length === 0) return;
+      const messages: ConversationMessage[] = turns
+        .filter((t) => !t.error && t.content.trim())
+        .map((t) => ({
+          role: t.role,
+          content: t.content,
+          tools: t.tools,
+          timestamp: new Date().toISOString(),
+        }));
+      if (messages.length === 0) return;
+      conversationsApi.update(convId, { messages }).catch((e) => {
+        console.error("[athena] Failed to save on unmount:", e);
+      });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ===== Conversation persistence =====
 
   // On mount: load conversation list, resume active conversation or create new.
@@ -170,7 +196,6 @@ export default function AthenaApp({
           // Resume active conversation.
           const { conversation } = await conversationsApi.get(active.id);
           setActiveConvId(active.id);
-          setTitleGenerated(active.title !== "New Chat");
           setTurns(
             (conversation.messages as ConversationMessage[]).map((m) => ({
               role: m.role,
@@ -202,6 +227,7 @@ export default function AthenaApp({
         tools: t.tools,
         timestamp: new Date().toISOString(),
       }));
+    if (messages.length === 0) return; // don't wipe previously saved messages
     try {
       await conversationsApi.update(convId, { messages });
       // Refresh conversation list (for updated timestamp).
@@ -213,13 +239,18 @@ export default function AthenaApp({
   }, []);
 
   // Generate title after first user message.
+  const isGeneratedTitle = (title?: string | null) =>
+    !!title && title.trim().toLowerCase() !== "new chat";
+
   const maybeGenerateTitle = useCallback(async () => {
     const convId = activeConvIdRef.current;
-    if (!convId || titleGenerated) return;
+    if (!convId || titleGeneratingRef.current) return;
+    const currentTitle = conversationsRef.current.find((c) => c.id === convId)?.title;
+    if (isGeneratedTitle(currentTitle)) return;
     const turns = turnsRef.current;
     // Generate title after at least 2 turns (1 user + 1 assistant response).
     if (turns.length < 2) return;
-    setTitleGenerated(true);
+    titleGeneratingRef.current = true;
     try {
       const { title } = await conversationsApi.generateTitle(convId);
       // Update local conversation list with new title.
@@ -228,8 +259,10 @@ export default function AthenaApp({
       );
     } catch (e) {
       console.error("[athena] Failed to generate title:", e);
+    } finally {
+      titleGeneratingRef.current = false;
     }
-  }, [titleGenerated]);
+  }, []);
 
   // Start a new chat — archives the current active conversation.
   const startNewChat = useCallback(async () => {
@@ -241,7 +274,7 @@ export default function AthenaApp({
     try {
       const { conversation: conv } = await conversationsApi.create();
       setActiveConvId(conv.id);
-      setTitleGenerated(false);
+      titleGeneratingRef.current = false;
       setTurns([]);
       setConversations((prev) => [conv, ...prev]);
     } catch (e) {
@@ -249,50 +282,33 @@ export default function AthenaApp({
     }
   }, [streaming, saveConversation]);
 
-  // Load an archived conversation for viewing.
+  // Load a conversation from history, reactivating it if it was archived.
   const loadConversation = useCallback(async (id: string) => {
     if (streaming) return;
     setLoadingConv(true);
     try {
       const { conversation } = await conversationsApi.get(id);
-      // If loading an archived conversation, make it active (resume).
-      if (conversation.status === "archived") {
-        // Archive current active first, then set this as active.
-        if (activeConvIdRef.current && turnsRef.current.length > 0) {
-          await saveConversation(turnsRef.current);
-        }
-        // Re-activate by creating a new active conversation with same messages.
-        // Actually, simpler: just load the messages for viewing. If user sends
-        // a new message, we'll re-activate it.
-        setActiveConvId(id);
-        setTitleGenerated(conversation.title !== "New Chat");
-        setTurns(
-          (conversation.messages as ConversationMessage[]).map((m) => ({
-            role: m.role,
-            content: m.content,
-            tools: m.tools,
-          }))
-        );
-        // Mark as active in DB so future messages persist here.
-        await conversationsApi.update(id, {
-          messages: conversation.messages as ConversationMessage[],
-        });
-        // Refresh list.
-        const { conversations: list } = await conversationsApi.list();
-        setConversations(list);
-      } else {
-        // Already active — just load.
-        setActiveConvId(id);
-        setTitleGenerated(conversation.title !== "New Chat");
-        setTurns(
-          (conversation.messages as ConversationMessage[]).map((m) => ({
-            role: m.role,
-            content: m.content,
-            tools: m.tools,
-          }))
-        );
+      // Save current active conversation before switching away.
+      if (activeConvIdRef.current && activeConvIdRef.current !== id && turnsRef.current.length > 0) {
+        await saveConversation(turnsRef.current);
       }
+      // If loading an archived conversation, reactivate it on the server first.
+      if (conversation.status === "archived") {
+        await conversationsApi.reactivate(id);
+      }
+      titleGeneratingRef.current = false;
+      setActiveConvId(id);
+      setTurns(
+        (conversation.messages as ConversationMessage[]).map((m) => ({
+          role: m.role,
+          content: m.content,
+          tools: m.tools,
+        }))
+      );
       setHistoryOpen(false);
+      // Refresh list so the newly-active conversation shows correctly.
+      const { conversations: list } = await conversationsApi.list();
+      setConversations(list);
     } catch (e) {
       console.error("[athena] Failed to load conversation:", e);
     } finally {
@@ -310,7 +326,7 @@ export default function AthenaApp({
       if (id === activeConvIdRef.current) {
         const { conversation: conv } = await conversationsApi.create();
         setActiveConvId(conv.id);
-        setTitleGenerated(false);
+        titleGeneratingRef.current = false;
         setTurns([]);
         setConversations((prev) => [conv, ...prev.filter((c) => c.id !== id)]);
       }
@@ -802,9 +818,10 @@ export default function AthenaApp({
               return next;
             });
             // Save conversation + generate title after the turn completes.
-            setTimeout(() => {
-              saveConversation(finalTurns);
-              maybeGenerateTitle();
+            // Await the save so title generation reads the updated messages.
+            setTimeout(async () => {
+              await saveConversation(finalTurns);
+              await maybeGenerateTitle();
             }, 100);
           },
         },

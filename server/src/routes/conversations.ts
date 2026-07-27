@@ -161,6 +161,28 @@ conversations.post("/:id/generate-title", async (c) => {
   }
 });
 
+/** POST /:id/reactivate — make an archived conversation the active one. */
+conversations.post("/:id/reactivate", async (c) => {
+  const { userId } = c.get("auth");
+  const conv = await prisma.chatConversation.findFirst({
+    where: { id: c.req.param("id"), userId },
+  });
+  if (!conv) return c.json({ error: "Conversation not found" }, 404);
+
+  // Archive any currently-active conversation first.
+  await prisma.chatConversation.updateMany({
+    where: { userId, status: "active" },
+    data: { status: "archived" },
+  });
+
+  // Reactivate the selected conversation.
+  const updated = await prisma.chatConversation.update({
+    where: { id: conv.id },
+    data: { status: "active" },
+  });
+  return c.json({ conversation: updated });
+});
+
 /** DELETE /:id — delete a conversation. */
 conversations.delete("/:id", async (c) => {
   const { userId } = c.get("auth");

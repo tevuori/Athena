@@ -40,6 +40,10 @@ export const conversationsApi = {
   delete: (id: string) =>
     api.delete<{ ok: boolean }>(`/api/conversations/${id}`),
 
+  /** Reactivate an archived conversation (archive current active, set target active). */
+  reactivate: (id: string) =>
+    api.post<{ conversation: Conversation }>(`/api/conversations/${id}/reactivate`),
+
   archiveAll: () =>
     api.post<{ ok: boolean }>("/api/conversations/archive-all"),
 };
