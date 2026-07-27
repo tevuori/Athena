@@ -39,7 +39,7 @@ export default function MobileHome({ onNavigate }: { onNavigate: (route: MobileR
   const nextEvent = useMemo(() => [...events].sort((a, b) => +new Date(a.start) - +new Date(b.start))[0], [events]);
 
   return (
-    <div className="mx-auto max-w-md px-5 pb-8 pt-[max(1.5rem,env(safe-area-inset-top))]">
+    <div className="mx-auto min-w-0 max-w-md px-5 pb-8 pt-[max(1.5rem,env(safe-area-inset-top))]">
       <header className="mb-7 flex items-start justify-between gap-4">
         <div>
           <p className="text-sm font-medium text-indigo-300">{greeting}</p>

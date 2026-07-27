@@ -2,7 +2,7 @@ import { ArrowLeft, Plus, X } from "lucide-react";
 import type { ReactNode, InputHTMLAttributes, TextareaHTMLAttributes, SelectHTMLAttributes } from "react";
 
 export function MobileContainer({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <div className={`mx-auto max-w-md px-5 pb-7 pt-[max(1.5rem,env(safe-area-inset-top))] ${className}`}>{children}</div>;
+  return <div className={`mx-auto min-w-0 max-w-md px-5 pb-7 pt-[max(1.5rem,env(safe-area-inset-top))] ${className}`}>{children}</div>;
 }
 
 export function MobileHeader({

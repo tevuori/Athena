@@ -58,7 +58,7 @@ export default function MobileTasks() {
   const activeWs = workspaces.find((w) => w.id === activeWsId) ?? null;
 
   return (
-    <div className="mx-auto max-w-md px-5 pb-7 pt-[max(1.5rem,env(safe-area-inset-top))]">
+    <div className="mx-auto min-w-0 max-w-md px-5 pb-7 pt-[max(1.5rem,env(safe-area-inset-top))]">
       <header className="mb-6 flex items-center justify-between">
         <div>
           <p className="text-sm font-medium text-indigo-300">Get it done</p>

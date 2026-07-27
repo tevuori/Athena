@@ -25,7 +25,7 @@ export default function MobileAthena() {
     void handle.done.finally(() => setStreaming(false));
   };
   return (
-    <div className="mx-auto flex min-h-full max-w-md flex-col px-5 pb-4 pt-[max(1.5rem,env(safe-area-inset-top))]">
+    <div className="mx-auto flex min-h-full min-w-0 max-w-md flex-col px-5 pb-4 pt-[max(1.5rem,env(safe-area-inset-top))]">
       <header className="mb-6">
         <div className="flex items-center gap-2 text-indigo-300">
           <Sparkles size={17} />
