@@ -106,6 +106,7 @@ jobs:
           # Bake the version into the bundle so AboutSection can show it on web.
           # The native build reads the real version from App.getInfo() instead.
           VITE_UPDATE_REPO: ${{ github.repository }}
+          VITE_CAPACITOR_BUILD: "true"
         run: bun run build
         working-directory: client
 

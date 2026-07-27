@@ -34,6 +34,7 @@ function detectUpdateRepo(): string | undefined {
 
 const APP_VERSION = readAppVersion();
 const UPDATE_REPO = detectUpdateRepo();
+const isCapacitorBuild = process.env.VITE_CAPACITOR_BUILD === "true";
 
 export default defineConfig({
   define: {
@@ -42,7 +43,7 @@ export default defineConfig({
   },
   plugins: [
     react(),
-    VitePWA({
+    !isCapacitorBuild && VitePWA({
       registerType: "autoUpdate",
       includeAssets: ["favicon-32.png", "favicon-16.png", "apple-touch-icon.png"],
       manifest: {
@@ -56,41 +57,22 @@ export default defineConfig({
         scope: "/",
         start_url: "/",
         icons: [
-          {
-            src: "icon-192.png",
-            sizes: "192x192",
-            type: "image/png",
-          },
-          {
-            src: "icon-512.png",
-            sizes: "512x512",
-            type: "image/png",
-          },
-          {
-            src: "icon-maskable-512.png",
-            sizes: "512x512",
-            type: "image/png",
-            purpose: "maskable",
-          },
+          { src: "icon-192.png", sizes: "192x192", type: "image/png" },
+          { src: "icon-512.png", sizes: "512x512", type: "image/png" },
+          { src: "icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
         ],
       },
       workbox: {
-        // Don't precache the API — always fetch fresh.
         navigateFallbackDenylist: [/^\/api/],
         globPatterns: ["**/*.{js,css,html,svg,png,ico,woff,woff2,ttf}"],
-        // Clean up old caches.
         cleanupOutdatedCaches: true,
-        // The main JS bundle is ~3MB; allow precaching up to 4MB.
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
-        // Take over immediately when a new SW is deployed.
         skipWaiting: true,
         clientsClaim: true,
       },
-      devOptions: {
-        enabled: false,
-      },
+      devOptions: { enabled: false },
     }),
-  ],
+  ].filter(Boolean),
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),
