@@ -20,6 +20,7 @@ import NtfyApp from "./ntfy/NtfyApp";
 import VoiceApp from "./voice/VoiceApp";
 import BrowserApp from "./browser/BrowserApp";
 import RemindersApp from "./reminders/RemindersApp";
+import AnalyticsApp from "./analytics/AnalyticsApp";
 
 export interface AppDefinition {
   id: AppId;
@@ -56,6 +57,7 @@ export const APPS: AppDefinition[] = [
   { id: "voice", name: "Voice Notes", icon: "Mic", component: VoiceApp, pinnedToDesktop: true },
   { id: "browser", name: "Browser", icon: "Globe", component: BrowserApp, pinnedToDesktop: true },
   { id: "reminders", name: "Reminders", icon: "BellRing", component: RemindersApp, pinnedToDesktop: false },
+  { id: "analytics", name: "Analytics", icon: "BarChart3", component: AnalyticsApp, pinnedToDesktop: true },
 ];
 
 export const APP_MAP: Record<AppId, AppDefinition> = Object.fromEntries(

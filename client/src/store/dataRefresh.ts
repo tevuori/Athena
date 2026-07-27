@@ -19,7 +19,7 @@ import { create } from "zustand";
 const TOOL_TO_APPS: Record<string, string[]> = {
   // --- Tasks ---
   create_task: ["tasks"],
-  update_task_status: ["tasks"],
+  update_task_status: ["tasks", "analytics"],
   delete_task: ["tasks"],
   create_tasks_from_text: ["tasks"],
   create_task_from_note: ["tasks", "notes"],
@@ -51,11 +51,11 @@ const TOOL_TO_APPS: Record<string, string[]> = {
 
   // --- Habits ---
   create_habit: ["habits"],
-  log_habit: ["habits"],
+  log_habit: ["habits", "analytics"],
   delete_habit: ["habits"],
 
   // --- Flashcards ---
-  generate_flashcards: ["flashcards"],
+  generate_flashcards: ["flashcards", "analytics"],
   delete_flashcard_deck: ["flashcards"],
   delete_flashcard: ["flashcards"],
 
@@ -71,7 +71,7 @@ const TOOL_TO_APPS: Record<string, string[]> = {
   delete_podcast: ["study"],
   start_teacher_session: ["study"],
   delete_teacher_session: ["study"],
-  take_notes_from_source: ["notes"],
+  take_notes_from_source: ["notes", "analytics"],
 
   // --- Ntfy ---
   create_cron_job: ["ntfy"],

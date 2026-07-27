@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Play, Pause, RotateCcw, SkipForward, Coffee, Brain, Volume2, VolumeX } from "lucide-react";
 import { useSettings } from "../../store/settings";
+import { focusApi } from "../../services/focus";
 import type { WindowInstance } from "../../store/windows";
 
 type Phase = "focus" | "short-break" | "long-break";
@@ -107,6 +108,10 @@ export default function PomodoroApp({ win }: { win: WindowInstance }) {
       };
       setStats(newStats);
       saveStats(newStats);
+      // Log to server for the Analytics dashboard (best-effort).
+      focusApi
+        .logSession({ durationMinutes: config.minutes, phase: "focus", date: todayKey() })
+        .catch(() => { /* ignore — timer still works offline */ });
       // Every 4 focus sessions → long break
       const next: Phase = (newStats.completedFocus % 4 === 0) ? "long-break" : "short-break";
       setPhase(next);

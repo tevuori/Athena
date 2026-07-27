@@ -21,7 +21,8 @@ export type AppId =
   | "ntfy"
   | "voice"
   | "browser"
-  | "reminders";
+  | "reminders"
+  | "analytics";
 
 export interface WindowRect {
   x: number;
@@ -113,6 +114,7 @@ const DEFAULT_SIZE: Record<AppId, WindowRect> = {
   voice: { x: 280, y: 120, width: 480, height: 640 },
   browser: { x: 120, y: 60, width: 1000, height: 680 },
   reminders: { x: 240, y: 100, width: 780, height: 620 },
+  analytics: { x: 140, y: 70, width: 980, height: 680 },
 };
 
 function clampToViewport(rect: WindowRect): WindowRect {

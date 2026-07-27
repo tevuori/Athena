@@ -53,6 +53,9 @@ model User {
   ttsCredential   TtsCredential?
   reminders       Reminder[]
   lectureJobs     LectureJob[]
+  focusSessions   FocusSession[]
+  flashcardReviews FlashcardReview[]
+  gamificationState GamificationState?
 }
 
 // ===== Refresh tokens (device-remembering) =====
@@ -810,4 +813,59 @@ model LectureJob {
 
   @@index([userId])
   @@index([userId, status])
+}
+
+// ===== Gamification & Study Analytics =====
+
+// A completed Pomodoro focus session. Logged by the Pomodoro app on each
+// completed focus phase (natural completion or skip) so the Analytics
+// dashboard can chart study hours over time. The Pomodoro app still writes
+// today's aggregate stats to localStorage for habit auto-completion; this
+// table provides the historical record.
+
+model FocusSession {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date            String   // YYYY-MM-DD (local-day bucket)
+  durationMinutes Int      // actual focus minutes logged
+  phase           String   @default("focus") // "focus" (breaks are not logged)
+  createdAt       DateTime @default(now())
+
+  @@index([userId, date])
+  @@index([userId, createdAt])
+}
+
+// A single flashcard review event. Written alongside the SM-2 card update in
+// the review endpoint so the Analytics dashboard can chart reviews/day and a
+// retention curve (recall success rate = quality >= 3 over time). Without
+// this log, only the latest review per card would be recoverable.
+
+model FlashcardReview {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cardId    String
+  deckId    String
+  quality   Int      // 0-5 (SM-2 quality)
+  date      String   // YYYY-MM-DD
+  createdAt DateTime @default(now())
+
+  @@index([userId, date])
+  @@index([userId, cardId])
+  @@index([deckId])
+}
+
+// Per-user gamification state. Only the set of unlocked achievement ids is
+// persisted (so newly-unlocked achievements can be detected and toasted).
+// XP and level are derived from the dated event logs (FocusSession,
+// FlashcardReview, HabitLog, Task, StudySession) by the /api/analytics/me
+// endpoint, so no XP ledger is needed.
+
+model GamificationState {
+  id                   String   @id @default(cuid())
+  userId               String   @unique
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  unlockedAchievements String   @default("[]") // JSON array of achievement ids
+  updatedAt            DateTime @updatedAt
 }

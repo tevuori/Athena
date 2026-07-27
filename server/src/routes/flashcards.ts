@@ -164,6 +164,17 @@ flashcards.post("/cards/:cardId/review", zValidator("json", reviewSchema), async
     },
   });
 
+  // Log the review event for the Analytics dashboard (reviews/day + retention).
+  await prisma.flashcardReview.create({
+    data: {
+      userId,
+      cardId,
+      deckId: card.deckId,
+      quality: q,
+      date: new Date().toISOString().slice(0, 10),
+    },
+  });
+
   return c.json({ card: updated });
 });
 

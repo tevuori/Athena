@@ -210,6 +210,7 @@ export interface Assignment {
   maxScore: number;
   weight: number;
   category: string;
+  createdAt: string;
 }
 
 // ===== VUT =====
@@ -335,4 +336,110 @@ export interface LinkedItem {
   type: LinkType;
   refId: string; // the linked entity's id
   title: string;
+}
+
+// ===== Gamification & Study Analytics (GET /api/analytics/me) =====
+
+export type AchievementTier = "bronze" | "silver" | "gold" | "platinum";
+
+export interface Achievement {
+  id: string;
+  label: string;
+  description: string;
+  icon: string; // lucide icon name
+  tier: AchievementTier;
+  unlocked: boolean;
+  isNew: boolean;
+}
+
+export interface DayPoint {
+  day: string; // YYYY-MM-DD
+}
+
+export interface FocusDayPoint extends DayPoint {
+  minutes: number;
+  sessions: number;
+}
+
+export interface RetentionPoint extends DayPoint {
+  /** Recall success rate (quality >= 3) for that day, or null if no reviews. */
+  rate: number | null;
+  count: number;
+}
+
+export interface AdherencePoint extends DayPoint {
+  /** Fraction of habits logged that day (0–1). */
+  rate: number;
+}
+
+export interface CountDayPoint extends DayPoint {
+  count: number;
+}
+
+export interface XpDayPoint extends DayPoint {
+  xp: number;
+}
+
+export interface GradeTrendPoint {
+  date: string;
+  pct: number;
+  name: string;
+  course: string;
+}
+
+export interface HabitAnalytics {
+  habitId: string;
+  name: string;
+  color: string;
+  icon: string;
+  currentStreak: number;
+  longestStreak: number;
+  last30: string[];
+  totalLogs: number;
+}
+
+export interface AnalyticsDashboard {
+  windowDays: number;
+  days: string[];
+  focus: {
+    perDay: FocusDayPoint[];
+    totalSessions: number;
+    totalMinutes: number;
+  };
+  flashcards: {
+    reviewRetention: RetentionPoint[];
+    totalReviews: number;
+    totalCards: number;
+    maturity: { fresh: number; learning: number; young: number; mature: number };
+    avgEase: number;
+  };
+  grades: {
+    trend: GradeTrendPoint[];
+    courseCount: number;
+    assignmentCount: number;
+  };
+  habits: {
+    adherence: AdherencePoint[];
+    totalHabits: number;
+    perHabit: HabitAnalytics[];
+    maxStreak: number;
+  };
+  study: {
+    perDay: CountDayPoint[];
+    byType: Record<string, number>;
+    total: number;
+  };
+  tasks: {
+    perDay: CountDayPoint[];
+    totalDone: number;
+  };
+  xp: {
+    total: number;
+    level: number;
+    levelProgress: number; // 0–1
+    nextLevelXp: number;
+    perDay: XpDayPoint[];
+  };
+  achievements: Achievement[];
+  newlyUnlocked: string[];
 }
