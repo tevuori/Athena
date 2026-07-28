@@ -77,7 +77,17 @@ export class ApiError extends Error {
 
 let refreshing: Promise<boolean> | null = null;
 
-async function doRefresh(): Promise<boolean> {
+/**
+ * Attempt a single refresh-token rotation. Returns true on success (a new
+ * access token is stored). Returns false if there's no refresh token or the
+ * rotation failed (tokens are cleared on failure). Concurrent callers share
+ * the same in-flight refresh promise.
+ *
+ * Exported so raw-fetch callers (e.g. the Athena SSE stream in athena.ts,
+ * which can't go through `request()` because it streams) can handle 401s the
+ * same way the standard API wrapper does.
+ */
+export async function refreshAuthToken(): Promise<boolean> {
   if (refreshing) return refreshing;
   refreshing = (async () => {
     const refreshToken = getRefreshToken();
@@ -130,7 +140,7 @@ async function request<T>(
 
   // On 401, try one refresh + retry (skip for the refresh endpoint itself to avoid loops).
   if (res.status === 401 && !path.startsWith("/api/auth/refresh")) {
-    const ok = await doRefresh();
+    const ok = await refreshAuthToken();
     if (ok) {
       res = await doFetch();
     } else {

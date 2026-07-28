@@ -2,7 +2,7 @@
 // Streams a /api/athena/chat turn via fetch + ReadableStream (EventSource can't
 // POST with an Authorization header). Parses SSE events and invokes callbacks.
 
-import { getToken, api, apiUrl } from "./api";
+import { getToken, api, apiUrl, refreshAuthToken } from "./api";
 
 export interface AthenaMessage {
   role: "user" | "assistant";
@@ -51,6 +51,37 @@ export interface AthenaChatHandle {
   done: Promise<void>;
 }
 
+/**
+ * fetch() wrapper that attaches the Bearer token and, on a 401, attempts a
+ * single refresh-token rotation + retry. The Athena SSE stream and the other
+ * raw-fetch calls here bypass the `api.ts` `request()` wrapper (which already
+ * handles 401s) because they need direct access to the Response/stream — so
+ * they need their own refresh handling, otherwise an expired 15-minute access
+ * JWT surfaces as a raw "Unauthorized" error to the user mid-conversation.
+ *
+ * Returns the (possibly retried) Response. If the refresh fails the original
+ * 401 Response is returned so the caller can render its error body.
+ */
+async function authedFetch(
+  path: string,
+  init: RequestInit = {}
+): Promise<Response> {
+  const buildInit = (): RequestInit => {
+    const token = getToken();
+    const headers: Record<string, string> = {
+      ...(init.headers as Record<string, string>),
+    };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    return { ...init, headers };
+  };
+  let res = await fetch(apiUrl(path), buildInit());
+  if (res.status === 401) {
+    const ok = await refreshAuthToken();
+    if (ok) res = await fetch(apiUrl(path), buildInit());
+  }
+  return res;
+}
+
 /** Stream one Athena turn. Resolves when the stream ends (done or error). */
 export function streamAthenaChat(
   messages: AthenaMessage[],
@@ -58,17 +89,13 @@ export function streamAthenaChat(
   windows: AthenaWindowState[] = []
 ): AthenaChatHandle {
   const controller = new AbortController();
-  const token = getToken();
 
   const done = (async () => {
     let res: Response;
     try {
-      res = await fetch(apiUrl("/api/athena/chat"), {
+      res = await authedFetch("/api/athena/chat", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages, windows }),
         signal: controller.signal,
       });
@@ -185,10 +212,7 @@ export interface AthenaToolManifestEntry {
 }
 
 export async function fetchAthenaTools(): Promise<AthenaToolManifestEntry[]> {
-  const token = getToken();
-  const res = await fetch(apiUrl("/api/athena/tools"), {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
+  const res = await authedFetch("/api/athena/tools");
   if (!res.ok) return [];
   const body = await res.json();
   return (body?.tools ?? []) as AthenaToolManifestEntry[];
@@ -208,12 +232,10 @@ export interface AthenaAttachment {
 
 /** Upload a file to Athena for text extraction. Returns extracted text + temp path. */
 export async function attachFile(file: File): Promise<AthenaAttachment> {
-  const token = getToken();
   const fd = new FormData();
   fd.append("file", file);
-  const res = await fetch(apiUrl("/api/athena/attach"), {
+  const res = await authedFetch("/api/athena/attach", {
     method: "POST",
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: fd,
   });
   if (!res.ok) {
@@ -229,13 +251,9 @@ export async function saveAttachedFile(
   folderId: string | null,
   name?: string
 ): Promise<{ file: { id: string; name: string } }> {
-  const token = getToken();
-  const res = await fetch(apiUrl("/api/athena/save-attached"), {
+  const res = await authedFetch("/api/athena/save-attached", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ tempPath, folderId, name }),
   });
   if (!res.ok) {
@@ -255,13 +273,9 @@ export async function suggestFolder(
   reason: string;
   confidence: number;
 }> {
-  const token = getToken();
-  const res = await fetch(apiUrl("/api/athena/suggest-folder"), {
+  const res = await authedFetch("/api/athena/suggest-folder", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ fileName, contentPreview }),
   });
   if (!res.ok) {
