@@ -1,8 +1,9 @@
 // ===== Athena web search tool =====
-// Uses the free DuckDuckGo HTML scraper (no API key required).
+// Uses Brave Search API when BRAVE_SEARCH_API_KEY is set, otherwise falls back
+// to the free DuckDuckGo HTML scraper (no API key required).
 
 import type { ToolDef } from "./plugin";
-import { duckDuckGoSearch } from "../../../services/search";
+import { webSearch } from "../../../services/search";
 
 export const searchTools: ToolDef[] = [
   {
@@ -19,7 +20,7 @@ export const searchTools: ToolDef[] = [
       if (!query) return { error: "query is required" };
       const count = Math.max(1, Math.min(10, Number(args.count) || 6));
       try {
-        const res = await duckDuckGoSearch(query, {
+        const res = await webSearch(query, {
           count,
           region: args.region ? String(args.region) : undefined,
         });

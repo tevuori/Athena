@@ -6,7 +6,7 @@
 import type { ToolDef } from "./plugin";
 import { getUserConfig, buildModel, acquireLlmModel } from "../llm";
 import { generateText } from "../../study/llm-json";
-import { duckDuckGoSearch } from "../../../services/search";
+import { webSearch } from "../../../services/search";
 import { fetchUrl } from "../../../services/fetcher";
 import { researchSynthesizePrompt, researchRefinePrompt } from "../../study/prompts";
 import { logSessionSafe } from "../../study/logSession";
@@ -51,7 +51,7 @@ export const researchTools: ToolDef[] = [
       let sourceIndex = 1;
 
       // First search.
-      let searchRes = await duckDuckGoSearch(query, { count: config.fetchPerSearch * 2 });
+      let searchRes = await webSearch(query, { count: config.fetchPerSearch * 2 });
       let resultsToFetch = searchRes.results.slice(0, config.fetchPerSearch);
 
       // For 'deep' depth, generate a refined second query.
@@ -65,7 +65,7 @@ export const researchTools: ToolDef[] = [
           const refinedQuery = refined.trim().replace(/^["']|["']$/g, "");
           if (refinedQuery && refinedQuery.toLowerCase() !== query.toLowerCase()) {
             searchedQueries.push(refinedQuery);
-            const search2 = await duckDuckGoSearch(refinedQuery, { count: config.fetchPerSearch * 2 });
+            const search2 = await webSearch(refinedQuery, { count: config.fetchPerSearch * 2 });
             resultsToFetch = [...resultsToFetch, ...search2.results.slice(0, config.fetchPerSearch)];
           }
         } catch {
