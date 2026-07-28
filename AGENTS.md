@@ -118,6 +118,53 @@ docker compose up --build
 | `bun run cap:add:ios` | Add iOS platform to Capacitor |
 | `bun run cap:open:android` | Open Android project in Android Studio |
 | `bun run cap:open:ios` | Open iOS project in Xcode |
+| `bun run waydroid:deploy` | Build APK + install + launch in Waydroid emulator |
+| `bun run waydroid:deploy:fast` | Install + launch existing APK in Waydroid (skip build) |
+
+### Waydroid testing (local Android emulator)
+
+[Waydroid](https://waydroid.org/) runs Android natively in a Linux container (Wayland only). It's useful for testing the Athena APK without a physical device or Android Studio.
+
+**Setup (one-time):**
+```bash
+# Install Waydroid (Fedora)
+sudo dnf install -y waydroid
+sudo systemctl enable --now waydroid-container
+
+# JDK 21 is required for Gradle (Fedora 44 ships Java 25, which Gradle 8.x can't run on)
+mkdir -p ~/.local/share/jvm
+curl -sL 'https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jdk/hotspot/normal/eclipse?project=jdk' -o /tmp/jdk21.tar.gz
+tar -xzf /tmp/jdk21.tar.gz -C ~/.local/share/jvm
+# → installs to ~/.local/share/jvm/jdk-21.0.12+8
+```
+
+**Running:**
+```bash
+# 1. Start the Waydroid session (container service must already be running)
+waydroid session start &
+
+# 2. Start the Athena server on the host
+bun run dev:server
+
+# 3. Build + install + launch the APK
+bun run waydroid:deploy
+#   or skip rebuild if APK already exists:
+bun run waydroid:deploy:fast
+```
+
+**Server address:** Inside Waydroid, `localhost` is the Android container — not the host. The host is reachable at `192.168.240.1` (the `waydroid0` bridge). On the Athena login screen, enter `http://192.168.240.1:3001` as the server address.
+
+**Useful Waydroid commands:**
+```bash
+waydroid status              # check session + container status
+waydroid app list            # list installed apps
+waydroid app install <apk>   # install/update an APK
+waydroid app launch <pkg>    # launch an app (e.g. ai.athena.app)
+waydroid app remove <pkg>    # uninstall an app
+waydroid show-full-ui        # bring the Waydroid window to front
+waydroid log                 # container log (LXC-level)
+sudo waydroid logcat         # Android logcat (needs root)
+```
 
 ### Android release (APK auto-update)
 

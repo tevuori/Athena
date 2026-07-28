@@ -19,11 +19,13 @@
     "docker:up": "docker compose up --build",
     "docker:down": "docker compose down",
     "install:all": "bun install && cd server && bun install && cd ../client && bun install",
-    "cap:sync": "bun run build:client && bunx cap sync",
+    "cap:sync": "VITE_CAPACITOR_BUILD=true bun run build:client && bunx cap sync",
     "cap:add:android": "bunx cap add android",
     "cap:add:ios": "bunx cap add ios",
     "cap:open:android": "bunx cap open android",
-    "cap:open:ios": "bunx cap open ios"
+    "cap:open:ios": "bunx cap open ios",
+    "waydroid:deploy": "./scripts/waydroid-deploy.sh",
+    "waydroid:deploy:fast": "./scripts/waydroid-deploy.sh --skip-build"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.4.2",
