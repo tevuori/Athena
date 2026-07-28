@@ -8,6 +8,7 @@ import path from "node:path";
 import { readFile } from "node:fs/promises";
 import prisma from "../../db/client";
 import type { ClientWindowInfo } from "./tools/plugin";
+import { getUserTimezone } from "../timezone";
 
 const UPLOAD_DIR = path.resolve(process.cwd(), "uploads");
 const RECENT_FILE_COUNT = 5;
@@ -156,7 +157,7 @@ export async function buildSystemPrompt(
   userId: string,
   windows: ClientWindowInfo[] = []
 ): Promise<string> {
-  const [recent, summary, user, memories] = await Promise.all([
+  const [recent, summary, user, memories, tz] = await Promise.all([
     recentFilesContext(userId),
     workspaceSummary(userId),
     prisma.user.findUnique({ where: { id: userId }, select: { athenaInstructions: true } }),
@@ -166,6 +167,7 @@ export async function buildSystemPrompt(
       take: 5,
       select: { id: true, content: true, category: true },
     }),
+    getUserTimezone(userId),
   ]);
   const winCtx = windowsContext(windows);
   const browserCtx = browserTabsContext(windows);
@@ -177,7 +179,7 @@ export async function buildSystemPrompt(
     ? `\nThings you remember about the user (use these proactively; the user can ask you to forget any of them):\n${memories.map((m) => `- [${m.category}] ${m.content}`).join("\n")}\n`
     : "";
   const now = new Date();
-  const dateLine = `Current date/time: ${now.toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" })} (ISO: ${now.toISOString()}). Use this as "today" when the user says "today" — do not guess the date. Calendar/task tools accept ISO 8601 timestamps (e.g. ${now.toISOString().slice(0, 10)}T00:00:00Z).`;
+  const dateLine = `Current date/time: ${now.toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short", timeZone: tz })} (ISO: ${now.toISOString()}). The user's timezone is ${tz} — interpret any wall-clock times the user mentions (e.g. "3pm", "tomorrow at 9") as being in ${tz}, and emit fireAt / dueDate timestamps as ISO 8601 with the ${tz} offset (or convert to UTC with a trailing Z). Use this as "today" when the user says "today" — do not guess the date. Calendar/task tools accept ISO 8601 timestamps (e.g. ${now.toISOString().slice(0, 10)}T00:00:00Z).`;
   return `You are Athena, the user's personal workspace assistant living inside their Athena Student OS desktop. You can see and act on the user's workspace through tools.
 
 ${dateLine}

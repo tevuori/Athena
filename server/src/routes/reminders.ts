@@ -10,6 +10,7 @@ import { zValidator } from "@hono/zod-validator";
 import prisma from "../db/client";
 import { authMiddleware } from "../middleware/auth";
 import { decryptNtfyConfig } from "../services/ntfy/config";
+import { getUserTimezone, parseFireAtInTz } from "../services/timezone";
 
 const reminders = new Hono();
 reminders.use("*", authMiddleware);
@@ -34,6 +35,12 @@ function validateCreate(body: z.infer<typeof createSchema>): string | null {
     return "A prompt is required for athena (smart) reminders.";
   }
   return null;
+}
+
+/** Parse fireAt in the user's timezone (naive datetimes interpreted as local). */
+async function resolveFireAt(userId: string, raw: string): Promise<Date | null> {
+  const tz = await getUserTimezone(userId);
+  return parseFireAtInTz(raw, tz);
 }
 
 /** GET /api/reminders?status=pending|fired|cancelled|all */
@@ -72,6 +79,9 @@ reminders.post("/", zValidator("json", createSchema), async (c) => {
     );
   }
 
+  const fireAt = await resolveFireAt(userId, body.fireAt);
+  if (!fireAt) return c.json({ error: `Invalid fireAt datetime: "${body.fireAt}"` }, 400);
+
   const reminder = await prisma.reminder.create({
     data: {
       userId,
@@ -79,7 +89,7 @@ reminders.post("/", zValidator("json", createSchema), async (c) => {
       title: body.title,
       message: body.message,
       prompt: body.prompt,
-      fireAt: new Date(body.fireAt),
+      fireAt,
       priority: body.priority,
       tags: body.tags,
     },

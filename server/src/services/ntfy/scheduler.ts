@@ -10,6 +10,7 @@ import prisma from "../../db/client";
 import { decryptNtfyConfig } from "./config";
 import { publish, type NtfyUsableConfig } from "./client";
 import { runAthenaTurn } from "./athena-turn";
+import { getUserTimezone, nextRunInTz } from "../timezone";
 
 const TICK_MS = 60_000;
 const MAX_BODY_LEN = 4000;
@@ -27,8 +28,11 @@ export function isValidCron(expr: string): boolean {
   }
 }
 
-/** Compute the next run time for a cron expression from a given date. */
-export function nextRunAt(expr: string, from: Date = new Date()): Date {
+/** Compute the next run time for a cron expression from a given date.
+ *  Pass `tz` (IANA name) to evaluate the cron in the user's timezone; omit
+ *  for the server's local timezone (legacy behavior). */
+export function nextRunAt(expr: string, from: Date = new Date(), tz?: string): Date {
+  if (tz) return nextRunInTz(expr, tz, from);
   const c = new Cron(expr);
   const next = c.nextRun(from);
   return next ?? new Date(Date.now() + 86400000);
@@ -112,10 +116,12 @@ async function tick(): Promise<void> {
       } catch (e) {
         console.error(`[ntfy] cron fire error (job ${job.id}):`, e instanceof Error ? e.message : e);
       }
-      // Reschedule (or disable if the expression became invalid).
+      // Reschedule (or disable if the expression became invalid) in the user's
+      // timezone so wall-clock cron fields (hour, minute) match their locale.
       let next: Date;
       try {
-        next = nextRunAt(job.cron, new Date());
+        const tz = await getUserTimezone(job.userId);
+        next = nextRunAt(job.cron, new Date(), tz);
       } catch {
         next = new Date(Date.now() + 86400000);
         await prisma.ntfyCronJob.update({

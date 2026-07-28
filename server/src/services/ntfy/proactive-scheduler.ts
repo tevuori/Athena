@@ -16,6 +16,7 @@ import { isAthenaReady } from "./athena-turn";
 import { acquireLlmModel, getUserConfig } from "../athena/llm";
 import { buildSystemPrompt } from "../athena/context";
 import { AthenaToolsPlugin, ALL_TOOLS } from "../athena/tools";
+import { getUserTimezone, computeNextOccurrence } from "../timezone";
 
 const TICK_MS = 60_000;
 const MAX_BODY_LEN = 4000;
@@ -205,8 +206,16 @@ async function shouldRetryResponse(
   return false;
 }
 
-/** Compute the next occurrence of hour:minute after `from` (defaults to now). */
-export function computeNextRunAt(hour: number, minute: number, from: Date = new Date()): Date {
+/** Compute the next occurrence of hour:minute after `from` (defaults to now).
+ *  Pass `tz` (IANA name) to evaluate the wall-clock time in the user's
+ *  timezone; omit for the server's local timezone (legacy behavior). */
+export function computeNextRunAt(
+  hour: number,
+  minute: number,
+  from: Date = new Date(),
+  tz?: string
+): Date {
+  if (tz) return computeNextOccurrence(hour, minute, tz, from);
   const next = new Date(from);
   next.setSeconds(0, 0);
   next.setHours(hour, minute, 0, 0);
@@ -339,8 +348,10 @@ async function tick(): Promise<void> {
           e instanceof Error ? e.message : e
         );
       }
-      // Reschedule to the next occurrence of the configured time.
-      const next = computeNextRunAt(cfg.hour, cfg.minute, new Date());
+      // Reschedule to the next occurrence of the configured time in the user's
+      // timezone so the wall-clock hour:minute matches their locale.
+      const tz = await getUserTimezone(cfg.userId);
+      const next = computeNextRunAt(cfg.hour, cfg.minute, new Date(), tz);
       await prisma.proactiveAlertConfig.update({
         where: { id: cfg.id },
         data: { lastRunAt: new Date(), nextRunAt: next },

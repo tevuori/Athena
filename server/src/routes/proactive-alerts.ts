@@ -13,6 +13,7 @@ import {
   normalizeCategories,
   runProactiveAlertNow,
 } from "../services/ntfy/proactive-scheduler";
+import { getUserTimezone } from "../services/timezone";
 
 const proactive = new Hono();
 proactive.use("*", authMiddleware);
@@ -32,6 +33,7 @@ proactive.get("/", async (c) => {
   const { userId } = c.get("auth");
   let cfg = await prisma.proactiveAlertConfig.findUnique({ where: { userId } });
   if (!cfg) {
+    const tz = await getUserTimezone(userId);
     cfg = await prisma.proactiveAlertConfig.create({
       data: {
         userId,
@@ -40,7 +42,7 @@ proactive.get("/", async (c) => {
         minute: 0,
         categories: DEFAULT_CATEGORIES,
         customPrompt: "",
-        nextRunAt: computeNextRunAt(8, 0),
+        nextRunAt: computeNextRunAt(8, 0, new Date(), tz),
       },
     });
   }
@@ -60,10 +62,11 @@ proactive.put("/", zValidator("json", configSchema), async (c) => {
   const enabled = body.enabled ?? existing?.enabled ?? false;
   const customPrompt = body.customPrompt ?? existing?.customPrompt ?? "";
 
-  // Recompute next run to the next occurrence of the configured time. When
-  // disabled the row won't be picked up by the scheduler (it filters on
-  // enabled=true), but nextRunAt stays valid for when it's re-enabled.
-  const nextRunAt = computeNextRunAt(hour, minute);
+  // Recompute next run to the next occurrence of the configured time in the
+  // user's timezone. When disabled the row won't be picked up by the scheduler
+  // (it filters on enabled=true), but nextRunAt stays valid for re-enabling.
+  const tz = await getUserTimezone(userId);
+  const nextRunAt = computeNextRunAt(hour, minute, new Date(), tz);
 
   const cfg = await prisma.proactiveAlertConfig.upsert({
     where: { userId },

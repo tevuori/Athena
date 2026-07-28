@@ -12,6 +12,7 @@ import { decryptNtfyConfig, ntfyStatus, saveNtfyConfig, deleteNtfyConfig } from 
 import { publish, pollMessages } from "../services/ntfy/client";
 import { isValidCron, nextRunAt } from "../services/ntfy/scheduler";
 import { restartSubscriberFor, stopSubscriberFor } from "../services/ntfy/subscriber";
+import { getUserTimezone } from "../services/timezone";
 
 const ntfy = new Hono();
 ntfy.use("*", authMiddleware);
@@ -192,6 +193,7 @@ ntfy.post("/cron", zValidator("json", cronSchema), async (c) => {
   const body = c.req.valid("json");
   const err = validateCronBody(body);
   if (err) return c.json({ error: err }, 400);
+  const tz = await getUserTimezone(userId);
   const job = await prisma.ntfyCronJob.create({
     data: {
       userId,
@@ -204,7 +206,7 @@ ntfy.post("/cron", zValidator("json", cronSchema), async (c) => {
       priority: body.priority,
       tags: body.tags,
       enabled: body.enabled,
-      nextRunAt: body.enabled ? nextRunAt(body.cron) : new Date(Date.now() + 86400000),
+      nextRunAt: body.enabled ? nextRunAt(body.cron, new Date(), tz) : new Date(Date.now() + 86400000),
     },
   });
   return c.json({ job }, 201);
@@ -238,7 +240,8 @@ ntfy.put("/cron/:id", zValidator("json", cronSchema.partial()), async (c) => {
 
   const enabled = body.enabled ?? existing.enabled;
   const cron = body.cron ?? existing.cron;
-  const next = enabled ? nextRunAt(cron) : new Date(Date.now() + 86400000);
+  const tz = await getUserTimezone(userId);
+  const next = enabled ? nextRunAt(cron, new Date(), tz) : new Date(Date.now() + 86400000);
 
   const job = await prisma.ntfyCronJob.update({
     where: { id: existing.id },
@@ -314,7 +317,8 @@ ntfy.post("/cron/:id/run", async (c) => {
   }
 
   // Reschedule next run.
-  const next = nextRunAt(job.cron);
+  const tz = await getUserTimezone(userId);
+  const next = nextRunAt(job.cron, new Date(), tz);
   await prisma.ntfyCronJob.update({
     where: { id: job.id },
     data: { lastRunAt: new Date(), nextRunAt: next },
@@ -329,12 +333,14 @@ const previewSchema = z.object({
 });
 
 ntfy.post("/cron/preview", zValidator("json", previewSchema), async (c) => {
+  const { userId } = c.get("auth");
   const body = c.req.valid("json");
   if (!isValidCron(body.cron)) {
     return c.json({ error: `Invalid cron expression: "${body.cron}"` }, 400);
   }
+  const tz = await getUserTimezone(userId);
   const { Cron } = await import("croner");
-  const cron = new Cron(body.cron);
+  const cron = new Cron(body.cron, { timezone: tz });
   const runs: string[] = [];
   let prev: Date | null = new Date();
   for (let i = 0; i < body.count; i++) {

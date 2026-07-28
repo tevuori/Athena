@@ -14,6 +14,7 @@ import {
   Database,
   Info,
   BarChart3,
+  Clock,
 } from "lucide-react";
 import { useAuth } from "../../store/auth";
 import type { WindowInstance } from "../../store/windows";
@@ -31,6 +32,7 @@ import UsersSection from "./sections/UsersSection";
 import AnalyticsSection from "./sections/AnalyticsSection";
 import DataStorageSection from "./sections/DataStorageSection";
 import AboutSection from "./sections/AboutSection";
+import DateTimeSection from "./sections/DateTimeSection";
 
 interface SectionDef {
   id: string;
@@ -44,6 +46,7 @@ const SECTIONS: SectionDef[] = [
   { id: "wallpaper", label: "Wallpaper", icon: <Image size={15} /> },
   { id: "animated-bg", label: "Animated BG", icon: <Film size={15} /> },
   { id: "account", label: "Account", icon: <User size={15} /> },
+  { id: "date-time", label: "Date & Time", icon: <Clock size={15} /> },
   { id: "sound-athena", label: "Sound & Athena", icon: <Volume2 size={15} /> },
   { id: "athena", label: "Athena Assistant", icon: <Sparkles size={15} /> },
   { id: "integrations", label: "Integrations", icon: <Plug size={15} /> },
@@ -69,6 +72,7 @@ export default function SettingsApp({ win }: { win: WindowInstance }) {
     if (active === "wallpaper") return <WallpaperSection />;
     if (active === "animated-bg") return <AnimatedBgSection />;
     if (active === "account") return <AccountSection />;
+    if (active === "date-time") return <DateTimeSection />;
     if (active === "sound-athena") return <SoundAthenaSection />;
     if (active === "athena") return <AthenaSection />;
     if (active === "integrations") return <IntegrationsSection />;

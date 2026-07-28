@@ -203,7 +203,7 @@ function ProactiveAlertsCard() {
         </div>
         <ToggleRow
           label="Enable daily proactive briefing"
-          description={`Athena will check your workspace once a day at ${pad(hour)}:${pad(minute)} (server-local time) and push a concise briefing to your phone via ntfy.`}
+          description={`Athena will check your workspace once a day at ${pad(hour)}:${pad(minute)} (your timezone — set in Date & Time) and push a concise briefing to your phone via ntfy.`}
           on={enabled}
           onClick={toggleEnabled}
         />
@@ -234,7 +234,7 @@ function ProactiveAlertsCard() {
           </Field>
         </div>
         <p className="mt-2 text-xs text-ink-muted">
-          Times are in the server's local timezone. Next scheduled run:{" "}
+          Times are in your timezone (configure in Date & Time). Next scheduled run:{" "}
           {cfg.nextRunAt ? new Date(cfg.nextRunAt).toLocaleString() : "—"}
         </p>
       </Card>

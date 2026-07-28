@@ -8,6 +8,7 @@ import prisma from "../../../db/client";
 import { decryptNtfyConfig } from "../../ntfy/config";
 import { publish } from "../../ntfy/client";
 import { isValidCron, nextRunAt } from "../../ntfy/scheduler";
+import { getUserTimezone } from "../../timezone";
 
 export const ntfyTools: ToolDef[] = [
   {
@@ -124,6 +125,7 @@ export const ntfyTools: ToolDef[] = [
         return { error: "A prompt is required for athena-type cron jobs." };
       }
       const enabled = args.enabled !== false;
+      const tz = await getUserTimezone(userId);
       const job = await prisma.ntfyCronJob.create({
         data: {
           userId,
@@ -136,7 +138,7 @@ export const ntfyTools: ToolDef[] = [
           priority: Number(args.priority ?? 3),
           tags: String(args.tags ?? ""),
           enabled,
-          nextRunAt: enabled ? nextRunAt(cron) : new Date(Date.now() + 86400000),
+          nextRunAt: enabled ? nextRunAt(cron, new Date(), tz) : new Date(Date.now() + 86400000),
         },
       });
       return { job, created: true };
@@ -167,7 +169,8 @@ export const ntfyTools: ToolDef[] = [
         return { error: `Invalid cron expression: "${cron}"` };
       }
       const enabled = args.enabled ?? existing.enabled;
-      const next = enabled ? nextRunAt(cron) : new Date(Date.now() + 86400000);
+      const tz = await getUserTimezone(userId);
+      const next = enabled ? nextRunAt(cron, new Date(), tz) : new Date(Date.now() + 86400000);
       const job = await prisma.ntfyCronJob.update({
         where: { id },
         data: {

@@ -10,11 +10,10 @@
 import type { ToolDef } from "./plugin";
 import prisma from "../../../db/client";
 import { decryptNtfyConfig } from "../../ntfy/config";
+import { getUserTimezone, parseFireAtInTz } from "../../timezone";
 
-function parseFireAt(raw: unknown): Date | null {
-  if (typeof raw !== "string" && typeof raw !== "number") return null;
-  const d = new Date(raw);
-  return isNaN(d.getTime()) ? null : d;
+function parseFireAt(raw: unknown, tz: string): Date | null {
+  return parseFireAtInTz(raw, tz);
 }
 
 export const reminderTools: ToolDef[] = [
@@ -40,7 +39,8 @@ export const reminderTools: ToolDef[] = [
       }
       const message = String(args.message ?? "").trim();
       if (!message) return { error: "A message is required for a reminder." };
-      const fireAt = parseFireAt(args.fireAt);
+      const tz = await getUserTimezone(userId);
+      const fireAt = parseFireAt(args.fireAt, tz);
       if (!fireAt) return { error: `Invalid fireAt datetime: "${args.fireAt}"` };
 
       const reminder = await prisma.reminder.create({
@@ -90,7 +90,8 @@ export const reminderTools: ToolDef[] = [
       }
       const prompt = String(args.prompt ?? "").trim();
       if (!prompt) return { error: "A prompt is required for an LLM reminder." };
-      const fireAt = parseFireAt(args.fireAt);
+      const tz = await getUserTimezone(userId);
+      const fireAt = parseFireAt(args.fireAt, tz);
       if (!fireAt) return { error: `Invalid fireAt datetime: "${args.fireAt}"` };
 
       const reminder = await prisma.reminder.create({
