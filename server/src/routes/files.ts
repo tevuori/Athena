@@ -7,13 +7,28 @@ import { cleanupOrphanLinks } from "../db/links";
 import path from "node:path";
 import { mkdir, writeFile, unlink, stat, readFile, copyFile } from "node:fs/promises";
 import { zipSync, strToU8 } from "fflate";
+import { load as cheerioLoad } from "cheerio";
 import { decryptSecret } from "../services/crypto";
 import { fetchWithVutSession } from "../services/vut";
-import { fetchMoodlePage } from "../services/moodle";
+import { fetchMoodlePage, fetchResourceContent } from "../services/moodle";
 
 /** True if the file is an integration-managed virtual file (e.g. Moodle). */
 function isManagedExternal(record: { externalUrl: string | null; source: string }): boolean {
   return !!record.externalUrl && record.source === "moodle";
+}
+
+/**
+ * Build a valid Content-Disposition header for an arbitrary filename.
+ * Non-ASCII / control chars are not allowed in a quoted-string, so we emit
+ * both an ASCII fallback (`filename="safe"`) and a UTF-8 encoded
+ * `filename*=UTF-8''...` per RFC 5987/6266. This avoids the
+ * "Header 'Content-Disposition' has invalid value" error Bun throws on names
+ * like "Zadání prvního termínu 2026 Složka".
+ */
+function contentDisposition(name: string): string {
+  const safe = name.replace(/[^\x20-\x7E]/g, "_").replace(/"/g, "'").slice(0, 200) || "file";
+  const encoded = encodeURIComponent(name.slice(0, 200)).replace(/['()]/g, escape);
+  return `inline; filename="${safe}"; filename*=UTF-8''${encoded}`;
 }
 
 /**
@@ -38,6 +53,13 @@ async function proxyMoodleFile(userId: string, record: { externalUrl: string | n
         // Signal a re-auth is needed.
         return new Response(text, { status: 401, headers: r.headers });
       }
+      // A mod/resource "view" page embeds the actual file behind a download
+      // link. Resolve it and fetch the real (binary) content instead of
+      // returning the wrapper HTML.
+      const downloadUrl = extractMoodleDownloadLink(text, record.externalUrl!);
+      if (downloadUrl) {
+        return fetchWithVutSession(userId, downloadUrl);
+      }
       // Genuine content page — re-wrap the consumed body.
       return new Response(text, { status: 200, headers: r.headers });
     }
@@ -61,12 +83,29 @@ async function proxyMoodleFile(userId: string, record: { externalUrl: string | n
     }
     const headers = new Headers(resp.headers);
     headers.set("Content-Type", record.mimeType || headers.get("content-type") || "application/octet-stream");
-    headers.set("Content-Disposition", `inline; filename="${record.name}"`);
+    headers.set("Content-Disposition", contentDisposition(record.name));
     return new Response(resp.body, { status: 200, headers });
   } catch (e) {
     console.error(`[files] Moodle proxy error for ${record.externalUrl}:`, e);
     return new Response(`Failed to fetch Moodle resource: ${(e as Error).message}`, { status: 502 });
   }
+}
+
+/**
+ * From a Moodle mod/resource view page, extract the actual file download URL.
+ * Moodle wraps downloads in links like /mod/resource/content/...?forcedownload=1
+ * or pluginfile.php URLs. Returns an absolute URL or null.
+ */
+function extractMoodleDownloadLink(html: string, baseUrl: string): string | null {
+  const $ = cheerioLoad(html);
+  const href =
+    $('a[href*="forcedownload"]').first().attr("href") ||
+    $('a[href*="/mod/resource/content/"]').first().attr("href") ||
+    $(".resourcework a, .resourcelink a").first().attr("href") ||
+    $('a.aalink[href*="pluginfile"]').first().attr("href") ||
+    $('a[href*="pluginfile.php"]').first().attr("href");
+  if (!href) return null;
+  return href.startsWith("http") ? href : new URL(href, baseUrl).href;
 }
 
 const files = new Hono();
@@ -373,7 +412,7 @@ files.get("/:id/download", async (c) => {
   return new Response(f, {
     headers: {
       "Content-Type": record.mimeType,
-      "Content-Disposition": `inline; filename="${record.name}"`,
+      "Content-Disposition": contentDisposition(record.name),
       "Content-Length": String(record.size),
     },
   });
@@ -387,13 +426,13 @@ files.get("/:id/content", async (c) => {
   if (!isTextFile(record.name, record.mimeType)) {
     return c.json({ error: "Not a text file" }, 400);
   }
-  // Virtual text file (e.g. Moodle page) — fetch text through the session.
+  // Virtual text file (e.g. Moodle page) — fetch extracted text through the
+  // session. Use fetchResourceContent (not proxyMoodleFile) so we get clean
+  // text without Moodle's navigation chrome.
   if (isManagedExternal(record)) {
     try {
-      const resp = await proxyMoodleFile(userId, record);
-      if (!resp.ok) return c.json({ error: "Failed to fetch Moodle resource" }, 502);
-      const content = await resp.text();
-      return c.json({ content, name: record.name, mimeType: record.mimeType });
+      const result = await fetchResourceContent(userId, record.externalUrl!);
+      return c.json({ content: result.text, name: result.name || record.name, mimeType: record.mimeType });
     } catch (e) {
       return c.json({ error: (e as Error).message }, 502);
     }
