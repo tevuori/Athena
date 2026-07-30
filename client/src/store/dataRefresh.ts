@@ -33,6 +33,8 @@ const TOOL_TO_APPS: Record<string, string[]> = {
 
   // --- Notes ---
   create_note: ["notes"],
+  update_note: ["notes"],
+  delete_note: ["notes"],
   summarize_note: ["notes"],
   explain_note: ["notes"],
   generate_study_guide: ["notes"],
