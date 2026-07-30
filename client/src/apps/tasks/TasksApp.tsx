@@ -8,7 +8,7 @@ import { useSortable, SortableContext, verticalListSortingStrategy } from "@dnd-
 import { CSS } from "@dnd-kit/utilities";
 import {
   Plus, Trash2, Calendar, Loader2, ChevronDown, Folder,
-  Check, Pencil,
+  Check, Pencil, FolderInput,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { tasksApi, STATUS_LABELS, STATUS_ORDER, PRIORITY_LABELS, PRIORITY_COLORS } from "../../services/tasks";
@@ -154,6 +154,25 @@ export default function TasksApp(_: { win: WindowInstance }) {
       await tasksApi.delete(id);
       loadWorkspaces();
     } catch {
+      load();
+    }
+  };
+
+  // Move a task to a different workspace.
+  const moveTask = async (id: string, workspaceId: string) => {
+    const task = tasks.find((t) => t.id === id);
+    if (!task || task.workspaceId === workspaceId) return;
+    // Optimistically update + remove from current view if a specific ws is active
+    setTasks((prev) =>
+      activeWsId && activeWsId !== workspaceId
+        ? prev.filter((t) => t.id !== id)
+        : prev.map((t) => (t.id === id ? { ...t, workspaceId } : t))
+    );
+    try {
+      await tasksApi.update(id, { workspaceId });
+      loadWorkspaces();
+    } catch (e) {
+      console.error(e);
       load();
     }
   };
@@ -310,6 +329,8 @@ export default function TasksApp(_: { win: WindowInstance }) {
               onCreate={() => createTask(status)}
               onUpdate={updateTask}
               onDelete={deleteTask}
+              onMove={moveTask}
+              workspaces={workspaces}
             />
           ))}
         </div>
@@ -384,7 +405,7 @@ export default function TasksApp(_: { win: WindowInstance }) {
 }
 
 function Column({
-  status, tasks, addingTo, setAddingTo, newTitle, setNewTitle, onCreate, onUpdate, onDelete,
+  status, tasks, addingTo, setAddingTo, newTitle, setNewTitle, onCreate, onUpdate, onDelete, onMove, workspaces,
 }: {
   status: TaskStatus;
   tasks: Task[];
@@ -395,6 +416,8 @@ function Column({
   onCreate: () => void;
   onUpdate: (id: string, data: Partial<Task>) => void;
   onDelete: (id: string) => void;
+  onMove: (id: string, workspaceId: string) => void;
+  workspaces: (TaskWorkspace & { taskCount: number })[];
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
   return (
@@ -420,7 +443,14 @@ function Column({
       >
         <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
           {tasks.map((task) => (
-            <SortableCard key={task.id} task={task} onUpdate={onUpdate} onDelete={onDelete} />
+            <SortableCard
+              key={task.id}
+              task={task}
+              onUpdate={onUpdate}
+              onDelete={onDelete}
+              onMove={onMove}
+              workspaces={workspaces}
+            />
           ))}
         </SortableContext>
 
@@ -469,11 +499,13 @@ function Column({
 }
 
 function SortableCard({
-  task, onUpdate, onDelete,
+  task, onUpdate, onDelete, onMove, workspaces,
 }: {
   task: Task;
   onUpdate: (id: string, data: Partial<Task>) => void;
   onDelete: (id: string) => void;
+  onMove: (id: string, workspaceId: string) => void;
+  workspaces: (TaskWorkspace & { taskCount: number })[];
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: task.id,
@@ -485,23 +517,26 @@ function SortableCard({
   };
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <TaskCard task={task} onUpdate={onUpdate} onDelete={onDelete} />
+      <TaskCard task={task} onUpdate={onUpdate} onDelete={onDelete} onMove={onMove} workspaces={workspaces} />
     </div>
   );
 }
 
 function TaskCard({
-  task, onUpdate, onDelete, dragging,
+  task, onUpdate, onDelete, onMove, workspaces, dragging,
 }: {
   task: Task;
   onUpdate?: (id: string, data: Partial<Task>) => void;
   onDelete?: (id: string) => void;
+  onMove?: (id: string, workspaceId: string) => void;
+  workspaces?: (TaskWorkspace & { taskCount: number })[];
   dragging?: boolean;
 }) {
   const [refreshSignal, setRefreshSignal] = useState(0);
   const [descExpanded, setDescExpanded] = useState(false);
-  const descRef = useRef<HTMLParagraphElement>(null);
   const [descClamped, setDescClamped] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const descRef = useRef<HTMLParagraphElement>(null);
   const { onDragOver, onDragEnter, onDragLeave, onDrop, isOver } = useLinkDrop(
     "task",
     task.id,
@@ -547,6 +582,51 @@ function TaskCard({
                   <option key={v} value={v}>{l}</option>
                 ))}
               </select>
+              {onMove && workspaces && workspaces.length > 1 && (
+                <div className="relative">
+                  <button
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); setMoveOpen((v) => !v); }}
+                    className="flex h-7 w-7 items-center justify-center rounded text-ink-muted hover:bg-surface-3 hover:text-ink"
+                    title="Move to workspace"
+                  >
+                    <FolderInput size={14} />
+                  </button>
+                  {moveOpen && (
+                    <>
+                      <div className="fixed inset-0 z-30" onClick={(e) => { e.stopPropagation(); setMoveOpen(false); }} />
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        className="absolute right-0 top-full z-40 mt-1 min-w-[160px] rounded-lg border border-edge bg-surface p-1 shadow-window"
+                      >
+                        <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
+                          Move to
+                        </p>
+                        {workspaces.map((ws) => (
+                          <button
+                            key={ws.id}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setMoveOpen(false);
+                              onMove(task.id, ws.id);
+                            }}
+                            disabled={ws.id === task.workspaceId}
+                            className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs transition ${
+                              ws.id === task.workspaceId
+                                ? "cursor-default text-ink-muted opacity-50"
+                                : "text-ink hover:bg-surface-3"
+                            }`}
+                          >
+                            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: ws.color }} />
+                            <span className="flex-1 truncate text-left">{ws.name}</span>
+                            {ws.id === task.workspaceId && <Check size={12} />}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
               <button
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={() => onDelete?.(task.id)}
@@ -605,6 +685,16 @@ function TaskCard({
             ↻ {task.recurring}
           </span>
         )}
+        {workspaces && task.workspaceId && (() => {
+          const ws = workspaces.find((w) => w.id === task.workspaceId);
+          if (!ws) return null;
+          return (
+            <span className="flex items-center gap-1 text-[10px] text-ink-muted">
+              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: ws.color }} />
+              {ws.name}
+            </span>
+          );
+        })()}
         <span className="ml-auto">
           <LinkBadge type="task" id={task.id} refreshSignal={refreshSignal} />
         </span>
