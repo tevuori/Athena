@@ -36,6 +36,19 @@ export interface MoodleActivity {
   typeLabel: string; // human-readable type
   /** Whether this activity's text content can be fetched for the Study Hub. */
   fetchable: boolean;
+  /** Due date (ISO string) for assignments/quizzes with a deadline, if parseable. */
+  dueDate?: string;
+  /** Short description / intro text shown under the activity on the course page. */
+  description?: string;
+}
+
+/** A parsed assignment with its deadline + description, for sync into Tasks/Calendar. */
+export interface MoodleAssignment {
+  id: string;
+  name: string;
+  url: string;
+  dueDate?: string;
+  description?: string;
 }
 
 export interface MoodleSection {
@@ -302,6 +315,11 @@ export function parseCourseContents(html: string): MoodleCourseContents {
       const typeLabel = TYPE_LABELS[modType] ?? modType;
       const fetchable = FETCHABLE_TYPES.has(modType);
 
+      // Due date + description: Moodle renders an "activity dates" block and
+      // an intro/description under each activity on the course page.
+      const dueDate = parseActivityDueDate($act);
+      const description = $act.find(".contentafterlink, .description, .activitydesc").first().text().trim().replace(/\s+/g, " ").slice(0, 500) || undefined;
+
       activities.push({
         id,
         name,
@@ -309,6 +327,8 @@ export function parseCourseContents(html: string): MoodleCourseContents {
         modType,
         typeLabel,
         fetchable,
+        dueDate,
+        description,
       });
     });
 
@@ -347,6 +367,103 @@ export function parseCourseContents(html: string): MoodleCourseContents {
   }
 
   return { courseId, courseName, sections };
+}
+
+/**
+ * Parse a due date from an activity element. Moodle 4.x renders dates in a
+ * `.activitydates` container, often with `<time datetime="ISO">` or text like
+ * "Due: 3 Sep 2025, 18:00". Returns an ISO string or undefined.
+ */
+function parseActivityDueDate($act: cheerio.Cheerio<any>): string | undefined {
+  const $dates = $act.find(".activitydates, .activity-dates, .datesubmit");
+  if (!$dates.length) return undefined;
+
+  // Prefer an ISO <time datetime="..."> element.
+  const isoAttr = $dates.find("time[datetime]").first().attr("datetime");
+  if (isoAttr) {
+    const d = new Date(isoAttr);
+    if (!isNaN(d.getTime())) return d.toISOString();
+  }
+
+  // Fall back to text parsing: "Due: 3 Sep 2025, 18:00" / "Odevzdání: 3. 9. 2025, 18:00"
+  const text = $dates.text().replace(/\s+/g, " ").trim();
+  return parseMoodleDateText(text);
+}
+
+/**
+ * Best-effort parse of Moodle/VUT date text (EN + CS locales).
+ * Handles "3 Sep 2025, 18:00", "3. 9. 2025 18:00", "3.9.2025 18:00".
+ * Returns ISO string or undefined if no date is found.
+ */
+export function parseMoodleDateText(text: string): string | undefined {
+  if (!text) return undefined;
+  const MONTHS: Record<string, number> = {
+    jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7,
+    sep: 8, oct: 9, nov: 10, dec: 11,
+    led: 0, úno: 1, bře: 2, dub: 3, kvě: 4, čvn: 5, čvc: 6, srp: 7,
+    zář: 8, říj: 9, lis: 10, pro: 11,
+  };
+
+  // "D Mon YYYY, HH:MM"
+  let m = text.match(/(\d{1,2})\s+([A-Za-zÀ-ž]{3,})\.?\s+(\d{4}),?\s+(\d{1,2}):(\d{2})/);
+  if (m) {
+    const day = +m[1], mon = MONTHS[m[2].toLowerCase().slice(0, 3)], year = +m[3], hh = +m[4], mm = +m[5];
+    if (mon !== undefined) {
+      const d = new Date(Date.UTC(year, mon, day, hh, mm));
+      if (!isNaN(d.getTime())) return d.toISOString();
+    }
+  }
+
+  // "D. M. YYYY HH:MM" (Czech)
+  m = text.match(/(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4})\s+(\d{1,2}):(\d{2})/);
+  if (m) {
+    const d = new Date(Date.UTC(+m[3], +m[2] - 1, +m[1], +m[4], +m[5]));
+    if (!isNaN(d.getTime())) return d.toISOString();
+  }
+
+  // "D. M. YYYY" (no time)
+  m = text.match(/(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4})/);
+  if (m) {
+    const d = new Date(Date.UTC(+m[3], +m[2] - 1, +m[1], 23, 59));
+    if (!isNaN(d.getTime())) return d.toISOString();
+  }
+
+  return undefined;
+}
+
+/**
+ * Fetch the assignment detail page and extract a precise due date + description.
+ * Used when the course page doesn't surface a due date (Moodle hides it for
+ * past-due or conditional assignments). Returns the assignment with whatever it
+ * could parse.
+ */
+export async function fetchAssignmentDetail(
+  userId: string,
+  url: string,
+  credentials?: { username: string; password: string }
+): Promise<MoodleAssignment> {
+  const html = await fetchMoodlePage(userId, url, credentials);
+  const $ = cheerio.load(html);
+
+  const name = $(".page-header-headings h2, h3").first().text().trim() ||
+    $("title").text().trim().replace(/\s*-\s*Moodle.*$/i, "") ||
+    "Moodle Assignment";
+
+  // Assignment due date is in the submission status table or a .description block.
+  let dueDate: string | undefined;
+  const dueText = $("td.c0, .submissionstatustable, .activitydates, .description").text();
+  dueDate = parseMoodleDateText(dueText);
+  // Also try <time datetime="...">
+  const isoAttr = $('time[datetime]').first().attr("datetime");
+  if (!dueDate && isoAttr) {
+    const d = new Date(isoAttr);
+    if (!isNaN(d.getTime())) dueDate = d.toISOString();
+  }
+
+  const description = htmlToText($(".intro, .description, #region-main .no-overflow").first().html() ?? "") || undefined;
+  const idMatch = url.match(/[?&]id=(\d+)/);
+
+  return { id: idMatch?.[1] ?? "", name, url, dueDate, description };
 }
 
 // ===== Resource content fetching =====

@@ -64,6 +64,24 @@ Athena adapts to phone/tablet/desktop via a **form-factor store** (`client/src/s
 - **versionCode formula:** `major*10000 + minor*100 + patch` (e.g. `1.2.3` → `10203`). Must be monotonically increasing.
 - Web/PWA builds are unaffected — all update logic is gated on `isCapacitor()`. The PWA already uses vite-plugin-pwa's `autoUpdate` for SW-based updates.
 
+## Moodle integration
+
+A dedicated **Moodle** app (`client/src/apps/moodle/MoodleApp.tsx`) deep-integrates Moodle with the OS. It reuses the existing VUT SSO session — there are no separate Moodle credentials; the user logs in once via the VUT app and Moodle's OIDC ride-along (`moodleLogin` in `services/moodle.ts`) establishes a Moodle session in the shared per-user cookie jar.
+
+**Auth flow:** `moodleLogin` calls `vutLogin` (if needed) → hits the Moodle OIDC login URL → id.vut.cz recognizes the session → redirects back to Moodle with a session. All subsequent Moodle fetches go through `fetchWithVutSession` (in `services/vut.ts`), which follows the cross-domain redirect chain collecting cookies from each hop.
+
+**Session-fetch gotcha (fixed):** `fetchWithVutSession` returns a `Response` with an own `url` property. `Response.prototype.url` is a read-only getter, so `Object.assign(resp, { url })` throws `Attempted to assign to readonly property` in strict mode — which broke *all* Moodle source ingestion (Study Hub SourcePicker, sync, Athena tools). The fix uses `Object.defineProperty` to shadow the prototype getter with an own data property (`withFinalUrl` helper). Don't reintroduce `Object.assign` on the returned Response.
+
+**Data flow:**
+- **Courses/contents/assignments** are scraped from the Moodle web UI with cheerio (the REST API needs a token OIDC can't produce). `parseCourseContents` extracts sections + activities with due dates (`parseActivityDueDate` / `parseMoodleDateText`, EN + CS locales); `fetchAssignmentDetail` fetches the assign page when the course page hides the due date.
+- **Sync** (`services/moodle-sync.ts`, `POST /api/moodle/sync/:courseId`): for each assignment with a due date → upserts a **Task** (deduped by a `[moodle:courseId:activityId]` marker in the description — Tasks have no source/sourceRef column) **and** a **Calendar event** (`source: "moodle"`, `sourceRef: "courseId:activityId"`, deduped by source+sourceRef). For each fetchable material → upserts a **virtual VFile** (`source: "moodle"`, `externalUrl` set, `storageKey` empty, no blob on disk) under a `Moodle / <course> / <section>` folder tree. Records state in the `MoodleSync` table.
+- **Desync** (`DELETE /api/moodle/sync/:courseId`): deletes all rows whose `sourceRef` starts with `courseId:` (files/events) or whose task description contains the course's marker — no re-fetch needed.
+- **One-click Study Hub:** each material row has Summarize / Flashcards buttons that open Study Hub with `payload: { mode, sourceKind: "moodle", sourceUrl, sourceName }`. `StudyApp` builds a `{ kind: "moodle", url, name }` SourceDescriptor from that payload, which `resolveSource` (server) fetches via `fetchResourceContent`.
+
+**Virtual files in File Manager:** `VFile` has `externalUrl`, `source`, `sourceRef` columns. The files route (`GET /:id/download`, `GET /:id/content`) branches on `isManagedExternal()` and streams the body from Moodle through `fetchWithVutSession` (re-authing on a login page) instead of reading from `uploads/`. Moodle-managed files are read-only: rename/move/duplicate/save-content/delete return 403 (they're owned by the sync). The Files app shows a "Moodle" badge and hides destructive actions on them. Removing them is done via the Moodle app's desync.
+
+**Endpoints** (`routes/moodle.ts`): `/status`, `/login`, `/courses`, `/courses/:id/contents`, `/courses/:id/assignments`, `/resource`, `/sync` (list), `/sync/:courseId` (POST/DELETE).
+
 ## Quick start (local dev)
 
 ```bash
@@ -200,7 +218,7 @@ Athena/
 │       ├── index.ts              # Hono app entry
 │       ├── db/{client.ts, seed.ts}
 │       ├── routes/{auth, notes, tasks, files, spotify, lyrics, flashcards, grades, vut, ai, athena, conversations, study, moodle, calendar, habits, capture, microsoft, whiteboards, ntfy, voice, browser, focus, analytics}.ts
-│       ├── services/{spotify.ts, lrclib.ts, jwt.ts, vut.ts, crypto.ts, moodle.ts, microsoft.ts, browser.ts, ntfy/{client, config, scheduler, subscriber, athena-turn}.ts}
+│       ├── services/{spotify.ts, lrclib.ts, jwt.ts, vut.ts, crypto.ts, moodle.ts, moodle-sync.ts, microsoft.ts, browser.ts, ntfy/{client, config, scheduler, subscriber, athena-turn}.ts}
 │       ├── services/athena/{llm.ts, context.ts, tools/}  # multi-llm-ts client, system prompt, tool plugins
 │       ├── services/study/{source, llm-json, prompts, quiz-store, logSession}.ts  # AI Study Hub helpers
 │       ├── services/study/lecture/{ffmpeg, transcribe, slides, vision, align, pipeline}.ts  # Lecture Video → Notes pipeline
@@ -234,6 +252,7 @@ Athena/
         │   └── voice/           # Voice Notes (mic recorder, Whisper transcription, linked Note) — useRecorder.ts shared hook
         │   └── browser/         # Browser (Athena-integrated web browser, backend reverse proxy, per-user cookie jar, Athena can open/navigate/read pages)
         │   └── analytics/      # Analytics & Gamification (unified dashboard: study hours, flashcard retention, grade trends, habit adherence, XP/level, achievements; pure-SVG charts)
+        │   └── moodle/         # Moodle (course browser, assignment deadlines → Tasks/Calendar sync, materials → virtual Files, one-click Study Hub summarize/flashcards; rides VUT SSO)
         ├── store/                # Zustand stores (auth, windows, settings, music, notifications, browser)
         ├── services/             # API clients (api, notes, tasks, files, spotify, lyrics, flashcards, grades, vut, athena, conversations, study, moodle, calendar, habits, microsoft, users, whiteboards, ntfy, voice, browser, focus, analytics)
         └── types/                # shared TS types

@@ -15,6 +15,7 @@ import MobileBrowser from "./MobileBrowser";
 import MobileNtfy from "./MobileNtfy";
 import MobileSettings from "./MobileSettings";
 import MobileEditor from "./MobileEditor";
+import MobileMoodle from "./MobileMoodle";
 import { MobileContainer, MobileEmpty, MobileHeader } from "./MobileUi";
 
 const SCREENS: Partial<Record<MobileTool, (props: { onClose: () => void }) => ReactNode>> = {
@@ -33,6 +34,7 @@ const SCREENS: Partial<Record<MobileTool, (props: { onClose: () => void }) => Re
   ntfy: (props) => <MobileNtfy {...props} />,
   settings: (props) => <MobileSettings {...props} />,
   editor: (props) => <MobileEditor {...props} />,
+  moodle: (props) => <MobileMoodle {...props} />,
 };
 
 export default function MobileToolPage({ tool, onClose }: { tool: MobileTool; onClose: () => void }) {

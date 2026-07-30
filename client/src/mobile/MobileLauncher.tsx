@@ -1,9 +1,10 @@
 import { ArrowLeft, BookOpen, Brain, FileText, Flame, Folder, Globe, GraduationCap, Mic, Music2, NotebookPen, PenTool, Settings, Timer, BellRing, Search } from "lucide-react";
 
-export type MobileTool = "notes" | "study" | "flashcards" | "focus" | "files" | "voice" | "grades" | "vut" | "habits" | "whiteboard" | "browser" | "reminders" | "ntfy" | "settings" | "editor";
+export type MobileTool = "notes" | "study" | "flashcards" | "focus" | "files" | "voice" | "grades" | "vut" | "habits" | "whiteboard" | "browser" | "reminders" | "ntfy" | "settings" | "editor" | "moodle";
 const APPS: { id: MobileTool; name: string; description: string; icon: typeof NotebookPen }[] = [
   { id: "notes", name: "Notes", description: "Capture and organize ideas", icon: NotebookPen }, { id: "study", name: "Study Hub", description: "AI study workflows", icon: BookOpen }, { id: "flashcards", name: "Flashcards", description: "Review what matters", icon: Brain }, { id: "focus", name: "Focus", description: "Pomodoro sessions", icon: Timer },
   { id: "files", name: "Files", description: "Your study materials", icon: Folder }, { id: "voice", name: "Voice Notes", description: "Record, transcribe, remember", icon: Mic }, { id: "grades", name: "Grades", description: "Courses and progress", icon: GraduationCap }, { id: "vut", name: "VUT", description: "Classes and grades", icon: GraduationCap },
+  { id: "moodle", name: "Moodle", description: "Courses, materials, deadlines", icon: GraduationCap },
   { id: "habits", name: "Habits", description: "Small wins, daily", icon: Flame }, { id: "whiteboard", name: "Whiteboard", description: "Sketch your thinking", icon: PenTool }, { id: "browser", name: "Browser", description: "Research with Athena", icon: Globe }, { id: "reminders", name: "Reminders", description: "Never lose a deadline", icon: BellRing },
   { id: "ntfy", name: "Ntfy", description: "Messages and automations", icon: Music2 }, { id: "settings", name: "Settings", description: "Account and preferences", icon: Settings }, { id: "editor", name: "Editor", description: "Text and code files", icon: FileText },
 ];

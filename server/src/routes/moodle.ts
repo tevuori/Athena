@@ -12,10 +12,12 @@ import {
   moodleLogin,
   fetchMoodlePage,
   fetchResourceContent,
+  fetchAssignmentDetail,
   parseMyCourses,
   parseCourseContents,
   isMoodleReady,
 } from "../services/moodle";
+import { syncCourse, desyncCourse, listSyncedCourses } from "../services/moodle-sync";
 
 const moodle = new Hono();
 moodle.use("*", authMiddleware);
@@ -104,6 +106,82 @@ moodle.post("/resource", zValidator("json", resourceSchema), async (c) => {
     return c.json(content);
   } catch (e) {
     return c.json({ error: (e as Error).message }, 502);
+  }
+});
+
+/** GET /api/moodle/courses/:id/assignments — parsed assignments with deadlines. */
+moodle.get("/courses/:id/assignments", async (c) => {
+  const { userId } = c.get("auth");
+  const courseId = c.req.param("id");
+  const creds = await getCreds(userId);
+  if (!creds) return c.json({ error: "VUT credentials not configured" }, 400);
+  try {
+    const html = await fetchMoodlePage(userId, `/course/view.php?id=${courseId}`, creds);
+    const contents = parseCourseContents(html);
+    const assignments = [];
+    for (const section of contents.sections) {
+      for (const act of section.activities) {
+        if (act.modType !== "assign") continue;
+        let dueDate = act.dueDate;
+        if (!dueDate) {
+          try {
+            const detail = await fetchAssignmentDetail(userId, act.url, creds);
+            dueDate = detail.dueDate;
+          } catch {
+            // leave undefined
+          }
+        }
+        assignments.push({
+          id: act.id,
+          name: act.name,
+          url: act.url,
+          dueDate,
+          description: act.description,
+        });
+      }
+    }
+    return c.json({ courseId: contents.courseId, courseName: contents.courseName, assignments });
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 502);
+  }
+});
+
+/** GET /api/moodle/sync — list synced courses + their sync state. */
+moodle.get("/sync", async (c) => {
+  const { userId } = c.get("auth");
+  const rows = await listSyncedCourses(userId);
+  return c.json({
+    synced: rows.map((r) => ({
+      courseId: r.courseId,
+      courseName: r.courseName,
+      lastSyncAt: r.lastSyncAt.toISOString(),
+      assignmentCount: r.assignmentCount,
+      materialCount: r.materialCount,
+    })),
+  });
+});
+
+/** POST /api/moodle/sync/:courseId — sync a course into Tasks/Calendar/Files. */
+moodle.post("/sync/:courseId", async (c) => {
+  const { userId } = c.get("auth");
+  const courseId = c.req.param("courseId");
+  try {
+    const result = await syncCourse(userId, courseId);
+    return c.json(result);
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 502);
+  }
+});
+
+/** DELETE /api/moodle/sync/:courseId — remove a course's synced rows. */
+moodle.delete("/sync/:courseId", async (c) => {
+  const { userId } = c.get("auth");
+  const courseId = c.req.param("courseId");
+  try {
+    const result = await desyncCourse(userId, courseId);
+    return c.json(result);
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 500);
   }
 });
 

@@ -129,6 +129,12 @@ export interface VFile {
   mimeType: string;
   size: number;
   storageKey: string;
+  /** When set, content is streamed from this external URL (virtual file). */
+  externalUrl?: string | null;
+  /** Origin: "manual" | "moodle" | ... */
+  source?: string;
+  /** Integration reference id (e.g. "courseId:activityId" for Moodle). */
+  sourceRef?: string;
   folderId: string | null;
   starred: boolean;
   createdAt: string;

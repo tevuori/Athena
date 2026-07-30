@@ -7,6 +7,67 @@ import { cleanupOrphanLinks } from "../db/links";
 import path from "node:path";
 import { mkdir, writeFile, unlink, stat, readFile, copyFile } from "node:fs/promises";
 import { zipSync, strToU8 } from "fflate";
+import { decryptSecret } from "../services/crypto";
+import { fetchWithVutSession } from "../services/vut";
+import { fetchMoodlePage } from "../services/moodle";
+
+/** True if the file is an integration-managed virtual file (e.g. Moodle). */
+function isManagedExternal(record: { externalUrl: string | null; source: string }): boolean {
+  return !!record.externalUrl && record.source === "moodle";
+}
+
+/**
+ * Stream a Moodle virtual file's content through the user's VUT session.
+ * Re-authenticates if Moodle returns a login page. Returns a Response suitable
+ * for inline delivery to the client.
+ */
+async function proxyMoodleFile(userId: string, record: { externalUrl: string | null; name: string; mimeType: string }): Promise<Response> {
+  if (!record.externalUrl) return new Response("Missing external URL", { status: 500 });
+  const creds = await prisma.vutCredentials.findUnique({ where: { userId } });
+  if (!creds) return new Response("VUT credentials not configured", { status: 400 });
+
+  const fetchOnce = async (): Promise<Response> => {
+    const r = await fetchWithVutSession(userId, record.externalUrl!);
+    // fetchWithVutSession consumes HTML 200s to check for redirects and
+    // re-wraps them; for non-HTML the body stream is intact. If this is an
+    // HTML page, sniff for a Moodle login form to decide whether to re-auth.
+    const ct = r.headers.get("content-type") ?? "";
+    if (r.status === 200 && (ct.includes("text/html") || ct.includes("application/xhtml"))) {
+      const text = await r.text();
+      if (text.includes("loginform") || text.includes("Přihlásit se účtem VUT")) {
+        // Signal a re-auth is needed.
+        return new Response(text, { status: 401, headers: r.headers });
+      }
+      // Genuine content page — re-wrap the consumed body.
+      return new Response(text, { status: 200, headers: r.headers });
+    }
+    return r;
+  };
+
+  try {
+    let resp = await fetchOnce();
+    if (resp.status === 401) {
+      // Re-auth via the VUT/Moodle SSO flow, then retry once.
+      const password = decryptSecret(creds.passwordEnc);
+      await fetchMoodlePage(userId, record.externalUrl, { username: creds.username, password });
+      resp = await fetchOnce();
+    }
+    if (resp.status === 401) {
+      return new Response("Moodle login failed — re-enter VUT credentials in the VUT app", { status: 401 });
+    }
+    if (!resp.ok) {
+      console.error(`[files] Moodle proxy failed for ${record.externalUrl}: status ${resp.status}`);
+      return new Response(`Failed to fetch Moodle resource (status ${resp.status})`, { status: 502 });
+    }
+    const headers = new Headers(resp.headers);
+    headers.set("Content-Type", record.mimeType || headers.get("content-type") || "application/octet-stream");
+    headers.set("Content-Disposition", `inline; filename="${record.name}"`);
+    return new Response(resp.body, { status: 200, headers });
+  } catch (e) {
+    console.error(`[files] Moodle proxy error for ${record.externalUrl}:`, e);
+    return new Response(`Failed to fetch Moodle resource: ${(e as Error).message}`, { status: 502 });
+  }
+}
 
 const files = new Hono();
 files.use("*", authMiddleware);
@@ -298,6 +359,10 @@ files.get("/:id/download", async (c) => {
   const { userId } = c.get("auth");
   const record = await prisma.vFile.findFirst({ where: { id: c.req.param("id"), userId } });
   if (!record) return c.json({ error: "Not found" }, 404);
+  // Virtual / external file (e.g. Moodle) — stream through the session.
+  if (isManagedExternal(record)) {
+    return proxyMoodleFile(userId, record);
+  }
   const absPath = path.join(UPLOAD_DIR, record.storageKey);
   try {
     await stat(absPath);
@@ -322,6 +387,17 @@ files.get("/:id/content", async (c) => {
   if (!isTextFile(record.name, record.mimeType)) {
     return c.json({ error: "Not a text file" }, 400);
   }
+  // Virtual text file (e.g. Moodle page) — fetch text through the session.
+  if (isManagedExternal(record)) {
+    try {
+      const resp = await proxyMoodleFile(userId, record);
+      if (!resp.ok) return c.json({ error: "Failed to fetch Moodle resource" }, 502);
+      const content = await resp.text();
+      return c.json({ content, name: record.name, mimeType: record.mimeType });
+    } catch (e) {
+      return c.json({ error: (e as Error).message }, 502);
+    }
+  }
   const absPath = path.join(UPLOAD_DIR, record.storageKey);
   try {
     const data = await readFile(absPath, "utf-8");
@@ -337,6 +413,7 @@ files.put("/:id/content", zValidator("json", saveContentSchema), async (c) => {
   const { userId } = c.get("auth");
   const record = await prisma.vFile.findFirst({ where: { id: c.req.param("id"), userId } });
   if (!record) return c.json({ error: "Not found" }, 404);
+  if (isManagedExternal(record)) return c.json({ error: "Moodle-managed files are read-only" }, 403);
   if (!isTextFile(record.name, record.mimeType)) {
     return c.json({ error: "Not a text file" }, 400);
   }
@@ -366,6 +443,9 @@ files.post("/:id/opened", async (c) => {
 const renameSchema = z.object({ name: z.string().min(1).max(128) });
 files.patch("/:id", zValidator("json", renameSchema), async (c) => {
   const { userId } = c.get("auth");
+  const record = await prisma.vFile.findFirst({ where: { id: c.req.param("id"), userId } });
+  if (!record) return c.json({ error: "Not found" }, 404);
+  if (isManagedExternal(record)) return c.json({ error: "Moodle-managed files are read-only" }, 403);
   const { name } = c.req.valid("json");
   const res = await prisma.vFile.updateMany({
     where: { id: c.req.param("id"), userId },
@@ -379,6 +459,9 @@ files.patch("/:id", zValidator("json", renameSchema), async (c) => {
 const moveSchema = z.object({ folderId: z.string().nullable() });
 files.patch("/:id/move", zValidator("json", moveSchema), async (c) => {
   const { userId } = c.get("auth");
+  const record = await prisma.vFile.findFirst({ where: { id: c.req.param("id"), userId } });
+  if (!record) return c.json({ error: "Not found" }, 404);
+  if (isManagedExternal(record)) return c.json({ error: "Moodle-managed files are read-only" }, 403);
   const { folderId } = c.req.valid("json");
   if (folderId !== null) {
     const target = await prisma.vFolder.findFirst({ where: { id: folderId, userId } });
@@ -397,6 +480,7 @@ files.post("/duplicate/:id", async (c) => {
   const { userId } = c.get("auth");
   const record = await prisma.vFile.findFirst({ where: { id: c.req.param("id"), userId } });
   if (!record) return c.json({ error: "Not found" }, 404);
+  if (isManagedExternal(record)) return c.json({ error: "Moodle-managed files can't be duplicated" }, 403);
   const srcPath = path.join(UPLOAD_DIR, record.storageKey);
   const safeName = path.basename(record.name).replace(/[^\w.\- ]+/g, "_");
   const storageKey = `${userId}/${Date.now()}-copy-${safeName}`;
@@ -543,6 +627,7 @@ files.delete("/:id", async (c) => {
   const { userId } = c.get("auth");
   const record = await prisma.vFile.findFirst({ where: { id: c.req.param("id"), userId } });
   if (!record) return c.json({ error: "Not found" }, 404);
+  if (isManagedExternal(record)) return c.json({ error: "Moodle-managed files are removed via the Moodle app's desync" }, 403);
   const absPath = path.join(UPLOAD_DIR, record.storageKey);
   await unlink(absPath).catch(() => {});
   await prisma.vFile.delete({ where: { id: record.id } });

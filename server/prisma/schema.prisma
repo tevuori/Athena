@@ -57,6 +57,7 @@ model User {
   flashcardReviews FlashcardReview[]
   gamificationState GamificationState?
   studyHighlights   StudyHighlight[]
+  moodleSyncs       MoodleSync[]
 }
 
 // ===== Study Hub: persistent user highlights & annotations =====
@@ -400,7 +401,15 @@ model VFile {
   name       String
   mimeType   String   @default("application/octet-stream")
   size       Int      @default(0)
-  storageKey String   // relative path under uploads/
+  storageKey String   // relative path under uploads/ (empty for external/virtual files)
+  // When set, the file's content is streamed from this external URL on demand
+  // (e.g. a Moodle resource) instead of being read from uploads/. Used together
+  // with `source` to mark the file as managed by an integration.
+  externalUrl String?
+  // Origin of the file: "manual" (user upload/text), "moodle" (synced virtual file).
+  source     String   @default("manual")
+  // Integration-specific reference id (e.g. Moodle activity id) for dedupe/sync.
+  sourceRef  String   @default("")
   folderId   String?
   folder     VFolder? @relation("VFolderFiles", fields: [folderId], references: [id], onDelete: SetNull)
   userId     String
@@ -413,6 +422,7 @@ model VFile {
   @@index([userId, folderId])
   @@index([userId, starred])
   @@index([userId, lastOpenedAt])
+  @@index([userId, source, sourceRef])
 }
 
 model LyricsCache {
@@ -909,4 +919,22 @@ model GamificationState {
   user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   unlockedAchievements String   @default("[]") // JSON array of achievement ids
   updatedAt            DateTime @updatedAt
+}
+
+// ===== Moodle integration: per-course sync state =====
+// Tracks which Moodle courses have been synced into Tasks/Calendar/Files so the
+// Moodle app can show sync status and re-syncs can dedupe (upsert by courseId).
+
+model MoodleSync {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId        String
+  courseName      String   @default("")
+  lastSyncAt      DateTime @default(now())
+  assignmentCount Int      @default(0)
+  materialCount   Int      @default(0)
+
+  @@unique([userId, courseId])
+  @@index([userId])
 }

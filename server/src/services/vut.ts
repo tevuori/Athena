@@ -974,8 +974,23 @@ export function clearVutSession(userId: string) {
  * cross-domain SSO flows (e.g. Moodle OIDC via id.vut.cz) work correctly.
  * Other services (e.g. moodle.ts) use this to ride the established session.
  *
- * Returns a Response-like object with the final URL + body text available.
+ * Returns a Response with an own `url` property reflecting the final URL.
+ *
+ * NOTE: `Response.prototype.url` is a read-only getter (no setter), so
+ * `Object.assign(resp, { url })` throws "Attempted to assign read only
+ * property 'url'" in strict mode. We define an own data property instead,
+ * which shadows the prototype getter without invoking its (absent) setter.
  */
+function withFinalUrl(resp: Response, url: string): Response & { url: string } {
+  Object.defineProperty(resp, "url", {
+    value: url,
+    writable: true,
+    configurable: true,
+    enumerable: true,
+  });
+  return resp as Response & { url: string };
+}
+
 export async function fetchWithVutSession(
   userId: string,
   url: string,
@@ -1001,7 +1016,7 @@ export async function fetchWithVutSession(
     if (resp.status >= 300 && resp.status < 400) {
       const loc = resp.headers.get("location");
       if (!loc) {
-        return Object.assign(resp, { url: currentUrl });
+        return withFinalUrl(resp, currentUrl);
       }
       currentUrl = resolveUrl(currentUrl, loc);
       // Update Cookie header for the next hop
@@ -1009,8 +1024,15 @@ export async function fetchWithVutSession(
       continue;
     }
 
-    // Check for meta-refresh / JS redirect in 200 responses
+    // Check for meta-refresh / JS redirect in 200 responses. Only inspect
+    // HTML bodies — binary responses (PDFs, images, downloads) must be returned
+    // with the body stream intact; reading them as text corrupts the content
+    // and can blow up on large/encoded payloads.
     if (resp.status === 200) {
+      const ct = resp.headers.get("content-type") ?? "";
+      if (!ct.includes("text/html") && !ct.includes("application/xhtml")) {
+        return withFinalUrl(resp, currentUrl);
+      }
       const html = await resp.text();
       const $ = cheerio.load(html);
       const metaRefresh = $('meta[http-equiv="refresh"]').attr("content");
@@ -1029,13 +1051,13 @@ export async function fetchWithVutSession(
         continue;
       }
       // No redirect — return the response with the consumed body re-wrapped
-      return Object.assign(
+      return withFinalUrl(
         new Response(html, { status: 200, headers: resp.headers }),
-        { url: currentUrl }
+        currentUrl
       );
     }
 
-    return Object.assign(resp, { url: currentUrl });
+    return withFinalUrl(resp, currentUrl);
   }
 
   throw new Error("Too many redirects in fetchWithVutSession");
