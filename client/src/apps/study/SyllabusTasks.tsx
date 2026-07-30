@@ -4,13 +4,14 @@ import { useState } from "react";
 import { Sparkles, Plus, Trash2, CheckSquare } from "lucide-react";
 import WorkspaceSourceSelector, { studySourceToDescriptor } from "./WorkspaceSourceSelector";
 import { studySourcesApi, type StudySource } from "../../services/study-sources";
-import { ActionButton, ErrorBanner, Loading, SuccessBanner, TruncationNote } from "./ui";
+import { ActionButton, ErrorBanner, Loading, PreselectedSource, SuccessBanner, TruncationNote } from "./ui";
 import { studyApi, type SourceDescriptor, type SyllabusTask } from "../../services/study";
 import { tasksApi } from "../../services/tasks";
 import { useWindows } from "../../store/windows";
 
 export default function SyllabusTasks({ initialSource, language }: { initialSource?: SourceDescriptor | null; language?: "en" | "cs" }) {
   const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(new Set());
+  const [pinnedSource, setPinnedSource] = useState<SourceDescriptor | null>(initialSource ?? null);
   const toggleSource = (id: string) => {
     setSelectedSourceIds((prev) => {
       const next = new Set(prev);
@@ -20,6 +21,7 @@ export default function SyllabusTasks({ initialSource, language }: { initialSour
     });
   };
   const getSources = async (): Promise<SourceDescriptor[]> => {
+    if (pinnedSource) return [pinnedSource];
     const { sources: lib } = await studySourcesApi.list();
     return [...selectedSourceIds].map((id) => {
       const s = lib.find((x) => x.id === id);
@@ -34,8 +36,10 @@ export default function SyllabusTasks({ initialSource, language }: { initialSour
   const [truncated, setTruncated] = useState(false);
   const openWindow = useWindows((s) => s.open);
 
+  const hasSource = pinnedSource !== null || selectedSourceIds.size > 0;
+
   const run = async () => {
-    if (selectedSourceIds.size === 0) return;
+    if (!hasSource) return;
     setLoading(true);
     setError("");
     setSuccess("");
@@ -93,11 +97,15 @@ export default function SyllabusTasks({ initialSource, language }: { initialSour
 
   return (
     <div className="flex flex-col gap-3">
-      <WorkspaceSourceSelector selectedIds={selectedSourceIds} onToggle={toggleSource} disabled={loading} />
+      {pinnedSource ? (
+        <PreselectedSource source={pinnedSource} onDismiss={() => setPinnedSource(null)} />
+      ) : (
+        <WorkspaceSourceSelector selectedIds={selectedSourceIds} onToggle={toggleSource} disabled={loading} />
+      )}
       <p className="text-xs text-ink-muted">
         Paste a syllabus, assignment list, or course outline — Athena extracts tasks with due dates and priorities.
       </p>
-      <ActionButton onClick={run} disabled={selectedSourceIds.size === 0} loading={loading}>
+      <ActionButton onClick={run} disabled={!hasSource} loading={loading}>
         <Sparkles size={13} /> Extract tasks
       </ActionButton>
 

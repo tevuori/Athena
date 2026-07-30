@@ -1,8 +1,9 @@
 // ===== Shared UI bits for Study Hub modes =====
 
-import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { Loader2, CheckCircle2, AlertCircle, GraduationCap, FileText, File as FileIcon, Link2, ClipboardPaste, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import type { SourceDescriptor } from "../../services/study";
 
 export function MarkdownView({ content }: { content: string }) {
   return (
@@ -68,6 +69,47 @@ export function TruncationNote({ show }: { show: boolean }) {
   return (
     <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-amber-500">
       Source was truncated (over 20,000 chars) — results are based on the first part.
+    </div>
+  );
+}
+
+const SOURCE_ICONS: Record<string, typeof FileText> = {
+  note: FileText,
+  file: FileIcon,
+  paste: ClipboardPaste,
+  moodle: GraduationCap,
+  url: Link2,
+};
+
+/**
+ * Shows a pre-selected source (e.g. from Moodle app "Summarize" button) as a
+ * card with an option to dismiss it and go back to manual source selection.
+ */
+export function PreselectedSource({
+  source,
+  onDismiss,
+}: {
+  source: SourceDescriptor;
+  onDismiss?: () => void;
+}) {
+  const Icon = SOURCE_ICONS[source.kind] ?? FileText;
+  const label = source.name || source.url || source.id || source.kind;
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-accent/30 bg-accent/5 p-2.5 text-xs">
+      <Icon size={14} className="shrink-0 text-accent" />
+      <div className="min-w-0 flex-1">
+        <span className="text-[10px] uppercase tracking-wide text-ink-muted">{source.kind}</span>
+        <p className="truncate font-medium text-ink">{label}</p>
+      </div>
+      {onDismiss && (
+        <button
+          onClick={onDismiss}
+          className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-ink-muted hover:bg-surface-3 hover:text-ink"
+          title="Choose a different source"
+        >
+          <X size={12} />
+        </button>
+      )}
     </div>
   );
 }

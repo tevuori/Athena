@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Sparkles, Plus, Trash2, Save } from "lucide-react";
 import WorkspaceSourceSelector, { studySourceToDescriptor } from "./WorkspaceSourceSelector";
 import { studySourcesApi, type StudySource } from "../../services/study-sources";
-import { ActionButton, ErrorBanner, Loading, SuccessBanner, TruncationNote } from "./ui";
+import { ActionButton, ErrorBanner, Loading, PreselectedSource, SuccessBanner, TruncationNote } from "./ui";
 import { studyApi, type SourceDescriptor, type GeneratedCard } from "../../services/study";
 import { flashcardsApi } from "../../services/flashcards";
 import { useWindows } from "../../store/windows";
@@ -15,6 +15,7 @@ export default function GenerateFlashcards({ initialSource, appendDeck, language
   language?: "en" | "cs";
 }) {
   const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(new Set());
+  const [pinnedSource, setPinnedSource] = useState<SourceDescriptor | null>(initialSource ?? null);
   const toggleSource = (id: string) => {
     setSelectedSourceIds((prev) => {
       const next = new Set(prev);
@@ -24,6 +25,7 @@ export default function GenerateFlashcards({ initialSource, appendDeck, language
     });
   };
   const getSources = async (): Promise<SourceDescriptor[]> => {
+    if (pinnedSource) return [pinnedSource];
     const { sources: lib } = await studySourcesApi.list();
     return [...selectedSourceIds].map((id) => {
       const s = lib.find((x) => x.id === id);
@@ -42,8 +44,10 @@ export default function GenerateFlashcards({ initialSource, appendDeck, language
   const [createdDeckId, setCreatedDeckId] = useState<string | null>(null);
   const openWindow = useWindows((s) => s.open);
 
+  const hasSource = pinnedSource !== null || selectedSourceIds.size > 0;
+
   const run = async () => {
-    if (selectedSourceIds.size === 0) return;
+    if (!hasSource) return;
     setLoading(true);
     setError("");
     setSuccess("");
@@ -120,7 +124,11 @@ export default function GenerateFlashcards({ initialSource, appendDeck, language
 
   return (
     <div className="flex flex-col gap-3">
-      <WorkspaceSourceSelector selectedIds={selectedSourceIds} onToggle={toggleSource} disabled={loading} />
+      {pinnedSource ? (
+        <PreselectedSource source={pinnedSource} onDismiss={() => setPinnedSource(null)} />
+      ) : (
+        <WorkspaceSourceSelector selectedIds={selectedSourceIds} onToggle={toggleSource} disabled={loading} />
+      )}
 
       <div className="flex flex-wrap items-end gap-3">
         <label className="flex flex-col gap-1 text-xs text-ink-muted">
@@ -166,7 +174,7 @@ export default function GenerateFlashcards({ initialSource, appendDeck, language
             <Trash2 size={12} /> New deck
           </button>
         )}
-        <ActionButton onClick={run} disabled={selectedSourceIds.size === 0} loading={loading}>
+        <ActionButton onClick={run} disabled={!hasSource} loading={loading}>
           <Sparkles size={13} /> Generate
         </ActionButton>
       </div>

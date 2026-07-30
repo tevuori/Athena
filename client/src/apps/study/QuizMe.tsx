@@ -6,7 +6,7 @@ import { useState, useEffect } from "react";
 import { Sparkles, CheckCircle2, XCircle, RotateCcw, Award, Brain, Save, Filter } from "lucide-react";
 import WorkspaceSourceSelector, { studySourceToDescriptor } from "./WorkspaceSourceSelector";
 import { studySourcesApi, type StudySource } from "../../services/study-sources";
-import { ActionButton, ErrorBanner, Loading, MarkdownView, SuccessBanner, TruncationNote } from "./ui";
+import { ActionButton, ErrorBanner, Loading, MarkdownView, PreselectedSource, SuccessBanner, TruncationNote } from "./ui";
 import {
   studyApi,
   type SourceDescriptor,
@@ -33,6 +33,7 @@ export default function QuizMe({
   language?: "en" | "cs";
 }) {
   const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(new Set());
+  const [pinnedSource, setPinnedSource] = useState<SourceDescriptor | null>(initialSource ?? null);
   const toggleSource = (id: string) => {
     setSelectedSourceIds((prev) => {
       const next = new Set(prev);
@@ -42,6 +43,7 @@ export default function QuizMe({
     });
   };
   const getSources = async (): Promise<SourceDescriptor[]> => {
+    if (pinnedSource) return [pinnedSource];
     const { sources: lib } = await studySourcesApi.list();
     return [...selectedSourceIds].map((id) => {
       const s = lib.find((x) => x.id === id);
@@ -106,8 +108,10 @@ export default function QuizMe({
     });
   };
 
+  const hasSource = pinnedSource !== null || selectedSourceIds.size > 0;
+
   const start = async () => {
-    if (selectedSourceIds.size === 0) return;
+    if (!hasSource) return;
     setLoading(true);
     setError("");
     setQuestions([]);
@@ -257,7 +261,11 @@ export default function QuizMe({
   if (phase === "setup") {
     return (
       <div className="flex flex-col gap-3">
-        <WorkspaceSourceSelector selectedIds={selectedSourceIds} onToggle={toggleSource} disabled={loading} />
+        {pinnedSource ? (
+          <PreselectedSource source={pinnedSource} onDismiss={() => setPinnedSource(null)} />
+        ) : (
+          <WorkspaceSourceSelector selectedIds={selectedSourceIds} onToggle={toggleSource} disabled={loading} />
+        )}
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1 text-xs text-ink-muted">
             Questions
@@ -288,7 +296,7 @@ export default function QuizMe({
               ))}
             </div>
           </div>
-          <ActionButton onClick={start} disabled={selectedSourceIds.size === 0} loading={loading}>
+          <ActionButton onClick={start} disabled={!hasSource} loading={loading}>
             <Sparkles size={13} /> Start quiz
           </ActionButton>
         </div>
