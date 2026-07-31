@@ -50,6 +50,8 @@ Athena adapts to phone/tablet/desktop via a **form-factor store** (`client/src/s
 - Notes: `group` class added to note items so MoreVertical reveals on touch
 - Settings: new Mobile section with form-factor override
 
+**Branding:** the master logo lives at `assets/logo.png`. Every derived asset (web favicons, PWA icons, Android launcher/adaptive icons, Android splash screens) is generated from it by `python3 scripts/generate-icons.py` (requires Pillow) — never hand-edit the generated PNGs. In-app the brand mark is rendered by `client/src/shell/AppLogo.tsx` (boot screen, login screen, taskbar start button).
+
 **PWA:** vite-plugin-pwa generates service worker + manifest. Icons in `client/public/`. `usePwaInstall` hook + `InstallBanner` component handle install prompt (Android) and iOS instructions.
 
 **Capacitor:** `capacitor.config.json` at root. `client/src/shell/mobile/capacitor.ts` dynamically imported on app start — initializes StatusBar, SplashScreen, hardware back button, haptics, and a background check for APK self-updates. Only runs on native platforms (`Capacitor.isNativePlatform()`). Scripts: `bun run cap:sync`, `bun run cap:add:android`, `bun run cap:add:ios`, `bun run cap:open:android`, `bun run cap:open:ios`.

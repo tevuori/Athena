@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
+import AppLogo from "./AppLogo";
 
 interface Props {
   onDone: () => void;
@@ -43,7 +44,7 @@ export default function BootScreen({ onDone }: Props) {
             animate={{ rotate: -360 }}
             transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
           />
-          <span className="text-4xl font-bold tracking-tight">A</span>
+          <AppLogo size={56} />
         </div>
       </motion.div>
       <motion.h1

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import * as Lucide from "lucide-react";
-import { LayoutGrid } from "lucide-react";
+import AppLogo from "./AppLogo";
 import { useWindows } from "../store/windows";
 import { APPS } from "../apps/registry";
 import StartMenu from "./StartMenu";
@@ -42,7 +42,7 @@ export default function Taskbar({ onOpenOverview }: Props) {
             }`}
             title="Start"
           >
-            <LayoutGrid size={18} />
+            <AppLogo size={22} />
           </button>
           <div className="mx-1 h-6 w-px bg-edge" />
           <WorkspaceSwitcher onOpenOverview={() => onOpenOverview?.()} />

@@ -4,6 +4,7 @@ import { LogIn, Loader2, Server } from "lucide-react";
 import { useAuth } from "../store/auth";
 import { Capacitor } from "@capacitor/core";
 import { getBaseUrl, setBaseUrl } from "../services/api";
+import AppLogo from "./AppLogo";
 
 export default function LoginScreen() {
   const { login } = useAuth();
@@ -56,9 +57,7 @@ export default function LoginScreen() {
         className="relative z-10 w-full max-w-sm rounded-2xl border border-edge bg-surface/95 p-8 shadow-window"
       >
         <div className="mb-6 text-center">
-          <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-xl bg-accent text-2xl font-bold text-accent-fg">
-            A
-          </div>
+          <AppLogo size={56} className="mx-auto mb-3" />
           <h1 className="text-xl font-semibold text-ink">Athena</h1>
           <p className="text-sm text-ink-muted">Sign in to your Student OS</p>
         </div>
