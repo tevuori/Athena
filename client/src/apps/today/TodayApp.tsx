@@ -221,7 +221,7 @@ export default function TodayApp() {
               <span className="text-xs font-semibold uppercase tracking-wide">Today</span>
             </div>
             <h1 className="mt-1 text-2xl font-bold text-ink">
-              {greeting}, {user?.displayName || user?.username || "student"}
+              {greeting}{(user?.displayName || user?.username) ? `, ${user.displayName || user.username}` : ""}
             </h1>
             <p className="text-sm text-ink-muted">{dateStr}</p>
           </div>

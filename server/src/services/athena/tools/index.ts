@@ -20,6 +20,7 @@ import { notetakeTools } from "./notetake";
 import { crossAppTools } from "./crossapp";
 import { researchTools } from "./research";
 import { memoryTools } from "./memory";
+import { profileTools } from "./profile";
 import { linkTools } from "./links";
 import { browserTools } from "./browser";
 import { teacherTools } from "./teacher";
@@ -51,6 +52,7 @@ export const ALL_TOOLS: ToolDef[] = [
   ...notetakeTools,
   ...crossAppTools,
   ...memoryTools,
+  ...profileTools,
   ...linkTools,
   ...browserTools,
   ...teacherTools,

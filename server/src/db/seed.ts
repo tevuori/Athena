@@ -15,7 +15,7 @@ async function main() {
       data: {
         username,
         passwordHash: await bcrypt.hash(password, 10),
-        displayName: "Student",
+        displayName: "",
         avatarColor: "#6366f1",
         role: "ADMIN",
       },
