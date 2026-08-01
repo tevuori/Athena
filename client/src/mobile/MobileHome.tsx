@@ -34,7 +34,7 @@ export default function MobileHome({ onNavigate }: { onNavigate: (route: MobileR
   useEffect(() => { void refresh(); }, [refresh]);
 
   const greeting = new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 18 ? "Good afternoon" : "Good evening";
-  const firstName = (user?.displayName || user?.username || "Student").trim().split(/\s+/)[0];
+  const firstName = (user?.displayName || user?.username || "").trim().split(/\s+/)[0];
   const openTasks = tasks.filter((task) => task.status !== "DONE").sort((a, b) => Number(a.priority === "HIGH") - Number(b.priority === "HIGH")).slice(0, 3);
   const nextEvent = useMemo(() => [...events].sort((a, b) => +new Date(a.start) - +new Date(b.start))[0], [events]);
 
@@ -43,10 +43,10 @@ export default function MobileHome({ onNavigate }: { onNavigate: (route: MobileR
       <header className="mb-7 flex items-start justify-between gap-4">
         <div>
           <p className="text-sm font-medium text-indigo-300">{greeting}</p>
-          <h1 className="mt-1 text-3xl font-bold tracking-tight text-white">Hello Student, {firstName}</h1>
+          <h1 className="mt-1 text-3xl font-bold tracking-tight text-white">{firstName ? `Hello, ${firstName}` : "Hello"}</h1>
           <p className="mt-2 text-sm text-slate-400">{new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</p>
         </div>
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-indigo-500 text-sm font-bold text-white shadow-lg shadow-indigo-950/40">{firstName.slice(0, 1).toUpperCase()}</div>
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-indigo-500 text-sm font-bold text-white shadow-lg shadow-indigo-950/40">{(firstName.slice(0, 1) || "A").toUpperCase()}</div>
       </header>
 
       <section className="mb-6 rounded-3xl border border-indigo-300/15 bg-gradient-to-br from-indigo-500/25 to-sky-500/10 p-5 shadow-xl shadow-slate-950/20">
