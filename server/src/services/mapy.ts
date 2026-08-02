@@ -296,16 +296,24 @@ export async function geocodeSmart(
     const first = items[0];
     const queryLower = query.toLowerCase().trim();
     const nameLower = first.name.toLowerCase().trim();
-    const isGoodMatch = nameLower === queryLower || nameLower.includes(queryLower) || queryLower.includes(nameLower);
+    // A "good match" requires the name to cover at least 60% of the query's
+    // words — prevents "Lysá" matching "Lysá hora Šumava" (1 of 3 words = 33%).
+    const queryWords = queryLower.split(/\s+/).filter((w) => w.length > 1);
+    const nameWords = nameLower.split(/\s+/).filter((w) => w.length > 1);
+    const coveredWords = nameWords.filter((w) => queryWords.includes(w)).length;
+    const coverage = queryWords.length > 0 ? coveredWords / queryWords.length : 1;
+    const isGoodMatch = nameLower === queryLower || coverage >= 0.6;
     if (isGoodMatch) return first;
 
     // Poor match — try Nominatim as a cross-check.
     const nomResult = await nominatimSearch(query, lang);
     if (nomResult) {
-      // Prefer Nominatim if its name is a better match for the query.
+      // Prefer Nominatim if its name has better word coverage of the query.
       const nomNameLower = nomResult.name.toLowerCase().trim();
-      const nomIsBetter = nomNameLower === queryLower || nomNameLower.includes(queryLower);
-      if (nomIsBetter) return nomResult;
+      const nomNameWords = nomNameLower.split(/\s+/).filter((w) => w.length > 1);
+      const nomCovered = nomNameWords.filter((w) => queryWords.includes(w)).length;
+      const nomCoverage = queryWords.length > 0 ? nomCovered / queryWords.length : 0;
+      if (nomCoverage > coverage) return nomResult;
     }
     // Fall back to the mapy.cz result if Nominatim didn't help.
     return first;
