@@ -287,14 +287,71 @@ export async function geocodeSmart(
       it.name.toLowerCase() === query.toLowerCase().trim()
     );
     if (exact) return exact;
-    // Otherwise return the first result (best match by API ranking).
-    return items[0];
+
+    // Check if the first result is a good match. If the result name is
+    // significantly shorter than the query (e.g. query="Lysá hora Šumava"
+    // but result="Lysá"), the mapy.cz API likely truncated the query and
+    // returned a wrong match. In that case, also try Nominatim and prefer
+    // it if it has a better name match.
+    const first = items[0];
+    const queryLower = query.toLowerCase().trim();
+    const nameLower = first.name.toLowerCase().trim();
+    const isGoodMatch = nameLower === queryLower || nameLower.includes(queryLower) || queryLower.includes(nameLower);
+    if (isGoodMatch) return first;
+
+    // Poor match — try Nominatim as a cross-check.
+    const nomResult = await nominatimSearch(query, lang);
+    if (nomResult) {
+      // Prefer Nominatim if its name is a better match for the query.
+      const nomNameLower = nomResult.name.toLowerCase().trim();
+      const nomIsBetter = nomNameLower === queryLower || nomNameLower.includes(queryLower);
+      if (nomIsBetter) return nomResult;
+    }
+    // Fall back to the mapy.cz result if Nominatim didn't help.
+    return first;
   }
 
   // 2. Fallback: OpenStreetMap Nominatim (free, no API key, excellent coverage
   // of natural features like peaks/springs/valleys that mapy.cz doesn't index).
-  // Rate-limited to 1 req/s by OSM policy — we only call it when mapy.cz fails,
-  // so this is well within limits.
+  const nomResult = await nominatimSearch(query, lang);
+  if (nomResult) return nomResult;
+
+  // 3. Fallback: web search for "<query> coordinates lat lon" and parse
+  // decimal coordinates from the snippets. This catches peaks/landmarks
+  // that neither mapy.cz nor OSM index but Wikipedia does.
+  try {
+    const searchRes = await webSearch(`${query} coordinates latitude longitude`, {
+      count: 5,
+    });
+    for (const r of searchRes.results) {
+      const text = `${r.title} ${r.description}`;
+      // Match decimal lat/lon patterns like "48.9572, 13.7889" or
+      // "48.9572°N 13.7889°E" or "lat: 48.9572 lon: 13.7889".
+      const m = text.match(/(-?\d{1,3}\.\d{3,8})[°\s,]+[NS]?\s*[,;]?\s*(-?\d{1,3}\.\d{3,8})[°\s,]+[EW]?/i);
+      if (m) {
+        const lat = Number(m[1]);
+        const lon = Number(m[2]);
+        if (Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
+          return {
+            lat,
+            lon,
+            name: query,
+            label: `${query} (via web search)`,
+            type: "coordinate",
+            location: r.url,
+          };
+        }
+      }
+    }
+  } catch {
+    // web search may fail (DuckDuckGo blocking, no Brave key) — ignore.
+  }
+
+  return null;
+}
+
+/** Query OpenStreetMap Nominatim (free, no API key). Returns null on failure. */
+async function nominatimSearch(query: string, lang: string): Promise<GeocodeResult | null> {
   try {
     const nomUrl = new URL("https://nominatim.openstreetmap.org/search");
     nomUrl.searchParams.set("q", query);
@@ -332,38 +389,6 @@ export async function geocodeSmart(
   } catch {
     // Nominatim may be rate-limiting or unreachable — ignore.
   }
-
-  // 3. Fallback: web search for "<query> coordinates lat lon" and parse
-  // decimal coordinates from the snippets. This catches peaks/landmarks
-  // that neither mapy.cz nor OSM index but Wikipedia does.
-  try {
-    const searchRes = await webSearch(`${query} coordinates latitude longitude`, {
-      count: 5,
-    });
-    for (const r of searchRes.results) {
-      const text = `${r.title} ${r.description}`;
-      // Match decimal lat/lon patterns like "48.9572, 13.7889" or
-      // "48.9572°N 13.7889°E" or "lat: 48.9572 lon: 13.7889".
-      const m = text.match(/(-?\d{1,3}\.\d{3,8})[°\s,]+[NS]?\s*[,;]?\s*(-?\d{1,3}\.\d{3,8})[°\s,]+[EW]?/i);
-      if (m) {
-        const lat = Number(m[1]);
-        const lon = Number(m[2]);
-        if (Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
-          return {
-            lat,
-            lon,
-            name: query,
-            label: `${query} (via web search)`,
-            type: "coordinate",
-            location: r.url,
-          };
-        }
-      }
-    }
-  } catch {
-    // web search may fail (DuckDuckGo blocking, no Brave key) — ignore.
-  }
-
   return null;
 }
 
