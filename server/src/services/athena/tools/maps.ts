@@ -438,7 +438,7 @@ export const mapTools: ToolDef[] = [
       {
         name: "mode",
         type: "string",
-        description: "Tour mode: 'hub' (loop hikes from base each day) or 'through' (point-to-point chain).",
+        description: "Tour mode: 'through' = CONTINUOUS point-to-point hike (each day continues where the previous ended — PREFER THIS for multi-day hikes, traverses, ridge hikes; requires 'end'); 'hub' = separate loop hikes from a single base each day (use when the user wants to return to the same accommodation each night).",
         enum: ["hub", "through"],
         required: true,
       },

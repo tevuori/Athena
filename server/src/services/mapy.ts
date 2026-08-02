@@ -500,6 +500,12 @@ export async function route(
 // ===== Elevation (for ascent/descent) =====
 
 interface RawElevationResponse {
+  // The mapy.com elevation API returns "items" (not "results").
+  items?: Array<{
+    position: { lon: number; lat: number };
+    elevation: number | null;
+  }>;
+  // Keep "results" as a fallback in case the API changes back.
   results?: Array<{
     position: [number, number]; // [lon, lat]
     elevation: number | null;
@@ -530,7 +536,7 @@ async function computeAscentDescent(
     { positions },
     `elev:${userId}:${positions}` // distinct cache key namespace
   );
-  const elevations = (raw.results ?? [])
+  const elevations = ((raw.items ?? raw.results) ?? [])
     .map((r) => r.elevation)
     .filter((e): e is number => typeof e === "number");
   let ascent = 0;
