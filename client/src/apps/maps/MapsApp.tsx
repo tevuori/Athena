@@ -53,7 +53,7 @@ function tileUrl(apiKey: string, mapset: Mapset): string {
 const MAPY_ATTRIBUTION =
   '<a href="https://api.mapy.com/copyright" target="_blank">&copy; Seznam.cz a.s. a další</a>';
 
-// ===== Marker icons (color-coded by category) =====
+// ===== Marker icons (color-coded by category, with symbols) =====
 const CATEGORY_COLORS: Record<string, string> = {
   water: "#0ea5e9",
   sleeping: "#8b5cf6",
@@ -62,7 +62,44 @@ const CATEGORY_COLORS: Record<string, string> = {
   poi: "#6366f1",
   route: "#ef4444",
   waypoint: "#3b82f6",
+  overnight: "#a855f7",
+  wildcamp: "#dc2626",
 };
+
+/** Inline SVG paths for each category — white symbol on colored circle. */
+const CATEGORY_SYMBOLS: Record<string, string> = {
+  // Water drop
+  water: '<path d="M12 2C12 2 6 10 6 14a6 6 0 0 0 12 0c0-4-6-12-6-12z" fill="white"/>',
+  // Bed
+  sleeping: '<path d="M3 7v10h2v-3h14v3h2V10c0-1.7-1.3-3-3-3H3zm2 2h12c.6 0 1 .4 1 1v2H5V9z" fill="white"/>',
+  // Star/landmark
+  landmarks: '<path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 16.8l-6.2 4.5 2.4-7.4L2 9.4h7.6L12 2z" fill="white"/>',
+  // Fork & knife (food/amenities)
+  amenities: '<path d="M6 2v7c0 1.1.9 2 2 2v9h2V2H8v7H6V2zm10 0c-1.7 0-3 2.2-3 5s1.3 5 3 5v8h2V2h-2z" fill="white"/>',
+  // Tent (overnight)
+  overnight: '<path d="M12 4L3 20h18L12 4zm0 4l5 9H7l5-9z" fill="white"/>',
+  // Wild camp (fire/camp)
+  wildcamp: '<path d="M12 2c0 3-2 4-2 7 0 2 1 3 2 3s2-1 2-3c0-3-2-4-2-7zm-4 8c-1 2-2 3-2 5 0 3 3 5 6 5s6-2 6-5c0-2-1-3-2-5" fill="none" stroke="white" stroke-width="1.5"/>',
+  // Default dot
+  poi: '<circle cx="12" cy="12" r="5" fill="white"/>',
+};
+
+function categoryIcon(category: string): DivIcon {
+  const color = CATEGORY_COLORS[category] ?? CATEGORY_COLORS.poi;
+  const symbol = CATEGORY_SYMBOLS[category] ?? CATEGORY_SYMBOLS.poi;
+  const size = category === "overnight" || category === "wildcamp" ? 28 : 24;
+  return new DivIcon({
+    className: "athena-map-pin",
+    html: `<div style="position:relative;width:${size}px;height:${size}px">
+      <svg width="${size}" height="${size}" viewBox="0 0 24 24" style="filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))">
+        <circle cx="12" cy="12" r="11" fill="${color}" stroke="white" stroke-width="2"/>
+        ${symbol}
+      </svg>
+    </div>`,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+}
 
 function pinIcon(color: string): DivIcon {
   return new DivIcon({
@@ -282,8 +319,10 @@ export default function MapsApp({ win }: { win: WindowInstance }) {
     const layer = markersLayerRef.current;
     const map = mapRef.current;
     if (!layer || !map) return;
-    const color = CATEGORY_COLORS[poi.category ?? "poi"] ?? CATEGORY_COLORS.poi;
-    const m = new Marker(latLng(poi.lat, poi.lon), { icon: pinIcon(color) });
+    const cat = poi.category ?? "poi";
+    // Use the category-specific SVG icon for known categories, plain pin for others.
+    const icon = CATEGORY_SYMBOLS[cat] ? categoryIcon(cat) : pinIcon(CATEGORY_COLORS[cat] ?? CATEGORY_COLORS.poi);
+    const m = new Marker(latLng(poi.lat, poi.lon), { icon });
     m.bindPopup(
       `<div style="font-size:13px;max-width:200px"><strong>${escapeHtml(poi.name)}</strong>${
         poi.description ? `<div style="color:#666;margin-top:2px">${escapeHtml(poi.description)}</div>` : ""
@@ -327,21 +366,40 @@ export default function MapsApp({ win }: { win: WindowInstance }) {
     [addMarker]
   );
 
-  /** Draw all days of a multi-day tour as overlaid polylines, each in a
-   *  distinct color. Clears any previous route + markers first. */
+  /** Full day data for drawTour — includes POIs, waypoints, and overnight
+   *  spots so the map can render colorful category markers alongside the
+   *  route polylines. */
+  interface TourDayDraw {
+    name: string;
+    geometry: [number, number][];
+    waypoints?: { name: string; lat: number; lon: number; type?: string }[];
+    pois?: { name: string; lat: number; lon: number; category: string; description?: string }[];
+    overnight?: { name: string; lat: number; lon: number; description?: string };
+    wildCamp?: boolean;
+  }
+
+  /** Draw all days of a multi-day tour as overlaid polylines (each in a
+   *  distinct color) AND render all POIs as colorful category markers
+   *  (water=blue drop, sleeping=purple bed, landmarks=amber star,
+   *  amenities=green fork, overnight=purple tent, wildcamp=red camp).
+   *  Clears any previous route + markers first. */
   const drawTour = useCallback(
-    (days: { name: string; geometry: [number, number][] }[]) => {
+    (days: TourDayDraw[]) => {
       const layer = routeLayerRef.current;
       const map = mapRef.current;
+      const poiLayer = markersLayerRef.current;
       if (!layer || !map) return;
       layer.clearLayers();
-      markersLayerRef.current?.clearLayers();
+      poiLayer?.clearLayers();
       const colors = [
         "#ef4444", "#f59e0b", "#10b981", "#3b82f6", "#8b5cf6",
         "#ec4899", "#14b8a6", "#f97316", "#6366f1", "#84cc16",
         "#06b6d4", "#a855f7", "#eab308", "#22c55e",
       ];
       const allPoints: [number, number][] = [];
+      // Dedupe POIs by name+coords across days (a POI near a day boundary
+      // may appear in two days).
+      const seenPois = new Set<string>();
       days.forEach((d, i) => {
         if (d.geometry.length < 2) return;
         const color = colors[i % colors.length];
@@ -353,6 +411,43 @@ export default function MapsApp({ win }: { win: WindowInstance }) {
         line.bindPopup(`<strong>Day ${i + 1}: ${escapeHtml(d.name)}</strong>`);
         line.addTo(layer);
         allPoints.push(...d.geometry);
+
+        // Start/end waypoint markers for this day (use the day's color)
+        if (d.waypoints) {
+          for (const wp of d.waypoints) {
+            if (wp.type === "start" || wp.type === "end") {
+              const wm = new Marker(latLng(wp.lat, wp.lon), { icon: pinIcon(color) });
+              wm.bindPopup(`<strong>${escapeHtml(wp.name)}</strong><br><span style="font-size:11px;color:#888">Day ${i + 1} · ${wp.type}</span>`);
+              wm.addTo(layer);
+            }
+          }
+        }
+
+        // POI markers (water, sleeping, landmarks, amenities) — colorful category icons
+        if (d.pois && poiLayer) {
+          for (const p of d.pois) {
+            const key = `${p.name}|${p.lat.toFixed(5)},${p.lon.toFixed(5)}`;
+            if (seenPois.has(key)) continue;
+            seenPois.add(key);
+            addMarker({ name: p.name, lat: p.lat, lon: p.lon, category: p.category, description: p.description });
+          }
+        }
+
+        // Overnight marker — tent icon (purple for hut, red for wild camp)
+        if (d.overnight && poiLayer) {
+          const oKey = `overnight|${d.overnight.name}|${d.overnight.lat.toFixed(5)},${d.overnight.lon.toFixed(5)}`;
+          if (!seenPois.has(oKey)) {
+            seenPois.add(oKey);
+            const cat = d.wildCamp ? "wildcamp" : "overnight";
+            addMarker({
+              name: d.wildCamp ? `${d.overnight.name} (wild camp)` : d.overnight.name,
+              lat: d.overnight.lat,
+              lon: d.overnight.lon,
+              category: cat,
+              description: d.overnight.description ?? (d.wildCamp ? "No hut/shelter found — wild camping" : "Overnight stop"),
+            });
+          }
+        }
       });
       if (allPoints.length > 0) {
         try {
@@ -363,7 +458,7 @@ export default function MapsApp({ win }: { win: WindowInstance }) {
         }
       }
     },
-    []
+    [addMarker]
   );
 
   // ===== Consume pending commands from Athena (via the maps store) =====
@@ -439,7 +534,14 @@ export default function MapsApp({ win }: { win: WindowInstance }) {
         }
         case "draw_tour": {
           if (cmd.tourDays && cmd.tourDays.length > 0) {
-            drawTour(cmd.tourDays);
+            drawTour(cmd.tourDays.map((d) => ({
+              name: d.name,
+              geometry: d.geometry,
+              waypoints: d.waypoints,
+              pois: d.pois,
+              overnight: d.overnight,
+              wildCamp: d.wildCamp,
+            })));
             setRouteInfo(null);
           }
           break;
@@ -449,7 +551,12 @@ export default function MapsApp({ win }: { win: WindowInstance }) {
             try {
               const { tourApi } = await import("../../services/maps");
               const detail = await tourApi.get(cmd.tourId);
-              drawTour(detail.days.map((d) => ({ name: d.name, geometry: d.geometry })));
+              drawTour(detail.days.map((d) => ({
+                name: d.name,
+                geometry: d.geometry,
+                waypoints: d.waypoints,
+                pois: d.pois,
+              })));
               setRouteInfo(null);
             } catch (e) {
               setError(e instanceof Error ? e.message : "Failed to load tour");

@@ -36,8 +36,17 @@ import {
 interface Props {
   /** Resolve a place name to lat/lon (shared with the route planner). */
   resolvePlace: (name: string) => Promise<{ lat: number; lon: number; name: string } | null>;
-  /** Draw the tour on the map — either a single day or all days overlaid. */
-  onDrawTour: (days: { name: string; geometry: [number, number][] }[]) => void;
+  /** Draw the tour on the map — either a single day or all days overlaid.
+   *  Passes full day data (pois, waypoints, overnight) so the map can render
+   *  colorful category markers for water/sleep/sights/food/overnight. */
+  onDrawTour: (days: {
+    name: string;
+    geometry: [number, number][];
+    waypoints?: { name: string; lat: number; lon: number; type?: string }[];
+    pois?: { name: string; lat: number; lon: number; category: string; description?: string }[];
+    overnight?: { name: string; lat: number; lon: number; description?: string };
+    wildCamp?: boolean;
+  }[]) => void;
   /** Clear the map. */
   onClearMap: () => void;
 }
@@ -127,7 +136,14 @@ export default function TourPlanner({ resolvePlace, onDrawTour, onClearMap }: Pr
       setTour(generated);
       setShowSummary(true);
       // Draw all days overlaid.
-      onDrawTour(generated.days.map((d) => ({ name: d.name, geometry: d.geometry })));
+      onDrawTour(generated.days.map((d) => ({
+        name: d.name,
+        geometry: d.geometry,
+        waypoints: d.waypoints,
+        pois: d.pois,
+        overnight: d.overnight,
+        wildCamp: d.wildCamp,
+      })));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Tour generation failed");
     } finally {
@@ -196,7 +212,12 @@ export default function TourPlanner({ resolvePlace, onDrawTour, onClearMap }: Pr
       setTour(reconstructed);
       setSelectedDay(null);
       setShowSummary(true);
-      onDrawTour(reconstructed.days.map((d) => ({ name: d.name, geometry: d.geometry })));
+      onDrawTour(reconstructed.days.map((d) => ({
+        name: d.name,
+        geometry: d.geometry,
+        waypoints: d.waypoints,
+        pois: d.pois,
+      })));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load tour");
     }
@@ -241,9 +262,23 @@ export default function TourPlanner({ resolvePlace, onDrawTour, onClearMap }: Pr
       });
       // Redraw
       if (selectedDay === null) {
-        onDrawTour(tour.days.map((d) => ({ name: d.name, geometry: d.geometry })));
+        onDrawTour(tour.days.map((d) => ({
+          name: d.name,
+          geometry: d.geometry,
+          waypoints: d.waypoints,
+          pois: d.pois,
+          overnight: d.overnight,
+          wildCamp: d.wildCamp,
+        })));
       } else if (selectedDay === dayNumber) {
-        onDrawTour([{ name: newDay.name, geometry: newDay.geometry }]);
+        onDrawTour([{
+          name: newDay.name,
+          geometry: newDay.geometry,
+          waypoints: newDay.waypoints,
+          pois: newDay.pois,
+          overnight: newDay.overnight,
+          wildCamp: newDay.wildCamp,
+        }]);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to regenerate day");
@@ -256,10 +291,24 @@ export default function TourPlanner({ resolvePlace, onDrawTour, onClearMap }: Pr
     setSelectedDay(dayNumber);
     if (!tour) return;
     if (dayNumber === null) {
-      onDrawTour(tour.days.map((d) => ({ name: d.name, geometry: d.geometry })));
+      onDrawTour(tour.days.map((d) => ({
+        name: d.name,
+        geometry: d.geometry,
+        waypoints: d.waypoints,
+        pois: d.pois,
+        overnight: d.overnight,
+        wildCamp: d.wildCamp,
+      })));
     } else {
       const day = tour.days.find((d) => d.dayNumber === dayNumber);
-      if (day) onDrawTour([{ name: day.name, geometry: day.geometry }]);
+      if (day) onDrawTour([{
+        name: day.name,
+        geometry: day.geometry,
+        waypoints: day.waypoints,
+        pois: day.pois,
+        overnight: day.overnight,
+        wildCamp: day.wildCamp,
+      }]);
     }
   };
 
@@ -381,6 +430,34 @@ export default function TourPlanner({ resolvePlace, onDrawTour, onClearMap }: Pr
       {/* ===== Generated tour ===== */}
       {tour && (
         <section className="space-y-2 rounded-md border border-edge bg-surface p-2">
+          {/* Map legend */}
+          <div className="flex flex-wrap gap-x-2.5 gap-y-1 rounded bg-surface-2 px-2 py-1.5 text-[10px] text-ink-muted">
+            <span className="flex items-center gap-1">
+              <svg width="12" height="12" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#0ea5e9" stroke="#fff" strokeWidth="2"/><path d="M12 2C12 2 6 10 6 14a6 6 0 0 0 12 0c0-4-6-12-6-12z" fill="#fff"/></svg>
+              Water
+            </span>
+            <span className="flex items-center gap-1">
+              <svg width="12" height="12" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#8b5cf6" stroke="#fff" strokeWidth="2"/><path d="M3 7v10h2v-3h14v3h2V10c0-1.7-1.3-3-3-3H3zm2 2h12c.6 0 1 .4 1 1v2H5V9z" fill="#fff"/></svg>
+              Sleep
+            </span>
+            <span className="flex items-center gap-1">
+              <svg width="12" height="12" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#f59e0b" stroke="#fff" strokeWidth="2"/><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 16.8l-6.2 4.5 2.4-7.4L2 9.4h7.6L12 2z" fill="#fff"/></svg>
+              Sights
+            </span>
+            <span className="flex items-center gap-1">
+              <svg width="12" height="12" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#10b981" stroke="#fff" strokeWidth="2"/><path d="M6 2v7c0 1.1.9 2 2 2v9h2V2H8v7H6V2zm10 0c-1.7 0-3 2.2-3 5s1.3 5 3 5v8h2V2h-2z" fill="#fff"/></svg>
+              Food
+            </span>
+            <span className="flex items-center gap-1">
+              <svg width="12" height="12" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#a855f7" stroke="#fff" strokeWidth="2"/><path d="M12 4L3 20h18L12 4zm0 4l5 9H7l5-9z" fill="#fff"/></svg>
+              Overnight
+            </span>
+            <span className="flex items-center gap-1">
+              <svg width="12" height="12" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#dc2626" stroke="#fff" strokeWidth="2"/><path d="M12 2c0 3-2 4-2 7 0 2 1 3 2 3s2-1 2-3c0-3-2-4-2-7z" fill="none" stroke="#fff" strokeWidth="1.5"/></svg>
+              Wild camp
+            </span>
+          </div>
+
           {/* Totals */}
           <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-ink">
             <span className="font-semibold">{tour.numDays} days</span>

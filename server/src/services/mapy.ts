@@ -574,7 +574,7 @@ export async function listTrips(userId: string): Promise<
   }>
 > {
   const rows = await prisma.trip.findMany({
-    where: { userId },
+    where: { userId, tourId: null },
     orderBy: { createdAt: "desc" },
     select: {
       id: true,

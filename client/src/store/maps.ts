@@ -48,8 +48,16 @@ export interface MapCommand {
   distanceM?: number;
   durationS?: number;
   tripId?: string;
-  /** For draw_tour: the per-day routes to overlay (each drawn in a distinct color). */
-  tourDays?: { name: string; geometry: [number, number][] }[];
+  /** For draw_tour: the per-day routes to overlay (each drawn in a distinct
+   *  color) with their POIs/waypoints/overnight for colorful category markers. */
+  tourDays?: {
+    name: string;
+    geometry: [number, number][];
+    waypoints?: { name: string; lat: number; lon: number; type?: string }[];
+    pois?: { name: string; lat: number; lon: number; category: string; description?: string }[];
+    overnight?: { name: string; lat: number; lon: number; description?: string };
+    wildCamp?: boolean;
+  }[];
   /** For open_tour: the saved tour id to load. */
   tourId?: string;
 }
