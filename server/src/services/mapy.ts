@@ -291,9 +291,51 @@ export async function geocodeSmart(
     return items[0];
   }
 
-  // 2. Fallback: web search for "<query> coordinates lat lon" and parse
+  // 2. Fallback: OpenStreetMap Nominatim (free, no API key, excellent coverage
+  // of natural features like peaks/springs/valleys that mapy.cz doesn't index).
+  // Rate-limited to 1 req/s by OSM policy — we only call it when mapy.cz fails,
+  // so this is well within limits.
+  try {
+    const nomUrl = new URL("https://nominatim.openstreetmap.org/search");
+    nomUrl.searchParams.set("q", query);
+    nomUrl.searchParams.set("format", "json");
+    nomUrl.searchParams.set("limit", "5");
+    nomUrl.searchParams.set("accept-language", lang);
+    const nomRes = await fetch(nomUrl.toString(), {
+      headers: { "User-Agent": "Athena/1.0 (+https://github.com/athena/student-os)" },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (nomRes.ok) {
+      const nomItems = (await nomRes.json()) as Array<{
+        lat: string;
+        lon: string;
+        name: string;
+        display_name: string;
+        type: string;
+      }>;
+      if (nomItems.length > 0) {
+        const best = nomItems[0];
+        const lat = Number(best.lat);
+        const lon = Number(best.lon);
+        if (Number.isFinite(lat) && Number.isFinite(lon)) {
+          return {
+            lat,
+            lon,
+            name: best.name || query,
+            label: `${best.name || query} (via OpenStreetMap)`,
+            type: best.type,
+            location: best.display_name,
+          };
+        }
+      }
+    }
+  } catch {
+    // Nominatim may be rate-limiting or unreachable — ignore.
+  }
+
+  // 3. Fallback: web search for "<query> coordinates lat lon" and parse
   // decimal coordinates from the snippets. This catches peaks/landmarks
-  // that mapy.cz doesn't index but Wikipedia/openstreetmap do.
+  // that neither mapy.cz nor OSM index but Wikipedia does.
   try {
     const searchRes = await webSearch(`${query} coordinates latitude longitude`, {
       count: 5,
