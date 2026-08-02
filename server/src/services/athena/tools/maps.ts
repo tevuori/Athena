@@ -13,6 +13,7 @@
 import type { ToolDef } from "./plugin";
 import {
   geocode,
+  geocodeSmart,
   searchPois,
   findNearbyPois,
   route,
@@ -429,7 +430,7 @@ export const mapTools: ToolDef[] = [
   {
     name: "plan_hiking_tour",
     description:
-      "Plan a multi-day hiking tour and narrate it with the LLM. This is the ADVANCED planner: specify a base point (where you sleep each night in hub mode, or the start in through mode), the number of days, and a difficulty. Two modes: 'hub' = loop hikes from a single base each day (directions spread around the compass so loops don't overlap, return to base each evening); 'through' = point-to-point chain from base to an end point, with overnight stops auto-found at mountain huts/shelters near each day's endpoint (flagged as wild-camp if none found). The tool geocodes the base (+ end for through mode), runs the routing + POI enrichment per day, then the LLM writes a full plan: overview, day-by-day guidance (terrain, water sources, landmarks, where you sleep), packing list calibrated to difficulty, and safety notes. Hard days (ascent >150% of target) are flagged with rest-day suggestions. Returns { tourId, numDays, totals, summary (the LLM plan), days[] }. After calling this, ALWAYS open_tour to display it on the map, then narrate the plan in your reply using the returned summary. The tour is saved automatically.",
+      "Plan a multi-day hiking tour and narrate it with the LLM. This is the ADVANCED planner: specify a base point (where you sleep each night in hub mode, or the start in through mode), the number of days, and a difficulty. Two modes: 'hub' = loop hikes from a single base each day (directions spread around the compass so loops don't overlap, return to base each evening); 'through' = point-to-point chain from base to an end point, with overnight stops auto-found at mountain huts/shelters near each day's endpoint (flagged as wild-camp if none found). The tool geocodes the base (+ end for through mode) INTERNALLY — do NOT call geocode yourself first, just pass the place name directly (e.g. base='Špindlerův Mlýn' or base='Lysá hora Šumava'). The tool runs the routing + POI enrichment per day, then the LLM writes a full plan: overview, day-by-day guidance (terrain, water sources, landmarks, where you sleep), packing list calibrated to difficulty, and safety notes. Hard days (ascent >150% of target) are flagged with rest-day suggestions. Returns { tourId, numDays, totals, summary (the LLM plan), days[] }. After calling this, ALWAYS open_tour to display it on the map, then narrate the plan in your reply using the returned summary. The tour is saved automatically. IMPORTANT: Call this tool DIRECTLY with the place name — do not geocode or search for the location first, this tool handles that internally.",
     destructive: true,
     clientAction: true,
     parameters: [
@@ -454,10 +455,11 @@ export const mapTools: ToolDef[] = [
       { name: "tourName", type: "string", description: "Optional custom tour name (defaults to '<base> <days>-day <difficulty> hike')." },
     ],
     handler: safe(async (args, { userId }) => {
-      // Geocode the base.
-      const baseItems = await geocode(userId, String(args.base ?? ""), 1);
-      if (baseItems.length === 0) return { error: `Could not geocode base location: ${args.base}` };
-      const base = baseItems[0];
+      // Geocode the base using geocodeSmart (tries mapy.cz geocode with query
+      // variations, then falls back to web search for coordinates — handles
+      // peaks/landmarks that mapy.cz doesn't index, like "Lysá hora Šumava").
+      const base = await geocodeSmart(userId, String(args.base ?? ""));
+      if (!base) return { error: `Could not geocode base location: ${args.base}. Try a more specific name, a nearby town, or provide coordinates as "lat, lon".` };
 
       let endLat: number | undefined;
       let endLon: number | undefined;
@@ -466,11 +468,11 @@ export const mapTools: ToolDef[] = [
       if (mode === "through") {
         const endStr = String(args.end ?? "").trim();
         if (!endStr) return { error: "Through-hike mode requires an 'end' location." };
-        const endItems = await geocode(userId, endStr, 1);
-        if (endItems.length === 0) return { error: `Could not geocode end location: ${endStr}` };
-        endLat = endItems[0].lat;
-        endLon = endItems[0].lon;
-        endName = endItems[0].name;
+        const end = await geocodeSmart(userId, endStr);
+        if (!end) return { error: `Could not geocode end location: ${endStr}. Try a more specific name or provide coordinates.` };
+        endLat = end.lat;
+        endLon = end.lon;
+        endName = end.name;
       }
 
       const numDays = Math.max(1, Math.min(14, Math.floor(Number(args.days ?? 3))));

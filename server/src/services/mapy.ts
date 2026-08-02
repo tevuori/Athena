@@ -10,6 +10,7 @@
 
 import prisma from "../db/client";
 import { encryptSecret, decryptSecret } from "./crypto";
+import { webSearch } from "./search";
 
 const API_BASE = "https://api.mapy.com/v1";
 const FETCH_TIMEOUT_MS = 15_000;
@@ -212,7 +213,7 @@ export async function geocode(
     "/geocode",
     { query, limit: String(limit), lang, type: "regional,poi" }
   );
-  return (raw.items ?? []).map((it) => ({
+  let items = (raw.items ?? []).map((it) => ({
     lat: it.position.lat,
     lon: it.position.lon,
     name: it.name,
@@ -220,6 +221,108 @@ export async function geocode(
     type: it.type,
     location: it.location ?? "",
   }));
+
+  // If the full query returned 0 or 1 ambiguous result, try shorter variations.
+  // The mapy.cz geocode sometimes fails on compound Czech names like
+  // "Lysá hora Šumava" (the peak isn't a named POI) but may find a nearby
+  // town or the peak under a shorter query.
+  if (items.length <= 1) {
+    const parts = query.trim().split(/\s+/);
+    // Try progressively shorter queries (drop the last word each time).
+    for (let i = parts.length - 1; i > 0 && items.length < 2; i--) {
+      const shorter = parts.slice(0, i).join(" ");
+      if (shorter.length < 3) break;
+      try {
+        const raw2 = await mapyFetch<RawGeocodeResponse>(
+          userId,
+          "/geocode",
+          { query: shorter, limit: String(limit), lang, type: "regional,poi" },
+          undefined // no cache key override — let mapyFetch build it
+        );
+        const more = (raw2.items ?? []).map((it) => ({
+          lat: it.position.lat,
+          lon: it.position.lon,
+          name: it.name,
+          label: it.label,
+          type: it.type,
+          location: it.location ?? "",
+        }));
+        // Merge, deduping by name+coords.
+        const seen = new Set(items.map((it) => `${it.name}|${it.lat},${it.lon}`));
+        for (const m of more) {
+          const key = `${m.name}|${m.lat},${m.lon}`;
+          if (!seen.has(key)) {
+            items.push(m);
+            seen.add(key);
+          }
+        }
+      } catch {
+        // ignore — try the next shorter query
+      }
+    }
+  }
+
+  return items.slice(0, limit);
+}
+
+/**
+ * Smart geocode: tries the mapy.cz geocode (with query-variation fallback),
+ * then falls back to a web search for coordinates if geocode returns nothing
+ * useful. Used by plan_hiking_tour where the place name might not be in the
+ * mapy.cz POI database (e.g. "Lysá hora Šumava" — a real peak that mapy.cz
+ * doesn't index under that name).
+ *
+ * Returns the best single match, or null if nothing was found.
+ */
+export async function geocodeSmart(
+  userId: string,
+  query: string,
+  lang = "en"
+): Promise<GeocodeResult | null> {
+  // 1. Try mapy.cz geocode (with built-in query-variation fallback).
+  const items = await geocode(userId, query, 10, lang);
+  if (items.length > 0) {
+    // If there's an exact name match, prefer it.
+    const exact = items.find((it) =>
+      it.name.toLowerCase() === query.toLowerCase().trim()
+    );
+    if (exact) return exact;
+    // Otherwise return the first result (best match by API ranking).
+    return items[0];
+  }
+
+  // 2. Fallback: web search for "<query> coordinates lat lon" and parse
+  // decimal coordinates from the snippets. This catches peaks/landmarks
+  // that mapy.cz doesn't index but Wikipedia/openstreetmap do.
+  try {
+    const searchRes = await webSearch(`${query} coordinates latitude longitude`, {
+      count: 5,
+    });
+    for (const r of searchRes.results) {
+      const text = `${r.title} ${r.description}`;
+      // Match decimal lat/lon patterns like "48.9572, 13.7889" or
+      // "48.9572°N 13.7889°E" or "lat: 48.9572 lon: 13.7889".
+      const m = text.match(/(-?\d{1,3}\.\d{3,8})[°\s,]+[NS]?\s*[,;]?\s*(-?\d{1,3}\.\d{3,8})[°\s,]+[EW]?/i);
+      if (m) {
+        const lat = Number(m[1]);
+        const lon = Number(m[2]);
+        if (Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
+          return {
+            lat,
+            lon,
+            name: query,
+            label: `${query} (via web search)`,
+            type: "coordinate",
+            location: r.url,
+          };
+        }
+      }
+    }
+  } catch {
+    // web search may fail (DuckDuckGo blocking, no Brave key) — ignore.
+  }
+
+  return null;
 }
 
 interface RawRgeocodeResponse {
