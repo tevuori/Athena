@@ -22,6 +22,7 @@ import BrowserApp from "./browser/BrowserApp";
 import RemindersApp from "./reminders/RemindersApp";
 import AnalyticsApp from "./analytics/AnalyticsApp";
 import MoodleApp from "./moodle/MoodleApp";
+import MapsApp from "./maps/MapsApp";
 
 export interface AppDefinition {
   id: AppId;
@@ -60,6 +61,7 @@ export const APPS: AppDefinition[] = [
   { id: "reminders", name: "Reminders", icon: "BellRing", component: RemindersApp, pinnedToDesktop: false },
   { id: "analytics", name: "Analytics", icon: "BarChart3", component: AnalyticsApp, pinnedToDesktop: true },
   { id: "moodle", name: "Moodle", icon: "GraduationCap", component: MoodleApp, pinnedToDesktop: true },
+  { id: "maps", name: "Maps", icon: "Map", component: MapsApp, pinnedToDesktop: true },
 ];
 
 export const APP_MAP: Record<AppId, AppDefinition> = Object.fromEntries(

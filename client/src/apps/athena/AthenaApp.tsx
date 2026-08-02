@@ -21,6 +21,7 @@ import type { VFolder } from "../../types";
 import { useSettings, type AthenaRollEdge } from "../../store/settings";
 import { useAthenaQuick } from "../../store/athenaQuick";
 import { useBrowser } from "../../store/browser";
+import { useMaps } from "../../store/maps";
 import { useAuth } from "../../store/auth";
 import { useDataRefresh } from "../../store/dataRefresh";
 
@@ -57,6 +58,7 @@ const APP_ICONS: Record<string, string> = {
   study: "GraduationCap",
   browser: "Globe",
   reminders: "BellRing",
+  maps: "Map",
 };
 
 export default function AthenaApp({
@@ -121,6 +123,8 @@ export default function AthenaApp({
   const browserUrls = useBrowser((s) => s.urls);
   const requestNav = useBrowser((s) => s.requestNav);
   const issueCommand = useBrowser((s) => s.issueCommand);
+  const mapsCenters = useMaps((s) => s.centers);
+  const issueMapCommand = useMaps((s) => s.issueCommand);
 
   // Keep a ref to the latest windows + store actions so the client-action
   // dispatcher always sees current state even when multiple actions fire in
@@ -135,6 +139,8 @@ export default function AthenaApp({
   requestNavRef.current = requestNav;
   const issueCmdRef = useRef(issueCommand);
   issueCmdRef.current = issueCommand;
+  const issueMapCmdRef = useRef(issueMapCommand);
+  issueMapCmdRef.current = issueMapCommand;
   // Ref to the send function so dispatchClientAction can trigger a chat
   // message (used by Quick Capture's open_athena client action).
   const sendRef = useRef<((text: string) => void) | null>(null);
@@ -151,9 +157,12 @@ export default function AthenaApp({
       focused: focusedId === w.id,
       workspace: wsMap.find((ws) => ws.id === w.workspaceId)?.name,
       ...(w.appId === "browser" && browserUrls[w.id] ? { browserUrl: browserUrls[w.id] } : {}),
+      ...(w.appId === "maps" && mapsCenters[w.id]
+        ? { mapsCenter: mapsCenters[w.id] }
+        : {}),
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [windows, focusedId, browserUrls]);
+  }, [windows, focusedId, browserUrls, mapsCenters]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -371,6 +380,18 @@ export default function AthenaApp({
       }
       // Prefer a non-minimized browser window, else the last in the list.
       return wins.find((w) => !w.minimized) ?? wins[wins.length - 1];
+    };
+    // Find an open Maps window, or open one if none exists. Returns the id.
+    const ensureMapsWindow = (): string => {
+      const wins = windowsRef.current.filter((w) => w.appId === "maps");
+      const existing = wins.find((w) => !w.minimized) ?? wins[wins.length - 1];
+      if (existing) {
+        if (existing.minimized) minimizeWindow(existing.id);
+        focusWindow(existing.id);
+        return existing.id;
+      }
+      const id = openWindow({ appId: "maps", title: "Maps", icon: "Map" });
+      return id;
     };
     switch (act) {
       case "profile_updated": {
@@ -644,6 +665,58 @@ export default function AthenaApp({
             tabId: payload.tabId ? String(payload.tabId) : undefined,
           });
         }
+        break;
+      }
+      // ===== Maps & trip planning =====
+      case "open_maps": {
+        ensureMapsWindow();
+        break;
+      }
+      case "show_on_map": {
+        const id = ensureMapsWindow();
+        issueMapCmdRef.current(id, "show", {
+          lat: payload.lat !== undefined ? Number(payload.lat) : undefined,
+          lon: payload.lon !== undefined ? Number(payload.lon) : undefined,
+          zoom: payload.zoom !== undefined ? Number(payload.zoom) : undefined,
+          label: payload.label ? String(payload.label) : undefined,
+        });
+        break;
+      }
+      case "add_map_marker": {
+        const id = ensureMapsWindow();
+        issueMapCmdRef.current(id, "add_marker", {
+          lat: payload.lat !== undefined ? Number(payload.lat) : undefined,
+          lon: payload.lon !== undefined ? Number(payload.lon) : undefined,
+          title: payload.title ? String(payload.title) : undefined,
+          description: payload.description ? String(payload.description) : undefined,
+          category: payload.category ? String(payload.category) : undefined,
+        });
+        break;
+      }
+      case "draw_map_route": {
+        const id = ensureMapsWindow();
+        issueMapCmdRef.current(id, "draw_route", {
+          geometry: payload.geometry as [number, number][] | undefined,
+          waypoints: payload.waypoints as any[] | undefined,
+          pois: payload.pois as any[] | undefined,
+          type: payload.type ? String(payload.type) : undefined,
+          distanceM: payload.distanceM !== undefined ? Number(payload.distanceM) : undefined,
+          durationS: payload.durationS !== undefined ? Number(payload.durationS) : undefined,
+        });
+        break;
+      }
+      case "show_map_pois": {
+        const id = ensureMapsWindow();
+        issueMapCmdRef.current(id, "show_pois", {
+          pois: payload.pois as any[] | undefined,
+        });
+        break;
+      }
+      case "open_trip": {
+        const id = ensureMapsWindow();
+        issueMapCmdRef.current(id, "open_trip", {
+          tripId: payload.tripId ? String(payload.tripId) : undefined,
+        });
         break;
       }
       default: {

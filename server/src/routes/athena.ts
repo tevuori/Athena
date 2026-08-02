@@ -80,6 +80,9 @@ const windowSchema = z.object({
   minimized: z.boolean().default(false),
   focused: z.boolean().default(false),
   browserUrl: z.string().optional(),
+  mapsCenter: z
+    .object({ lat: z.number(), lon: z.number(), zoom: z.number() })
+    .optional(),
 });
 
 const chatSchema = z.object({

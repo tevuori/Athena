@@ -37,6 +37,7 @@ import tts from "./routes/tts";
 import reminders from "./routes/reminders";
 import analytics from "./routes/analytics";
 import focus from "./routes/focus";
+import mapy from "./routes/mapy";
 import studyLectures from "./routes/study-lectures";
 import settings from "./routes/settings";
 import { analyticsMiddleware, startAnalyticsFlusher } from "./services/analytics";
@@ -142,6 +143,7 @@ app.route("/api/reminders", reminders);
 app.route("/api/analytics", analytics);
 app.route("/api/focus", focus);
 app.route("/api/settings", settings);
+app.route("/api/mapy", mapy);
 
 // Start ntfy background workers (cron scheduler + per-user inbox subscribers).
 startScheduler();

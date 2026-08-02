@@ -84,6 +84,26 @@ A dedicated **Moodle** app (`client/src/apps/moodle/MoodleApp.tsx`) deep-integra
 
 **Endpoints** (`routes/moodle.ts`): `/status`, `/login`, `/courses`, `/courses/:id/contents`, `/courses/:id/assignments`, `/resource`, `/sync` (list), `/sync/:courseId` (POST/DELETE).
 
+## Mapy.cz integration (Maps app & trip planning)
+
+A dedicated **Maps** app (`client/src/apps/maps/MapsApp.tsx`) integrates [mapy.com](https://developer.mapy.com/) — Czech topographic maps with hiking trails, POI search, routing, and elevation. The legacy SMap JS SDK (api.mapy.cz) was permanently retired at the end of 2025; the new mapy.com REST API + **Leaflet** (the recommended third-party library) is the only supported path.
+
+**API key:** per-user in the DB (`MapyCredentials` model, `apiKeyEnc` AES-256-GCM encrypted via `services/crypto.ts`), configured in Settings → Integrations (`MapyCard`). The user enters their own mapy.com developer API key (free credits available at developer.mapy.com). The key is sent to the client via `GET /api/mapy/credentials/key` because Leaflet tile layers load tiles as `<img>` tags with the `apikey` query param — the client must hold the key to construct tile URLs.
+
+**Map rendering:** Leaflet + mapy.com raster tiles (`GET /v1/maptiles/{mapset}/256/{z}/{x}/{y}?apikey=…`). Four mapsets switchable in-app: `outdoor` (hiking/tourist trails with markings — default), `basic`, `aerial`, `winter`. The mapy.com logo control is required over the map (per their terms).
+
+**REST API wrapper** (`services/mapy.ts`): wraps geocoding (`/v1/geocode`), reverse geocoding (`/v1/rgeocode`), routing (`/v1/routing/route` with `routeType` including `foot_hiking` / `bike_road` / `car_fast`), POI search (geocode with `type=poi`), elevation (`/v1/elevation` — used to compute ascent/descent for hiking routes), and nearby POI discovery. Results are cached in-memory for 60s to conserve API credits. Auth via `X-Mapy-Api-Key` header.
+
+**POI categories:** mapy.com's geocode POI search is text-based, so hiking-relevant "categories" are mapped to Czech + English search terms (Czech yields best coverage for Czech hiking infrastructure): `water` (pramen/studna/pitná voda = springs/wells/drinking water), `sleeping` (prístrešák/bivak/chata/kemp = shelters/bivouacs/mountain huts/camps = legal sleeping spots), `landmarks` (hrad/rozhledna/zámek = castles/viewpoints/palaces), `amenities` (restaurace/občerstvení/ubytování = restaurants/refreshments/accommodation). `findNearbyPois` runs one search per term near the target point and merges + dedupes by name+coords.
+
+**Trip persistence:** `Trip` Prisma model stores planned trips: name, type (hiking/bicycle/car), distance, duration, ascent/descent, route geometry (JSON array of [lat, lon]), waypoints (JSON), POIs (JSON), and a summary. CRUD via `/api/mapy/trips`.
+
+**Athena tools** (`tools/maps.ts`): Athena fully controls the map via server-side data tools (`geocode`, `search_places`, `find_nearby_pois`, `plan_route`, `save_trip`, `list_trips`, `get_trip`, `delete_trip`, `mapy_status`) and client-action tools that drive the Maps app through the maps store (`open_maps`, `show_on_map`, `add_map_marker`, `draw_map_route`, `show_map_pois`, `open_trip`). `plan_route` with `mode="hiking"` automatically enriches the route with nearby water sources, sleeping spots, and landmarks (samples up to 8 points along the geometry and searches near each).
+
+**Maps store** (`store/maps.ts`): a per-window command channel (mirrors `store/browser.ts`). Athena's client-action dispatch in `AthenaApp.tsx` calls `issueCommand(windowId, kind, payload)`; `MapsApp` consumes pending commands via a `useEffect` on `pendingCommand.seq`. The store also tracks current map centers so the Athena system prompt can report where the map is focused (`mapsContext` in `context.ts`).
+
+**Endpoints** (`routes/mapy.ts`): `/credentials/{status,key}`, `/credentials` (PUT/DELETE), `/geocode`, `/reverse`, `/route`, `/pois`, `/nearby`, `/trips` (GET list, POST create), `/trips/:id` (GET, PUT, DELETE).
+
 ## Quick start (local dev)
 
 ```bash

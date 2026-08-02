@@ -1,0 +1,805 @@
+import { useEffect, useRef, useState, useCallback } from "react";
+import {
+  Map as LeafletMap,
+  TileLayer,
+  Marker,
+  Polyline,
+  LayerGroup,
+  Icon,
+  DivIcon,
+  Control,
+  latLng,
+  latLngBounds,
+} from "leaflet";
+import "leaflet/dist/leaflet.css";
+import {
+  Search,
+  Route,
+  Droplets,
+  BedDouble,
+  Landmark,
+  Utensils,
+  Save,
+  Trash2,
+  Map as MapIcon,
+  Loader2,
+  X,
+  Plus,
+  FolderOpen,
+} from "lucide-react";
+import type { WindowInstance } from "../../store/windows";
+import { useMaps, type MapCommand, type MapPoi, type MapWaypoint } from "../../store/maps";
+import {
+  mapyApi,
+  type GeocodeItem,
+  type PoiItem,
+  type TripSummary,
+  type TripDetail,
+} from "../../services/maps";
+
+// ===== Mapy.cz tile layers =====
+// The `outdoor` mapset shows hiking/tourist trails with markings — the default
+// for a hiking-focused app. Auth via the apikey query param (tiles load as <img>).
+
+type Mapset = "outdoor" | "basic" | "aerial" | "winter";
+
+function tileUrl(apiKey: string, mapset: Mapset): string {
+  return `https://api.mapy.com/v1/maptiles/${mapset}/256/{z}/{x}/{y}?apikey=${encodeURIComponent(apiKey)}`;
+}
+
+const MAPY_ATTRIBUTION =
+  '<a href="https://api.mapy.com/copyright" target="_blank">&copy; Seznam.cz a.s. a další</a>';
+
+// ===== Marker icons (color-coded by category) =====
+const CATEGORY_COLORS: Record<string, string> = {
+  water: "#0ea5e9",
+  sleeping: "#8b5cf6",
+  landmarks: "#f59e0b",
+  amenities: "#10b981",
+  poi: "#6366f1",
+  route: "#ef4444",
+  waypoint: "#3b82f6",
+};
+
+function pinIcon(color: string): DivIcon {
+  return new DivIcon({
+    className: "athena-map-pin",
+    html: `<span style="display:block;width:18px;height:18px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:${color};border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4)"></span>`,
+    iconSize: [22, 22],
+    iconAnchor: [11, 20],
+  });
+}
+
+function fmtDuration(s: number): string {
+  const h = Math.floor(s / 3600);
+  const m = Math.round((s % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+function fmtDistance(m: number): string {
+  if (m >= 1000) return `${(m / 1000).toFixed(1)} km`;
+  return `${Math.round(m)} m`;
+}
+
+export default function MapsApp({ win }: { win: WindowInstance }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<LeafletMap | null>(null);
+  const apiKeyRef = useRef<string | null>(null);
+  const layersRef = useRef<Record<Mapset, TileLayer>>(null as any);
+  const markersLayerRef = useRef<LayerGroup | null>(null);
+  const routeLayerRef = useRef<LayerGroup | null>(null);
+  const currentRouteRef = useRef<{
+    geometry: [number, number][];
+    pois: MapPoi[];
+    waypoints: MapWaypoint[];
+    type?: string;
+    distanceM?: number;
+    durationS?: number;
+  } | null>(null);
+
+  const [apiKey, setApiKey] = useState<string | null>(null);
+  const [loadingKey, setLoadingKey] = useState(true);
+  const [mapset, setMapset] = useState<Mapset>("outdoor");
+  const [error, setError] = useState<string | null>(null);
+
+  // Sidebar UI state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<GeocodeItem[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [routeStart, setRouteStart] = useState("");
+  const [routeEnd, setRouteEnd] = useState("");
+  const [routeMode, setRouteMode] = useState<"hiking" | "bicycle" | "car">("hiking");
+  const [planning, setPlanning] = useState(false);
+  const [routeInfo, setRouteInfo] = useState<{ distanceM: number; durationS: number; ascentM: number; descentM: number } | null>(null);
+  const [findingNearby, setFindingNearby] = useState(false);
+  const [trips, setTrips] = useState<TripSummary[]>([]);
+  const [loadingTrips, setLoadingTrips] = useState(false);
+  const [selectedPoi, setSelectedPoi] = useState<MapPoi | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  const issueCommand = useMaps((s) => s.issueCommand);
+  const setCenter = useMaps((s) => s.setCenter);
+  const removeWindow = useMaps((s) => s.removeWindow);
+  const pendingCommand = useMaps((s) => s.commands[win.id]);
+
+  // ===== Load API key =====
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { configured } = await mapyApi.credentialsStatus();
+        if (!configured) {
+          setLoadingKey(false);
+          return;
+        }
+        const { apiKey: key } = await mapyApi.getApiKey();
+        if (!cancelled) {
+          setApiKey(key);
+          apiKeyRef.current = key;
+          setLoadingKey(false);
+        }
+      } catch {
+        if (!cancelled) setLoadingKey(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // ===== Initialize Leaflet map once the API key is available =====
+  useEffect(() => {
+    if (!apiKey || !containerRef.current || mapRef.current) return;
+    const map = new LeafletMap(containerRef.current, {
+      center: latLng(49.8, 15.5), // Czech Republic center
+      zoom: 8,
+      zoomControl: true,
+      attributionControl: true,
+    });
+    mapRef.current = map;
+
+    const key = apiKey;
+    const layers: Record<Mapset, TileLayer> = {
+      outdoor: new TileLayer(tileUrl(key, "outdoor"), {
+        minZoom: 0, maxZoom: 20, attribution: MAPY_ATTRIBUTION,
+      }),
+      basic: new TileLayer(tileUrl(key, "basic"), {
+        minZoom: 0, maxZoom: 20, attribution: MAPY_ATTRIBUTION,
+      }),
+      aerial: new TileLayer(tileUrl(key, "aerial"), {
+        minZoom: 0, maxZoom: 20, attribution: MAPY_ATTRIBUTION,
+      }),
+      winter: new TileLayer(tileUrl(key, "winter"), {
+        minZoom: 0, maxZoom: 20, attribution: MAPY_ATTRIBUTION,
+      }),
+    };
+    layersRef.current = layers;
+    layers.outdoor.addTo(map);
+    markersLayerRef.current = new LayerGroup().addTo(map);
+    routeLayerRef.current = new LayerGroup().addTo(map);
+
+    // Mapy.com requires their logo over the map.
+    const LogoControl = Control.extend({
+      options: { position: "bottomleft" },
+      onAdd: () => {
+        const c = document.createElement("div");
+        const a = document.createElement("a");
+        a.setAttribute("href", "https://mapy.com/");
+        a.setAttribute("target", "_blank");
+        a.innerHTML = '<img src="https://api.mapy.com/img/api/logo.svg" alt="Mapy.com" style="height:20px" />';
+        c.appendChild(a);
+        return c;
+      },
+    });
+    new (LogoControl as any)().addTo(map);
+
+    // Report center changes to the store (for Athena context).
+    const reportCenter = () => {
+      const c = map.getCenter();
+      setCenter(win.id, c.lat, c.lng, map.getZoom());
+    };
+    map.on("moveend", reportCenter);
+    map.on("zoomend", reportCenter);
+    reportCenter();
+
+    // Fix tile rendering after the container becomes visible (Leaflet mis-sizes
+    // when initialized inside a hidden/animating window).
+    setTimeout(() => map.invalidateSize(), 200);
+
+    return () => {
+      map.remove();
+      mapRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiKey]);
+
+  // ===== Layer switching =====
+  useEffect(() => {
+    const map = mapRef.current;
+    const layers = layersRef.current;
+    if (!map || !layers) return;
+    Object.values(layers).forEach((l) => {
+      if (map.hasLayer(l)) map.removeLayer(l);
+    });
+    layers[mapset].addTo(map);
+  }, [mapset]);
+
+  // ===== Cleanup on unmount =====
+  useEffect(() => {
+    return () => removeWindow(win.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ===== Helpers to manipulate markers + routes =====
+  const clearLayers = useCallback(() => {
+    markersLayerRef.current?.clearLayers();
+    routeLayerRef.current?.clearLayers();
+    setSelectedPoi(null);
+  }, []);
+
+  const addMarker = useCallback((poi: MapPoi) => {
+    const layer = markersLayerRef.current;
+    const map = mapRef.current;
+    if (!layer || !map) return;
+    const color = CATEGORY_COLORS[poi.category ?? "poi"] ?? CATEGORY_COLORS.poi;
+    const m = new Marker(latLng(poi.lat, poi.lon), { icon: pinIcon(color) });
+    m.bindPopup(
+      `<div style="font-size:13px;max-width:200px"><strong>${escapeHtml(poi.name)}</strong>${
+        poi.description ? `<div style="color:#666;margin-top:2px">${escapeHtml(poi.description)}</div>` : ""
+      }${poi.category ? `<div style="margin-top:4px;font-size:11px;text-transform:uppercase;color:#888">${escapeHtml(poi.category)}</div>` : ""}</div>`
+    );
+    m.on("click", () => setSelectedPoi(poi));
+    m.addTo(layer);
+  }, []);
+
+  const drawRoute = useCallback(
+    (geometry: [number, number][], waypoints: MapWaypoint[], pois: MapPoi[], type?: string) => {
+      const layer = routeLayerRef.current;
+      const map = mapRef.current;
+      if (!layer || !map || geometry.length < 2) return;
+      layer.clearLayers();
+      const line = new Polyline(geometry.map(([lat, lon]) => latLng(lat, lon)), {
+        color: CATEGORY_COLORS.route,
+        weight: 4,
+        opacity: 0.85,
+      });
+      line.addTo(layer);
+      // Waypoint markers
+      for (const wp of waypoints) {
+        const m = new Marker(latLng(wp.lat, wp.lon), { icon: pinIcon(CATEGORY_COLORS.waypoint) });
+        m.bindPopup(`<strong>${escapeHtml(wp.name)}</strong>`);
+        m.addTo(layer);
+      }
+      // POI markers on the route layer
+      const poiLayer = markersLayerRef.current;
+      if (poiLayer) poiLayer.clearLayers();
+      for (const p of pois) addMarker(p);
+      // Fit bounds to the route
+      try {
+        const bounds = latLngBounds(geometry.map(([lat, lon]) => latLng(lat, lon)));
+        map.fitBounds(bounds, { padding: [40, 40] });
+      } catch {
+        /* ignore */
+      }
+      currentRouteRef.current = { geometry, pois, waypoints, type };
+    },
+    [addMarker]
+  );
+
+  // ===== Consume pending commands from Athena (via the maps store) =====
+  useEffect(() => {
+    const cmd = pendingCommand;
+    const map = mapRef.current;
+    if (!cmd || !map) return;
+    (async () => {
+      switch (cmd.kind) {
+        case "show": {
+          if (cmd.lat !== undefined && cmd.lon !== undefined) {
+            map.setView(latLng(cmd.lat, cmd.lon), cmd.zoom ?? 13);
+            if (cmd.label) {
+              addMarker({ name: cmd.label, lat: cmd.lat, lon: cmd.lon, category: "poi" });
+            }
+          }
+          break;
+        }
+        case "add_marker": {
+          if (cmd.lat !== undefined && cmd.lon !== undefined && cmd.title) {
+            addMarker({
+              name: cmd.title,
+              lat: cmd.lat,
+              lon: cmd.lon,
+              category: cmd.category,
+              description: cmd.description,
+            });
+            map.setView(latLng(cmd.lat, cmd.lon), Math.max(map.getZoom(), 13));
+          }
+          break;
+        }
+        case "draw_route": {
+          if (cmd.geometry && cmd.geometry.length >= 2) {
+            drawRoute(cmd.geometry, cmd.waypoints ?? [], cmd.pois ?? [], cmd.type);
+            if (cmd.distanceM !== undefined && cmd.durationS !== undefined) {
+              setRouteInfo({
+                distanceM: cmd.distanceM,
+                durationS: cmd.durationS,
+                ascentM: 0,
+                descentM: 0,
+              });
+            }
+          }
+          break;
+        }
+        case "show_pois": {
+          if (cmd.pois) {
+            markersLayerRef.current?.clearLayers();
+            for (const p of cmd.pois) addMarker(p);
+            if (cmd.pois.length > 0) {
+              const bounds = latLngBounds(cmd.pois.map((p) => latLng(p.lat, p.lon)));
+              map.fitBounds(bounds, { padding: [40, 40] });
+            }
+          }
+          break;
+        }
+        case "open_trip": {
+          if (cmd.tripId) {
+            try {
+              const { trip } = await mapyApi.getTrip(cmd.tripId);
+              drawRoute(trip.geometry, trip.waypoints, trip.pois, trip.type);
+              setRouteInfo({
+                distanceM: trip.distanceM,
+                durationS: trip.durationS,
+                ascentM: trip.ascentM,
+                descentM: trip.descentM,
+              });
+            } catch (e) {
+              setError(e instanceof Error ? e.message : "Failed to load trip");
+            }
+          }
+          break;
+        }
+        case "clear": {
+          clearLayers();
+          setRouteInfo(null);
+          currentRouteRef.current = null;
+          break;
+        }
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingCommand?.seq]);
+
+  // ===== Sidebar actions =====
+  const doSearch = async () => {
+    if (!searchQuery.trim()) return;
+    setSearching(true);
+    setError(null);
+    try {
+      const { items } = await mapyApi.geocode(searchQuery, 10);
+      setSearchResults(items);
+      if (items.length > 0) {
+        const first = items[0];
+        mapRef.current?.setView(latLng(first.lat, first.lon), 13);
+        addMarker({ name: first.name, lat: first.lat, lon: first.lon, category: "poi", description: first.location });
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Search failed");
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const resolvePlace = async (name: string): Promise<GeocodeItem | null> => {
+    if (!name.trim()) return null;
+    // If it looks like "lat,lon" coords, parse directly.
+    const m = name.trim().match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/);
+    if (m) return { lat: Number(m[1]), lon: Number(m[2]), name, label: "coords", type: "coordinate", location: "" };
+    const { items } = await mapyApi.geocode(name, 1);
+    return items[0] ?? null;
+  };
+
+  const planRoute = async () => {
+    if (!routeStart.trim() || !routeEnd.trim()) return;
+    setPlanning(true);
+    setError(null);
+    try {
+      const [start, end] = await Promise.all([resolvePlace(routeStart), resolvePlace(routeEnd)]);
+      if (!start || !end) {
+        setError("Could not resolve one of the places. Try a more specific name or use lat,lon.");
+        return;
+      }
+      const result = await mapyApi.route({
+        startLat: start.lat,
+        startLon: start.lon,
+        endLat: end.lat,
+        endLon: end.lon,
+        mode: routeMode,
+      });
+      drawRoute(
+        result.geometry,
+        [
+          { name: start.name, lat: start.lat, lon: start.lon, type: "start" },
+          { name: end.name, lat: end.lat, lon: end.lon, type: "end" },
+        ],
+        [],
+        routeMode
+      );
+      setRouteInfo({
+        distanceM: result.distanceM,
+        durationS: result.durationS,
+        ascentM: result.ascentM,
+        descentM: result.descentM,
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Route planning failed");
+    } finally {
+      setPlanning(false);
+    }
+  };
+
+  const findNearby = async (categories: "water" | "sleeping" | "landmarks" | "amenities" | "all") => {
+    const map = mapRef.current;
+    if (!map) return;
+    const c = map.getCenter();
+    setFindingNearby(true);
+    setError(null);
+    try {
+      const { items } = await mapyApi.findNearby({
+        lat: c.lat,
+        lon: c.lng,
+        radius: 5000,
+        categories,
+        limit: 30,
+      });
+      markersLayerRef.current?.clearLayers();
+      for (const p of items) {
+        addMarker({ name: p.name, lat: p.lat, lon: p.lon, category: p.category, description: p.description });
+      }
+      if (items.length > 0) {
+        const bounds = latLngBounds(items.map((p) => latLng(p.lat, p.lon)));
+        map.fitBounds(bounds, { padding: [40, 40] });
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Nearby search failed");
+    } finally {
+      setFindingNearby(false);
+    }
+  };
+
+  const loadTrips = async () => {
+    setLoadingTrips(true);
+    try {
+      const { trips: list } = await mapyApi.listTrips();
+      setTrips(list);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load trips");
+    } finally {
+      setLoadingTrips(false);
+    }
+  };
+
+  const openTrip = async (id: string) => {
+    try {
+      const { trip } = await mapyApi.getTrip(id);
+      drawRoute(trip.geometry, trip.waypoints, trip.pois, trip.type);
+      setRouteInfo({
+        distanceM: trip.distanceM,
+        durationS: trip.durationS,
+        ascentM: trip.ascentM,
+        descentM: trip.descentM,
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load trip");
+    }
+  };
+
+  const saveCurrentRoute = async () => {
+    const cur = currentRouteRef.current;
+    if (!cur || cur.geometry.length < 2) {
+      setError("No route to save. Plan a route first.");
+      return;
+    }
+    const name = prompt("Trip name:", `Trip ${new Date().toLocaleDateString()}`);
+    if (!name) return;
+    try {
+      await mapyApi.saveTrip({
+        name,
+        type: (cur.type as "hiking" | "bicycle" | "car") ?? "hiking",
+        distanceM: routeInfo?.distanceM ?? 0,
+        durationS: routeInfo?.durationS ?? 0,
+        ascentM: routeInfo?.ascentM,
+        descentM: routeInfo?.descentM,
+        geometry: cur.geometry,
+        waypoints: cur.waypoints,
+        pois: cur.pois.map((p) => ({
+          name: p.name,
+          lat: p.lat,
+          lon: p.lon,
+          category: p.category ?? "poi",
+          ...(p.description ? { description: p.description } : {}),
+        })),
+      });
+      loadTrips();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save trip");
+    }
+  };
+
+  const deleteTrip = async (id: string) => {
+    if (!confirm("Delete this trip?")) return;
+    try {
+      await mapyApi.deleteTrip(id);
+      setTrips((prev) => prev.filter((t) => t.id !== id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to delete trip");
+    }
+  };
+
+  // ===== Render =====
+
+  if (loadingKey) {
+    return (
+      <div className="flex h-full items-center justify-center bg-surface text-ink-muted">
+        <Loader2 className="animate-spin" size={24} />
+      </div>
+    );
+  }
+
+  if (!apiKey) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 bg-surface p-6 text-center">
+        <MapIcon className="text-ink-muted" size={40} />
+        <h2 className="text-lg font-semibold text-ink">Mapy.cz API key required</h2>
+        <p className="max-w-sm text-sm text-ink-muted">
+          Add your mapy.com developer API key in <strong>Settings → Integrations</strong> to use the Maps app.
+          Get a free key at{" "}
+          <a href="https://developer.mapy.com/" target="_blank" rel="noreferrer" className="underline">
+            developer.mapy.com
+          </a>
+          .
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative flex h-full w-full overflow-hidden bg-surface">
+      {/* Map container */}
+      <div className="relative flex-1">
+        <div ref={containerRef} className="absolute inset-0 z-0" />
+
+        {/* Layer switcher (top-right) */}
+        <div className="absolute right-2 top-2 z-[1000] flex gap-1 rounded-md border border-edge bg-surface-2/95 p-1 text-xs shadow">
+          {(["outdoor", "basic", "aerial", "winter"] as Mapset[]).map((ms) => (
+            <button
+              key={ms}
+              onClick={() => setMapset(ms)}
+              className={`rounded px-2 py-1 capitalize transition-colors ${
+                mapset === ms ? "bg-accent text-white" : "text-ink-muted hover:bg-surface-3 hover:text-ink"
+              }`}
+            >
+              {ms}
+            </button>
+          ))}
+        </div>
+
+        {/* Sidebar toggle (when collapsed) */}
+        {!sidebarOpen && (
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="absolute left-2 top-2 z-[1000] flex items-center gap-1.5 rounded-md border border-edge bg-surface-2/95 px-2 py-1.5 text-xs text-ink shadow hover:bg-surface-3"
+          >
+            <Search size={14} /> Panel
+          </button>
+        )}
+
+        {/* POI info popup (bottom) */}
+        {selectedPoi && (
+          <div className="absolute bottom-2 left-2 z-[1000] max-w-xs rounded-md border border-edge bg-surface-2/95 p-3 text-sm shadow">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <div className="font-semibold text-ink">{selectedPoi.name}</div>
+                {selectedPoi.description && <div className="mt-0.5 text-ink-muted">{selectedPoi.description}</div>}
+                {selectedPoi.category && (
+                  <div className="mt-1 text-[10px] uppercase text-ink-muted">{selectedPoi.category}</div>
+                )}
+              </div>
+              <button onClick={() => setSelectedPoi(null)} className="text-ink-muted hover:text-ink">
+                <X size={14} />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Sidebar */}
+      {sidebarOpen && (
+        <div className="flex w-72 shrink-0 flex-col border-l border-edge bg-surface-2 @container">
+          <div className="flex items-center justify-between border-b border-edge px-3 py-2">
+            <span className="text-sm font-semibold text-ink">Maps</span>
+            <button onClick={() => setSidebarOpen(false)} className="text-ink-muted hover:text-ink">
+              <X size={16} />
+            </button>
+          </div>
+
+          <div className="flex-1 space-y-4 overflow-y-auto p-3">
+            {error && (
+              <div className="rounded-md border border-red-500/40 bg-red-500/10 px-2.5 py-2 text-xs text-red-500">
+                {error}
+                <button onClick={() => setError(null)} className="ml-1 underline">
+                  dismiss
+                </button>
+              </div>
+            )}
+
+            {/* Search */}
+            <section>
+              <h3 className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase text-ink-muted">
+                <Search size={13} /> Search
+              </h3>
+              <div className="flex gap-1.5">
+                <input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && doSearch()}
+                  placeholder="Place name or lat,lon"
+                  className="min-w-0 flex-1 rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink outline-none focus:border-accent"
+                />
+                <button
+                  onClick={doSearch}
+                  disabled={searching}
+                  className="rounded-md bg-accent px-2 py-1.5 text-xs text-white disabled:opacity-50"
+                >
+                  {searching ? <Loader2 size={13} className="animate-spin" /> : <Search size={13} />}
+                </button>
+              </div>
+              {searchResults.length > 0 && (
+                <ul className="mt-1.5 max-h-32 space-y-0.5 overflow-y-auto">
+                  {searchResults.map((r, i) => (
+                    <li key={i}>
+                      <button
+                        onClick={() => {
+                          mapRef.current?.setView(latLng(r.lat, r.lon), 13);
+                          addMarker({ name: r.name, lat: r.lat, lon: r.lon, category: "poi", description: r.location });
+                        }}
+                        className="w-full truncate rounded px-1.5 py-1 text-left text-xs text-ink hover:bg-surface-3"
+                        title={r.location}
+                      >
+                        {r.name}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            {/* Route planner */}
+            <section>
+              <h3 className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase text-ink-muted">
+                <Route size={13} /> Route planner
+              </h3>
+              <div className="space-y-1.5">
+                <input
+                  value={routeStart}
+                  onChange={(e) => setRouteStart(e.target.value)}
+                  placeholder="Start (place or lat,lon)"
+                  className="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink outline-none focus:border-accent"
+                />
+                <input
+                  value={routeEnd}
+                  onChange={(e) => setRouteEnd(e.target.value)}
+                  placeholder="End (place or lat,lon)"
+                  className="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink outline-none focus:border-accent"
+                />
+                <div className="flex gap-1">
+                  {(["hiking", "bicycle", "car"] as const).map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => setRouteMode(m)}
+                      className={`flex-1 rounded px-1.5 py-1 text-xs capitalize transition-colors ${
+                        routeMode === m ? "bg-accent text-white" : "bg-surface text-ink-muted hover:bg-surface-3"
+                      }`}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={planRoute}
+                  disabled={planning}
+                  className="w-full rounded-md bg-accent px-2 py-1.5 text-xs text-white disabled:opacity-50"
+                >
+                  {planning ? <Loader2 size={13} className="mx-auto animate-spin" /> : "Plan route"}
+                </button>
+              </div>
+              {routeInfo && (
+                <div className="mt-2 rounded-md border border-edge bg-surface p-2 text-xs text-ink">
+                  <div className="flex justify-between"><span className="text-ink-muted">Distance</span><span>{fmtDistance(routeInfo.distanceM)}</span></div>
+                  <div className="flex justify-between"><span className="text-ink-muted">Duration</span><span>{fmtDuration(routeInfo.durationS)}</span></div>
+                  {routeInfo.ascentM > 0 && (
+                    <div className="flex justify-between"><span className="text-ink-muted">Ascent</span><span>{Math.round(routeInfo.ascentM)} m</span></div>
+                  )}
+                  {routeInfo.descentM > 0 && (
+                    <div className="flex justify-between"><span className="text-ink-muted">Descent</span><span>{Math.round(routeInfo.descentM)} m</span></div>
+                  )}
+                  <button
+                    onClick={saveCurrentRoute}
+                    className="mt-2 flex w-full items-center justify-center gap-1 rounded bg-surface-3 px-2 py-1 text-xs text-ink hover:bg-surface"
+                  >
+                    <Save size={12} /> Save trip
+                  </button>
+                </div>
+              )}
+            </section>
+
+            {/* Find nearby */}
+            <section>
+              <h3 className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase text-ink-muted">
+                <Plus size={13} /> Find nearby (map center)
+              </h3>
+              <div className="grid grid-cols-2 gap-1">
+                <button onClick={() => findNearby("water")} disabled={findingNearby} className="flex items-center justify-center gap-1 rounded bg-surface px-1.5 py-1.5 text-xs text-ink hover:bg-surface-3 disabled:opacity-50">
+                  <Droplets size={12} /> Water
+                </button>
+                <button onClick={() => findNearby("sleeping")} disabled={findingNearby} className="flex items-center justify-center gap-1 rounded bg-surface px-1.5 py-1.5 text-xs text-ink hover:bg-surface-3 disabled:opacity-50">
+                  <BedDouble size={12} /> Sleep
+                </button>
+                <button onClick={() => findNearby("landmarks")} disabled={findingNearby} className="flex items-center justify-center gap-1 rounded bg-surface px-1.5 py-1.5 text-xs text-ink hover:bg-surface-3 disabled:opacity-50">
+                  <Landmark size={12} /> Sights
+                </button>
+                <button onClick={() => findNearby("amenities")} disabled={findingNearby} className="flex items-center justify-center gap-1 rounded bg-surface px-1.5 py-1.5 text-xs text-ink hover:bg-surface-3 disabled:opacity-50">
+                  <Utensils size={12} /> Food
+                </button>
+              </div>
+              <button
+                onClick={clearLayers}
+                className="mt-1.5 w-full rounded bg-surface px-2 py-1.5 text-xs text-ink-muted hover:bg-surface-3"
+              >
+                Clear markers
+              </button>
+            </section>
+
+            {/* Trips */}
+            <section>
+              <div className="mb-1.5 flex items-center justify-between">
+                <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase text-ink-muted">
+                  <FolderOpen size={13} /> Trips
+                </h3>
+                <button onClick={loadTrips} className="text-xs text-accent hover:underline">
+                  {loadingTrips ? <Loader2 size={12} className="animate-spin" /> : "Refresh"}
+                </button>
+              </div>
+              {trips.length === 0 ? (
+                <p className="text-xs text-ink-muted">No saved trips. Plan a route and save it.</p>
+              ) : (
+                <ul className="space-y-1">
+                  {trips.map((t) => (
+                    <li key={t.id} className="flex items-center gap-1.5 rounded bg-surface px-2 py-1.5 text-xs">
+                      <button onClick={() => openTrip(t.id)} className="min-w-0 flex-1 text-left text-ink hover:underline">
+                        <div className="truncate">{t.name}</div>
+                        <div className="text-[10px] text-ink-muted">
+                          {t.type} · {fmtDistance(t.distanceM)} · {fmtDuration(t.durationS)}
+                        </div>
+                      </button>
+                      <button onClick={() => deleteTrip(t.id)} className="text-ink-muted hover:text-red-500">
+                        <Trash2 size={12} />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}

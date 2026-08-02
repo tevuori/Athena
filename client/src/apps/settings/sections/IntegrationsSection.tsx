@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
-import { Plug, Music, GraduationCap, Calendar, BookOpen, Loader2, LogOut, RefreshCw, ExternalLink, Bell } from "lucide-react";
+import { Plug, Music, GraduationCap, Calendar, BookOpen, Loader2, LogOut, RefreshCw, ExternalLink, Bell, Map as MapIcon } from "lucide-react";
 import { spotifyApi, type SpotifyCredentialStatus } from "../../../services/spotify";
 import { vutApi } from "../../../services/vut";
 import { microsoftApi, type MicrosoftCredentialStatus } from "../../../services/microsoft";
 import { moodleApi } from "../../../services/moodle";
 import { ntfyApi } from "../../../services/ntfy";
+import { mapyApi } from "../../../services/maps";
 import { useWindows } from "../../../store/windows";
 import { SectionHeader, Card, Field, StatusPill, SaveButton, MsgBox, inputClass } from "../ui";
 
@@ -21,6 +22,7 @@ export default function IntegrationsSection() {
       <MicrosoftCard />
       <MoodleCard />
       <NtfyCard />
+      <MapyCard />
     </section>
   );
 }
@@ -644,5 +646,119 @@ function IntegrationRow({
         {action}
       </div>
     </div>
+  );
+}
+
+function MapyCard() {
+  const [configured, setConfigured] = useState(false);
+  const [apiKey, setApiKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState(false);
+  const openWindow = useWindows((s) => s.open);
+
+  const refresh = useCallback(async () => {
+    try {
+      const { configured: c } = await mapyApi.credentialsStatus();
+      setConfigured(c);
+    } catch {
+      setConfigured(false);
+    }
+  }, []);
+
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  const connect = async () => {
+    if (!apiKey.trim()) return;
+    setBusy(true);
+    setErr(false);
+    setMsg(null);
+    try {
+      await mapyApi.setApiKey(apiKey.trim());
+      setApiKey("");
+      await refresh();
+      setMsg("Mapy.cz API key saved.");
+    } catch (e) {
+      setErr(true);
+      setMsg(e instanceof Error ? e.message : "Failed to save API key");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const disconnect = async () => {
+    if (!confirm("Remove your stored Mapy.cz API key?")) return;
+    setBusy(true);
+    setErr(false);
+    setMsg(null);
+    try {
+      await mapyApi.deleteApiKey();
+      await refresh();
+      setMsg("Mapy.cz API key removed.");
+    } catch (e) {
+      setErr(true);
+      setMsg(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card className="mt-3">
+      <IntegrationRow
+        icon={<MapIcon size={18} />}
+        name="Mapy.cz"
+        description="Powers the Maps app & trip planning — geocoding, hiking/bicycle/car routing, POI search (water sources, sleeping spots, landmarks), and elevation. Get a free API key at developer.mapy.com."
+        pill={<StatusPill on={configured} onLabel="Connected" offLabel="Not configured" />}
+        action={
+          configured ? (
+            <button
+              onClick={() => openWindow({ appId: "maps", title: "Maps", icon: "Map" })}
+              className="flex items-center gap-1.5 rounded-lg border border-edge px-2.5 py-1.5 text-xs text-ink hover:bg-surface-3"
+            >
+              <ExternalLink size={12} /> Open Maps
+            </button>
+          ) : undefined
+        }
+      />
+      {configured ? (
+        <div className="mt-3 flex items-center gap-2">
+          <button
+            onClick={disconnect}
+            disabled={busy}
+            className="flex items-center gap-1.5 rounded-lg border border-edge px-3 py-2 text-sm text-ink-muted hover:bg-red-500 hover:text-white disabled:opacity-40"
+          >
+            <LogOut size={14} /> Disconnect
+          </button>
+          {busy && <Loader2 size={14} className="animate-spin text-ink-muted" />}
+        </div>
+      ) : (
+        <div className="mt-3 space-y-2">
+          <Field label="API key">
+            <input
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="Your mapy.com developer API key"
+              className={inputClass}
+            />
+          </Field>
+          <div className="flex items-center gap-2">
+            <SaveButton busy={busy} onClick={connect} disabled={!apiKey.trim()}>
+              Connect
+            </SaveButton>
+          </div>
+        </div>
+      )}
+      <MsgBox msg={msg} error={err} />
+      <p className="mt-2 text-xs text-ink-muted">
+        Create a project + API key at{" "}
+        <a href="https://developer.mapy.com/" target="_blank" rel="noreferrer" className="underline">
+          developer.mapy.com
+        </a>
+        . The key is encrypted (AES-256-GCM) and stored only on the server. Free credits are available; once
+        exhausted, paid consumption applies (Seznam Wallet). For a personal deploy, enter your own developer key.
+      </p>
+    </Card>
   );
 }

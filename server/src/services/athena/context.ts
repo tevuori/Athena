@@ -153,6 +153,14 @@ function browserTabsContext(windows: ClientWindowInfo[]): string {
     .join("\n");
 }
 
+function mapsContext(windows: ClientWindowInfo[]): string {
+  const maps = windows.filter((w) => w.appId === "maps" && w.mapsCenter);
+  if (maps.length === 0) return "No Maps window open.";
+  return maps
+    .map((w) => `- id=${w.id} | center=(${w.mapsCenter!.lat.toFixed(4)}, ${w.mapsCenter!.lon.toFixed(4)}) zoom=${w.mapsCenter!.zoom}${w.focused ? " (focused)" : w.minimized ? " (minimized)" : ""}`)
+    .join("\n");
+}
+
 export async function buildSystemPrompt(
   userId: string,
   windows: ClientWindowInfo[] = []
@@ -171,6 +179,7 @@ export async function buildSystemPrompt(
   ]);
   const winCtx = windowsContext(windows);
   const browserCtx = browserTabsContext(windows);
+  const mapsCtx = mapsContext(windows);
   const instructions = user?.athenaInstructions?.trim() ?? "";
   const instructionsBlock = instructions
     ? `\n\nUser instructions (follow these in every response):\n${instructions}\n`
@@ -225,6 +234,14 @@ Capabilities (via tools):
 - Profile: set_user_name (save what to call the user — use it the moment they tell you their name or ask you to change it), get_user_name
 - Memory: remember (store a fact/preference/goal the user wants you to recall in future turns), recall_memory (search stored memories), forget_memory (delete a memory), list_memories (list all). The 5 most recent memories are already in your context below.
 - Item links: list_links (list items attached to a note/task/flashcardDeck/calendarEvent/file — links are symmetric), link_items (attach two items together), unlink_items (remove an attachment). Use these when the user asks what's attached to a task/note/event, or to attach/detach items. The user creates most links by dragging one item onto another in the desktop UI.
+- Maps & trip planning (mapy.cz — requires the user's API key, configured in Settings → Integrations; if mapy_status returns configured=false, tell them to add it):
+  • Data: geocode (resolve a place name → lat/lon — ALWAYS call this first when you need coordinates for a place the user names), search_places (find POIs/landmarks by text, optionally near a point), find_nearby_pois (find hiking-relevant POIs near a coordinate filtered by category: 'water' = springs/wells/drinking water, 'sleeping' = shelters/bivouacs/mountain huts/camps = LEGAL sleeping spots, 'landmarks' = castles/viewpoints/towers, 'amenities' = restaurants/accommodation, or 'all')
+  • Routing: plan_route (plan a hiking / bicycle / car route between two points + optional waypoints — returns distance, duration, ascent/descent, geometry; for HIKING it also auto-finds water sources, sleeping spots, and landmarks along the route)
+  • Map control (client actions — drive the Maps app): open_maps (open the Maps app), show_on_map (center the map on lat/lon at a zoom, optional label), add_map_marker (add a POI/landmark marker), draw_map_route (draw a planned route + its waypoints + POIs on the map), show_map_pois (render a set of POIs as markers), open_trip (open a saved trip on the map)
+  • Trips: save_trip (persist a planned trip — call after plan_route when the user wants to keep it), list_trips, get_trip, delete_trip
+  • Workflow for "show me CITY/LANDMARK": geocode → show_on_map + add_map_marker → DESCRIBE the point of interest in your reply (use your own knowledge + the mapy.cz description).
+  • Workflow for "plan a hike from A to B": geocode A and B → plan_route(mode="hiking") → draw_map_route (pass geometry + pois) → narrate the full plan: distance, duration, ascent/descent, water sources, legal sleeping spots, and landmarks along the way. Then offer to save_trip.
+  • Workflow for "find water/sleeping spots near X": geocode X → find_nearby_pois(categories="water" or "sleeping") → show_map_pois → list them in your reply.
 
 Guidelines:
 - Be concise and direct. Prefer action over explanation.
@@ -251,6 +268,9 @@ ${winCtx}
 
 Open browser tabs (id | url):
 ${browserCtx}
+
+Open Maps windows (id | center | zoom):
+${mapsCtx}
 
 Recently opened files (id | path | type | size | preview):
 ${recent}`;

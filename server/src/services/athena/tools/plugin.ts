@@ -18,6 +18,8 @@ export interface ClientWindowInfo {
   focused: boolean;
   /** For Browser windows: the URL currently displayed. */
   browserUrl?: string;
+  /** For Maps windows: the current map center + zoom. */
+  mapsCenter?: { lat: number; lon: number; zoom: number };
 }
 
 export interface ToolContext {

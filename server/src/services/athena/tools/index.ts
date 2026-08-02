@@ -26,6 +26,7 @@ import { browserTools } from "./browser";
 import { teacherTools } from "./teacher";
 import { ntfyTools } from "./ntfy";
 import { reminderTools } from "./reminders";
+import { mapTools } from "./maps";
 
 export { AthenaToolsPlugin, type ToolDef, type ToolContext, type ClientWindowInfo } from "./plugin";
 
@@ -58,6 +59,7 @@ export const ALL_TOOLS: ToolDef[] = [
   ...teacherTools,
   ...ntfyTools,
   ...reminderTools,
+  ...mapTools,
 ];
 
 /** Tool metadata safe to expose to the client (no handlers). */

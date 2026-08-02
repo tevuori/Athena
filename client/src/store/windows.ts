@@ -23,7 +23,8 @@ export type AppId =
   | "browser"
   | "reminders"
   | "analytics"
-  | "moodle";
+  | "moodle"
+  | "maps";
 
 export interface WindowRect {
   x: number;
@@ -191,6 +192,7 @@ const DEFAULT_SIZE: Record<AppId, WindowRect> = {
   reminders: { x: 240, y: 100, width: 780, height: 620 },
   analytics: { x: 140, y: 70, width: 980, height: 680 },
   moodle: { x: 120, y: 60, width: 960, height: 660 },
+  maps: { x: 120, y: 60, width: 1040, height: 700 },
 };
 
 function clampToViewport(rect: WindowRect): WindowRect {

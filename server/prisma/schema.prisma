@@ -58,6 +58,8 @@ model User {
   gamificationState GamificationState?
   studyHighlights   StudyHighlight[]
   moodleSyncs       MoodleSync[]
+  mapyCredentials   MapyCredentials?
+  trips             Trip[]
 }
 
 // ===== Study Hub: persistent user highlights & annotations =====
@@ -936,5 +938,45 @@ model MoodleSync {
   materialCount   Int      @default(0)
 
   @@unique([userId, courseId])
+  @@index([userId])
+}
+
+// ===== Mapy.cz integration: per-user API key =====
+// The user's own mapy.com developer API key (AES-256-GCM encrypted in DB),
+// configured in Settings → Integrations. Used for the REST API (geocoding,
+// routing, POI search, elevation) and the Leaflet raster tiles in the Maps app.
+// Note: mapy.com terms require the API key belong to the app developer's
+// Project; for a personal/single-user deploy the user is the developer.
+
+model MapyCredentials {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  apiKeyEnc  String   // AES-256-GCM encrypted
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+// ===== Saved trips (hiking / bicycle / car) =====
+// A planned trip: route geometry, waypoints, points of interest (water sources,
+// legal sleeping spots, landmarks) discovered along the route, and a summary.
+
+model Trip {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  type        String   // "hiking" | "bicycle" | "car"
+  distanceM   Float    // total distance in meters
+  durationS   Int      // estimated duration in seconds
+  ascentM     Float    @default(0)  // total ascent (hiking)
+  descentM    Float    @default(0)  // total descent (hiking)
+  geometry    String   // JSON: array of [lat, lon] route points
+  waypoints   String   @default("[]") // JSON: [{ name, lat, lon, type? }]
+  pois        String   @default("[]") // JSON: [{ name, lat, lon, category, description? }]
+  summary     String   @default("")  // human-readable plan / notes
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
   @@index([userId])
 }
