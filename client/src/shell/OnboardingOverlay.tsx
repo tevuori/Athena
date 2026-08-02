@@ -3,9 +3,10 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Sparkles, StickyNote, CheckSquare, Calendar, Settings as SettingsIcon,
   Palette, Plug, ArrowRight, ArrowLeft, X, Check, Lightbulb,
-  Keyboard, Music, GraduationCap, Brain, Folder, Timer, Flame, PenTool, Mic, Globe,
+  Keyboard, Music, GraduationCap, Brain, Folder, Timer, Flame, PenTool, Mic, Globe, UserRound,
 } from "lucide-react";
 import { useWindows } from "../store/windows";
+import { useAuth } from "../store/auth";
 import { useSettings } from "../store/settings";
 import { APP_MAP } from "../apps/registry";
 
@@ -21,6 +22,7 @@ interface StepDef {
 
 const STEPS: StepDef[] = [
   { id: "welcome", centered: true },
+  { id: "name", centered: true },
   { id: "desktop", centered: true },
   { id: "notes", openApp: { appId: "notes", rect: { x: 80, y: 60, width: 720, height: 480 } } },
   { id: "tasks", openApp: { appId: "tasks", rect: { x: 120, y: 80, width: 760, height: 460 } } },
@@ -38,9 +40,23 @@ export default function OnboardingOverlay() {
   const [stepIdx, setStepIdx] = useState(0);
   const openWindow = useWindows((s) => s.open);
   const setHasOnboarded = useSettings((s) => s.setHasOnboarded);
+  const user = useAuth((s) => s.user);
+  const updateProfile = useAuth((s) => s.updateProfile);
+  // "Student" is the legacy seeded placeholder — start from an empty field.
+  const currentName = user?.displayName ?? "";
+  const [name, setName] = useState(currentName.trim().toLowerCase() === "student" ? "" : currentName);
 
   const step = STEPS[stepIdx];
   const isLast = stepIdx === STEPS.length - 1;
+
+  /** Persist the name typed in the "name" step before leaving it. */
+  const saveName = useCallback(() => {
+    const trimmed = name.trim();
+    if (step.id !== "name" || !trimmed || trimmed === user?.displayName) return;
+    void updateProfile({ displayName: trimmed }).catch(() => {
+      /* non-blocking: the user can set it later in Settings → Account */
+    });
+  }, [name, step.id, updateProfile, user?.displayName]);
 
   // Open app window when entering a step that has one
   useEffect(() => {
@@ -60,20 +76,23 @@ export default function OnboardingOverlay() {
   }, [stepIdx]);
 
   const next = useCallback(() => {
+    saveName();
     if (isLast) {
       setHasOnboarded(true);
     } else {
       setStepIdx((i) => Math.min(i + 1, STEPS.length - 1));
     }
-  }, [isLast, setHasOnboarded]);
+  }, [isLast, saveName, setHasOnboarded]);
 
   const back = useCallback(() => {
+    saveName();
     setStepIdx((i) => Math.max(i - 1, 0));
-  }, []);
+  }, [saveName]);
 
   const skip = useCallback(() => {
+    saveName();
     setHasOnboarded(true);
-  }, []);
+  }, [saveName, setHasOnboarded]);
 
   return (
     <AnimatePresence mode="wait">
@@ -87,6 +106,8 @@ export default function OnboardingOverlay() {
           onBack={back}
           onSkip={skip}
           isLast={isLast}
+          name={name}
+          onNameChange={setName}
         />
       ) : (
         <BottomPanel
@@ -105,10 +126,17 @@ export default function OnboardingOverlay() {
 
 // ===== Step content =====
 
-function StepContent({ stepId }: { stepId: string }) {
+function StepContent({ stepId, name, onNameChange, onSubmitName }: {
+  stepId: string;
+  name?: string;
+  onNameChange?: (value: string) => void;
+  onSubmitName?: () => void;
+}) {
   switch (stepId) {
     case "welcome":
       return <WelcomeStep />;
+    case "name":
+      return <NameStep value={name ?? ""} onChange={onNameChange ?? (() => {})} onSubmit={onSubmitName ?? (() => {})} />;
     case "desktop":
       return <DesktopStep />;
     case "notes":
@@ -195,6 +223,39 @@ function WelcomeStep() {
       <p className="mt-4 text-sm text-ink-muted">
         Let's take a quick tour and set up your workspace.
       </p>
+    </div>
+  );
+}
+
+function NameStep({ value, onChange, onSubmit }: {
+  value: string; onChange: (value: string) => void; onSubmit: () => void;
+}) {
+  return (
+    <div className="text-center">
+      <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-accent/20 text-accent">
+        <UserRound size={32} />
+      </div>
+      <h2 className="mb-2 text-2xl font-bold text-ink">What should we call you?</h2>
+      <p className="mx-auto max-w-sm text-sm text-ink-muted">
+        Your name is used for greetings across the desktop, and Athena will use it when talking
+        to you. You can change it anytime in Settings → Account.
+      </p>
+      <input
+        autoFocus
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            onSubmit();
+          }
+        }}
+        maxLength={64}
+        placeholder="Your name or nickname"
+        aria-label="Your name"
+        className="mx-auto mt-5 block w-full max-w-xs rounded-lg border border-edge bg-surface-2 px-3 py-2 text-center text-sm text-ink outline-none placeholder:text-ink-muted focus:border-accent"
+      />
+      <p className="mt-3 text-xs text-ink-muted/70">Optional — skip it and Athena will ask later.</p>
     </div>
   );
 }
@@ -375,9 +436,10 @@ function ProgressBar({ current, total }: { current: number; total: number }) {
   );
 }
 
-function CenteredModal({ stepId, stepIdx, totalSteps, onNext, onBack, onSkip, isLast }: {
+function CenteredModal({ stepId, stepIdx, totalSteps, onNext, onBack, onSkip, isLast, name, onNameChange }: {
   stepId: string; stepIdx: number; totalSteps: number;
   onNext: () => void; onBack: () => void; onSkip: () => void; isLast: boolean;
+  name?: string; onNameChange?: (value: string) => void;
 }) {
   return (
     <motion.div
@@ -404,7 +466,7 @@ function CenteredModal({ stepId, stepIdx, totalSteps, onNext, onBack, onSkip, is
         )}
         {/* Content */}
         <div className="p-8">
-          <StepContent stepId={stepId} />
+          <StepContent stepId={stepId} name={name} onNameChange={onNameChange} onSubmitName={onNext} />
         </div>
         {/* Footer */}
         <div className="flex items-center justify-between border-t border-edge px-6 py-4">

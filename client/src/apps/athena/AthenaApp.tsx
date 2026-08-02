@@ -21,6 +21,7 @@ import type { VFolder } from "../../types";
 import { useSettings, type AthenaRollEdge } from "../../store/settings";
 import { useAthenaQuick } from "../../store/athenaQuick";
 import { useBrowser } from "../../store/browser";
+import { useAuth } from "../../store/auth";
 import { useDataRefresh } from "../../store/dataRefresh";
 
 interface ChatTurn extends AthenaMessage {
@@ -372,6 +373,12 @@ export default function AthenaApp({
       return wins.find((w) => !w.minimized) ?? wins[wins.length - 1];
     };
     switch (act) {
+      case "profile_updated": {
+        // set_user_name changed the display name server-side — pull the fresh
+        // profile so greetings and the Start menu update immediately.
+        void useAuth.getState().refresh();
+        break;
+      }
       case "start_pomodoro": {
         openWindow({
           appId: "pomodoro",
