@@ -282,41 +282,38 @@ export async function geocodeSmart(
   // 1. Try mapy.cz geocode (with built-in query-variation fallback).
   const items = await geocode(userId, query, 10, lang);
   if (items.length > 0) {
+    const queryLower = query.toLowerCase().trim();
+    const queryWords = queryLower.split(/\s+/).filter((w) => w.length > 1);
+
     // If there's an exact name match, prefer it.
-    const exact = items.find((it) =>
-      it.name.toLowerCase() === query.toLowerCase().trim()
-    );
+    const exact = items.find((it) => it.name.toLowerCase().trim() === queryLower);
     if (exact) return exact;
 
-    // Check if the first result is a good match. If the result name is
-    // significantly shorter than the query (e.g. query="Lysá hora Šumava"
-    // but result="Lysá"), the mapy.cz API likely truncated the query and
-    // returned a wrong match. In that case, also try Nominatim and prefer
-    // it if it has a better name match.
-    const first = items[0];
-    const queryLower = query.toLowerCase().trim();
-    const nameLower = first.name.toLowerCase().trim();
-    // A "good match" requires the name to cover at least 60% of the query's
-    // words — prevents "Lysá" matching "Lysá hora Šumava" (1 of 3 words = 33%).
-    const queryWords = queryLower.split(/\s+/).filter((w) => w.length > 1);
-    const nameWords = nameLower.split(/\s+/).filter((w) => w.length > 1);
-    const coveredWords = nameWords.filter((w) => queryWords.includes(w)).length;
-    const coverage = queryWords.length > 0 ? coveredWords / queryWords.length : 1;
-    const isGoodMatch = nameLower === queryLower || coverage >= 0.6;
-    if (isGoodMatch) return first;
+    // Score every result by word coverage of the query. The mapy.cz API
+    // ranking isn't always best for compound Czech names — e.g. for
+    // "Lysá hora Šumava" it returns "Lysá" (1/3 words) first, but the
+    // query-variation fallback also added "Lysá hora" (2/3 words) results.
+    const scored = items.map((it) => {
+      const nameWords = it.name.toLowerCase().trim().split(/\s+/).filter((w) => w.length > 1);
+      const covered = nameWords.filter((w) => queryWords.includes(w)).length;
+      return { item: it, coverage: queryWords.length > 0 ? covered / queryWords.length : 1 };
+    });
+    scored.sort((a, b) => b.coverage - a.coverage);
+    const best = scored[0];
+
+    // If the best mapy.cz result has >= 60% word coverage, accept it.
+    if (best.coverage >= 0.6) return best.item;
 
     // Poor match — try Nominatim as a cross-check.
     const nomResult = await nominatimSearch(query, lang);
     if (nomResult) {
-      // Prefer Nominatim if its name has better word coverage of the query.
-      const nomNameLower = nomResult.name.toLowerCase().trim();
-      const nomNameWords = nomNameLower.split(/\s+/).filter((w) => w.length > 1);
+      const nomNameWords = nomResult.name.toLowerCase().trim().split(/\s+/).filter((w) => w.length > 1);
       const nomCovered = nomNameWords.filter((w) => queryWords.includes(w)).length;
       const nomCoverage = queryWords.length > 0 ? nomCovered / queryWords.length : 0;
-      if (nomCoverage > coverage) return nomResult;
+      if (nomCoverage > best.coverage) return nomResult;
     }
-    // Fall back to the mapy.cz result if Nominatim didn't help.
-    return first;
+    // Fall back to the best mapy.cz result if Nominatim didn't help.
+    return best.item;
   }
 
   // 2. Fallback: OpenStreetMap Nominatim (free, no API key, excellent coverage
