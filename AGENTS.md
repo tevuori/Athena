@@ -102,7 +102,27 @@ A dedicated **Maps** app (`client/src/apps/maps/MapsApp.tsx`) integrates [mapy.c
 
 **Maps store** (`store/maps.ts`): a per-window command channel (mirrors `store/browser.ts`). Athena's client-action dispatch in `AthenaApp.tsx` calls `issueCommand(windowId, kind, payload)`; `MapsApp` consumes pending commands via a `useEffect` on `pendingCommand.seq`. The store also tracks current map centers so the Athena system prompt can report where the map is focused (`mapsContext` in `context.ts`).
 
-**Endpoints** (`routes/mapy.ts`): `/credentials/{status,key}`, `/credentials` (PUT/DELETE), `/geocode`, `/reverse`, `/route`, `/pois`, `/nearby`, `/trips` (GET list, POST create), `/trips/:id` (GET, PUT, DELETE).
+**Endpoints** (`routes/mapy.ts`): `/credentials/{status,key}`, `/credentials` (PUT/DELETE), `/geocode`, `/reverse`, `/route`, `/pois`, `/nearby`, `/trips` (GET list, POST create), `/trips/:id` (GET, PUT, DELETE), `/trips/:id/gpx` (GPX download), `/tours/generate` (POST — run planner, no persist), `/tours` (GET list, POST create), `/tours/:id` (GET, DELETE), `/tours/:id/gpx` (whole-tour GPX), `/tours/:id/regenerate/:day` (POST — re-plan one day).
+
+**Intermediate waypoints:** The route planner UI (`MapsApp.tsx`) uses a reorderable stops list (Start / Via 1..N / End) instead of just Start + End. The backend `route()` already supported up to 15 waypoints; only the UI was missing. A "click map to add stop" toggle reverse-geocodes a clicked point and inserts it as a via stop before the end.
+
+**Multi-day hiking tour planner (advanced, LLM-integrated):** `services/tour-planner.ts` generates a multi-day hiking tour from a base point + number of days + difficulty. Two modes:
+- **Hub & spoke:** loop hikes from a single base (accommodation). Each day heads in a different compass direction (spread evenly around the circle: day 1 → N, day 2 → SE, …) so loops don't overlap. Routes base → far point → base (two legs stitched). Returns to base each evening.
+- **Through-hike:** point-to-point chain from base toward an end point. Each day covers ~targetDistance along the straight line to the end. The nearest legal sleeping spot (mountain hut / shelter / bivouac, via `findNearbyPois` category `sleeping`) to the day's endpoint becomes the overnight stop. If none is found within 3km, the day is flagged as wild-camp.
+
+**Difficulty presets:** easy (~10 km/day, ≤400 m ascent), medium (~15 km, ≤800 m), hard (~20 km, ≤1200 m), expert (~28 km, ≤1600 m). If a day's actual ascent exceeds 150% of the target, it's flagged as a "hard day" with a rest-day suggestion.
+
+**LLM narration (the "highly integrated" layer):** After the deterministic routing + POI enrichment, `narrateTour()` calls the user's LLM (via `acquireLlmModel` + `generateText`) with the REAL per-day stats + POIs + overnight spots, and produces a coherent Markdown plan: Overview, Day-by-day (terrain, water sources, landmarks, where you sleep, hard-day warnings), Packing list (calibrated to difficulty + hub/through mode), and Safety notes. The narrated plan is saved as the `HikingTour.summary` and returned to Athena so it can be echoed in the chat reply. If the LLM is unavailable, a plain-text fallback summary is used (the tour is still usable).
+
+**Data model:** `HikingTour` Prisma model (name, mode, baseLat/lon/name, endLat/lon/name, numDays, difficulty, totals, summary). Each day is a `Trip` row linked via `tourId` + `dayNumber` (nullable — standalone trips have null tourId). `TripRow` now includes `tourId` + `dayNumber`.
+
+**GPX export:** `tripToGpx()` / `tourToGpx()` build GPX 1.1 XML (no deps) — `<wpt>` for waypoints + POIs, `<trk>` per day. Download via `/trips/:id/gpx` (single trip) or `/tours/:id/gpx` (whole tour, one track per day). Loads into Garmin, Komoot, etc.
+
+**Single-day regeneration:** `regenerateDay()` re-plans one day of a saved tour, keeping the others. For hub mode the compass bearing is reused; for through mode the from/to points are reused (so the chain stays consistent). Route: `POST /tours/:id/regenerate/:day`.
+
+**TourPlanner UI** (`client/src/apps/maps/TourPlanner.tsx`): sidebar tab in the Maps app. Form: mode toggle (hub/through), base + end inputs, days stepper, difficulty select, optional notes for the LLM. "Generate tour" button (10-30s — multiple route API calls). Day-by-day itinerary with per-day stats, overnight spots, water sources, landmarks, hard-day/wild-camp badges. Day selector to view one day or all days overlaid (each in a distinct color via `drawTour`). Save / GPX export / regenerate-single-day / saved-tours list. `ElevationProfile.tsx` is a pure-SVG inline elevation chart (reuses the Analytics chart pattern).
+
+**Athena tools** (`tools/maps.ts`): `plan_hiking_tour` (the flagship — geocodes base (+ end), runs the planner with LLM narration, saves the tour, returns the narrated summary + per-day stats, and emits an `open_tour` client action to display it), `list_tours`, `get_tour`, `open_tour` (client action — draws all days overlaid), `regenerate_tour_day`, `delete_tour`. The system prompt (`context.ts`) includes a workflow for "plan a 3-day hiking tour based in X" → `plan_hiking_tour` → narrate the returned summary.
 
 ## Quick start (local dev)
 

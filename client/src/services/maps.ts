@@ -46,6 +46,8 @@ export interface TripDetail extends TripSummary {
   waypoints: { name: string; lat: number; lon: number; type?: string }[];
   pois: { name: string; lat: number; lon: number; category: string; description?: string }[];
   summary: string;
+  tourId?: string | null;
+  dayNumber?: number | null;
   updatedAt: string;
 }
 
@@ -129,4 +131,109 @@ export const mapyApi = {
   saveTrip: (trip: TripInput) => api.post<{ trip: TripDetail }>("/api/mapy/trips", trip),
   updateTrip: (id: string, trip: Partial<TripInput>) => api.put<{ trip: TripDetail }>(`/api/mapy/trips/${id}`, trip),
   deleteTrip: (id: string) => api.delete<{ ok: boolean }>(`/api/mapy/trips/${id}`),
+  /** GPX download URL for a single trip (opens as a file download). */
+  tripGpxUrl: (id: string) => `/api/mapy/trips/${id}/gpx`,
+};
+
+// ===== Multi-day hiking tours =====
+
+export type TourMode = "hub" | "through";
+export type TourDifficulty = "easy" | "medium" | "hard" | "expert";
+
+export interface TourDay {
+  dayNumber: number;
+  name: string;
+  distanceM: number;
+  durationS: number;
+  ascentM: number;
+  descentM: number;
+  geometry: [number, number][];
+  waypoints: { name: string; lat: number; lon: number; type?: string }[];
+  pois: { name: string; lat: number; lon: number; category: string; description?: string }[];
+  overnight?: { name: string; lat: number; lon: number; description?: string };
+  wildCamp?: boolean;
+  hardDay?: boolean;
+  narration?: string;
+}
+
+export interface GeneratedTour {
+  mode: TourMode;
+  baseLat: number;
+  baseLon: number;
+  baseName: string;
+  endLat?: number;
+  endLon?: number;
+  endName?: string;
+  numDays: number;
+  difficulty: TourDifficulty;
+  days: TourDay[];
+  totalDistanceM: number;
+  totalAscentM: number;
+  totalDurationS: number;
+  summary: string;
+}
+
+export interface TourGenerateInput {
+  mode: TourMode;
+  baseLat: number;
+  baseLon: number;
+  baseName: string;
+  endLat?: number;
+  endLon?: number;
+  endName?: string;
+  numDays: number;
+  difficulty: TourDifficulty;
+  notes?: string;
+}
+
+export interface TourSummary {
+  id: string;
+  name: string;
+  mode: TourMode;
+  baseName: string;
+  numDays: number;
+  difficulty: TourDifficulty;
+  totalDistanceM: number;
+  totalAscentM: number;
+  createdAt: string;
+}
+
+export interface TourDetail {
+  tour: {
+    id: string;
+    name: string;
+    mode: TourMode;
+    baseLat: number;
+    baseLon: number;
+    baseName: string;
+    endLat: number | null;
+    endLon: number | null;
+    endName: string | null;
+    numDays: number;
+    difficulty: TourDifficulty;
+    totalDistanceM: number;
+    totalAscentM: number;
+    totalDurationS: number;
+    summary: string;
+    createdAt: string;
+    updatedAt: string;
+  };
+  days: TripDetail[];
+}
+
+export interface TourSaveInput extends GeneratedTour {
+  name: string;
+}
+
+export const tourApi = {
+  generate: (input: TourGenerateInput) =>
+    api.post<{ tour: GeneratedTour }>("/api/mapy/tours/generate", input),
+  save: (input: TourSaveInput) => api.post<TourDetail>("/api/mapy/tours", input),
+  list: () => api.get<{ tours: TourSummary[] }>("/api/mapy/tours"),
+  get: (id: string) => api.get<TourDetail>(`/api/mapy/tours/${id}`),
+  delete: (id: string) => api.delete<{ ok: boolean }>(`/api/mapy/tours/${id}`),
+  regenerateDay: (id: string, day: number) =>
+    api.post<{ day: TourDay }>(`/api/mapy/tours/${id}/regenerate/${day}`),
+  /** GPX download URL for a whole tour (one track per day). */
+  tourGpxUrl: (id: string) => `/api/mapy/tours/${id}/gpx`,
 };

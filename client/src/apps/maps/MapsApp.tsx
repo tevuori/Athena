@@ -26,6 +26,8 @@ import {
   X,
   Plus,
   FolderOpen,
+  MapPin,
+  CalendarDays,
 } from "lucide-react";
 import type { WindowInstance } from "../../store/windows";
 import { useMaps, type MapCommand, type MapPoi, type MapWaypoint } from "../../store/maps";
@@ -36,6 +38,7 @@ import {
   type TripSummary,
   type TripDetail,
 } from "../../services/maps";
+import TourPlanner from "./TourPlanner";
 
 // ===== Mapy.cz tile layers =====
 // The `outdoor` mapset shows hiking/tourist trails with markings — the default
@@ -89,6 +92,9 @@ export default function MapsApp({ win }: { win: WindowInstance }) {
   const layersRef = useRef<Record<Mapset, TileLayer>>(null as any);
   const markersLayerRef = useRef<LayerGroup | null>(null);
   const routeLayerRef = useRef<LayerGroup | null>(null);
+  /** Mirror of addStopOnClick for use inside the map click handler (which is
+   *  registered once but needs to read the current toggle value). */
+  const addStopOnClickRef = useRef(false);
   const currentRouteRef = useRef<{
     geometry: [number, number][];
     pois: MapPoi[];
@@ -107,8 +113,10 @@ export default function MapsApp({ win }: { win: WindowInstance }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<GeocodeItem[]>([]);
   const [searching, setSearching] = useState(false);
-  const [routeStart, setRouteStart] = useState("");
-  const [routeEnd, setRouteEnd] = useState("");
+  // Stops list for the route planner. First = Start, last = End, middle = Via.
+  const [stops, setStops] = useState<string[]>(["", ""]);
+  const [addStopOnClick, setAddStopOnClick] = useState(false);
+  const [sidebarTab, setSidebarTab] = useState<"route" | "tour">("route");
   const [routeMode, setRouteMode] = useState<"hiking" | "bicycle" | "car">("hiking");
   const [planning, setPlanning] = useState(false);
   const [routeInfo, setRouteInfo] = useState<{ distanceM: number; durationS: number; ascentM: number; descentM: number } | null>(null);
@@ -203,6 +211,33 @@ export default function MapsApp({ win }: { win: WindowInstance }) {
     map.on("zoomend", reportCenter);
     reportCenter();
 
+    // Click-to-add-stop: when addStopOnClick is true, a click reverse-geocodes
+    // the point and appends it as a via stop (before the end). The handler is
+    // registered once; it reads the ref so the toggle takes effect live.
+    map.on("click", (e: { latlng: { lat: number; lng: number } }) => {
+      if (!addStopOnClickRef.current) return;
+      const { lat, lng } = e.latlng;
+      // Reverse-geocode to get a name; fall back to "lat,lon".
+      (async () => {
+        try {
+          const { items } = await mapyApi.reverse(lat, lng);
+          const name = items[0]?.name ?? `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+          setStops((prev) => {
+            const next = [...prev];
+            // Insert before the last (end) stop.
+            next.splice(next.length - 1, 0, name);
+            return next;
+          });
+        } catch {
+          setStops((prev) => {
+            const next = [...prev];
+            next.splice(next.length - 1, 0, `${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+            return next;
+          });
+        }
+      })();
+    });
+
     // Fix tile rendering after the container becomes visible (Leaflet mis-sizes
     // when initialized inside a hidden/animating window).
     setTimeout(() => map.invalidateSize(), 200);
@@ -224,6 +259,11 @@ export default function MapsApp({ win }: { win: WindowInstance }) {
     });
     layers[mapset].addTo(map);
   }, [mapset]);
+
+  // Keep the click-to-add-stop ref in sync with the toggle state.
+  useEffect(() => {
+    addStopOnClickRef.current = addStopOnClick;
+  }, [addStopOnClick]);
 
   // ===== Cleanup on unmount =====
   useEffect(() => {
@@ -285,6 +325,45 @@ export default function MapsApp({ win }: { win: WindowInstance }) {
       currentRouteRef.current = { geometry, pois, waypoints, type };
     },
     [addMarker]
+  );
+
+  /** Draw all days of a multi-day tour as overlaid polylines, each in a
+   *  distinct color. Clears any previous route + markers first. */
+  const drawTour = useCallback(
+    (days: { name: string; geometry: [number, number][] }[]) => {
+      const layer = routeLayerRef.current;
+      const map = mapRef.current;
+      if (!layer || !map) return;
+      layer.clearLayers();
+      markersLayerRef.current?.clearLayers();
+      const colors = [
+        "#ef4444", "#f59e0b", "#10b981", "#3b82f6", "#8b5cf6",
+        "#ec4899", "#14b8a6", "#f97316", "#6366f1", "#84cc16",
+        "#06b6d4", "#a855f7", "#eab308", "#22c55e",
+      ];
+      const allPoints: [number, number][] = [];
+      days.forEach((d, i) => {
+        if (d.geometry.length < 2) return;
+        const color = colors[i % colors.length];
+        const line = new Polyline(d.geometry.map(([lat, lon]) => latLng(lat, lon)), {
+          color,
+          weight: 4,
+          opacity: 0.85,
+        });
+        line.bindPopup(`<strong>Day ${i + 1}: ${escapeHtml(d.name)}</strong>`);
+        line.addTo(layer);
+        allPoints.push(...d.geometry);
+      });
+      if (allPoints.length > 0) {
+        try {
+          const bounds = latLngBounds(allPoints.map(([lat, lon]) => latLng(lat, lon)));
+          map.fitBounds(bounds, { padding: [40, 40] });
+        } catch {
+          /* ignore */
+        }
+      }
+    },
+    []
   );
 
   // ===== Consume pending commands from Athena (via the maps store) =====
@@ -358,6 +437,26 @@ export default function MapsApp({ win }: { win: WindowInstance }) {
           }
           break;
         }
+        case "draw_tour": {
+          if (cmd.tourDays && cmd.tourDays.length > 0) {
+            drawTour(cmd.tourDays);
+            setRouteInfo(null);
+          }
+          break;
+        }
+        case "open_tour": {
+          if (cmd.tourId) {
+            try {
+              const { tourApi } = await import("../../services/maps");
+              const detail = await tourApi.get(cmd.tourId);
+              drawTour(detail.days.map((d) => ({ name: d.name, geometry: d.geometry })));
+              setRouteInfo(null);
+            } catch (e) {
+              setError(e instanceof Error ? e.message : "Failed to load tour");
+            }
+          }
+          break;
+        }
         case "clear": {
           clearLayers();
           setRouteInfo(null);
@@ -399,31 +498,40 @@ export default function MapsApp({ win }: { win: WindowInstance }) {
   };
 
   const planRoute = async () => {
-    if (!routeStart.trim() || !routeEnd.trim()) return;
+    // Resolve all stops. Need at least start + end (first + last).
+    const filled = stops.map((s) => s.trim()).filter((s) => s.length > 0);
+    if (filled.length < 2) {
+      setError("Add at least a start and an end stop.");
+      return;
+    }
     setPlanning(true);
     setError(null);
     try {
-      const [start, end] = await Promise.all([resolvePlace(routeStart), resolvePlace(routeEnd)]);
-      if (!start || !end) {
-        setError("Could not resolve one of the places. Try a more specific name or use lat,lon.");
+      const resolved = await Promise.all(filled.map(resolvePlace));
+      if (resolved.some((r) => !r)) {
+        setError("Could not resolve one of the stops. Try a more specific name or use lat,lon.");
         return;
       }
+      const pts = resolved as { lat: number; lon: number; name: string }[];
+      const start = pts[0];
+      const end = pts[pts.length - 1];
+      const via = pts.slice(1, -1); // intermediate waypoints
       const result = await mapyApi.route({
         startLat: start.lat,
         startLon: start.lon,
         endLat: end.lat,
         endLon: end.lon,
         mode: routeMode,
+        // The server route() expects waypoints as [lon, lat] pairs.
+        ...(via.length > 0 ? { waypoints: via.map((p) => [p.lon, p.lat] as [number, number]) } : {}),
       });
-      drawRoute(
-        result.geometry,
-        [
-          { name: start.name, lat: start.lat, lon: start.lon, type: "start" },
-          { name: end.name, lat: end.lat, lon: end.lon, type: "end" },
-        ],
-        [],
-        routeMode
-      );
+      const waypoints = pts.map((p, i) => ({
+        name: p.name,
+        lat: p.lat,
+        lon: p.lon,
+        type: i === 0 ? "start" : i === pts.length - 1 ? "end" : "via",
+      }));
+      drawRoute(result.geometry, waypoints, [], routeMode);
       setRouteInfo({
         distanceM: result.distanceM,
         durationS: result.durationS,
@@ -673,46 +781,110 @@ export default function MapsApp({ win }: { win: WindowInstance }) {
               )}
             </section>
 
-            {/* Route planner */}
+            {/* Route planner / Tour planner tabs */}
             <section>
-              <h3 className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase text-ink-muted">
-                <Route size={13} /> Route planner
-              </h3>
-              <div className="space-y-1.5">
-                <input
-                  value={routeStart}
-                  onChange={(e) => setRouteStart(e.target.value)}
-                  placeholder="Start (place or lat,lon)"
-                  className="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink outline-none focus:border-accent"
-                />
-                <input
-                  value={routeEnd}
-                  onChange={(e) => setRouteEnd(e.target.value)}
-                  placeholder="End (place or lat,lon)"
-                  className="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink outline-none focus:border-accent"
-                />
-                <div className="flex gap-1">
-                  {(["hiking", "bicycle", "car"] as const).map((m) => (
-                    <button
-                      key={m}
-                      onClick={() => setRouteMode(m)}
-                      className={`flex-1 rounded px-1.5 py-1 text-xs capitalize transition-colors ${
-                        routeMode === m ? "bg-accent text-white" : "bg-surface text-ink-muted hover:bg-surface-3"
-                      }`}
-                    >
-                      {m}
-                    </button>
-                  ))}
-                </div>
+              <div className="mb-1.5 flex gap-1">
                 <button
-                  onClick={planRoute}
-                  disabled={planning}
-                  className="w-full rounded-md bg-accent px-2 py-1.5 text-xs text-white disabled:opacity-50"
+                  onClick={() => setSidebarTab("route")}
+                  className={`flex flex-1 items-center justify-center gap-1 rounded px-1.5 py-1 text-xs font-semibold uppercase transition-colors ${
+                    sidebarTab === "route" ? "bg-accent text-white" : "bg-surface text-ink-muted hover:bg-surface-3"
+                  }`}
                 >
-                  {planning ? <Loader2 size={13} className="mx-auto animate-spin" /> : "Plan route"}
+                  <Route size={12} /> Route
+                </button>
+                <button
+                  onClick={() => setSidebarTab("tour")}
+                  className={`flex flex-1 items-center justify-center gap-1 rounded px-1.5 py-1 text-xs font-semibold uppercase transition-colors ${
+                    sidebarTab === "tour" ? "bg-accent text-white" : "bg-surface text-ink-muted hover:bg-surface-3"
+                  }`}
+                >
+                  <CalendarDays size={12} /> Tour
                 </button>
               </div>
-              {routeInfo && (
+
+              {sidebarTab === "route" ? (
+                <div className="space-y-1.5">
+                  {/* Stops list (start, vias, end) */}
+                  <div className="space-y-1">
+                    {stops.map((stop, i) => (
+                      <div key={i} className="flex items-center gap-1">
+                        <span className="w-4 shrink-0 text-center text-[10px] text-ink-muted">
+                          {i === 0 ? "A" : i === stops.length - 1 ? "B" : i}
+                        </span>
+                        <input
+                          value={stop}
+                          onChange={(e) => {
+                            const next = [...stops];
+                            next[i] = e.target.value;
+                            setStops(next);
+                          }}
+                          placeholder={
+                            i === 0
+                              ? "Start (place or lat,lon)"
+                              : i === stops.length - 1
+                              ? "End (place or lat,lon)"
+                              : `Via ${i} (place or lat,lon)`
+                          }
+                          className="min-w-0 flex-1 rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink outline-none focus:border-accent"
+                        />
+                        {stops.length > 2 && (
+                          <button
+                            onClick={() => setStops(stops.filter((_, idx) => idx !== i))}
+                            className="shrink-0 text-ink-muted hover:text-red-500"
+                            title="Remove stop"
+                          >
+                            <X size={12} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => setStops([...stops.slice(0, -1), "", stops[stops.length - 1]])}
+                    className="flex w-full items-center justify-center gap-1 rounded bg-surface px-2 py-1 text-xs text-ink-muted hover:bg-surface-3"
+                  >
+                    <Plus size={12} /> Add via stop
+                  </button>
+                  {/* Click-to-add-stop toggle */}
+                  <button
+                    onClick={() => setAddStopOnClick((v) => !v)}
+                    className={`flex w-full items-center justify-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
+                      addStopOnClick ? "bg-accent/20 text-accent" : "bg-surface text-ink-muted hover:bg-surface-3"
+                    }`}
+                    title="Click anywhere on the map to add a via stop"
+                  >
+                    <MapPin size={12} /> {addStopOnClick ? "Click map to add stop (on)" : "Click map to add stop"}
+                  </button>
+                  <div className="flex gap-1">
+                    {(["hiking", "bicycle", "car"] as const).map((m) => (
+                      <button
+                        key={m}
+                        onClick={() => setRouteMode(m)}
+                        className={`flex-1 rounded px-1.5 py-1 text-xs capitalize transition-colors ${
+                          routeMode === m ? "bg-accent text-white" : "bg-surface text-ink-muted hover:bg-surface-3"
+                        }`}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    onClick={planRoute}
+                    disabled={planning}
+                    className="w-full rounded-md bg-accent px-2 py-1.5 text-xs text-white disabled:opacity-50"
+                  >
+                    {planning ? <Loader2 size={13} className="mx-auto animate-spin" /> : "Plan route"}
+                  </button>
+                </div>
+              ) : (
+                <TourPlanner
+                  resolvePlace={resolvePlace}
+                  onDrawTour={drawTour}
+                  onClearMap={clearLayers}
+                />
+              )}
+
+              {sidebarTab === "route" && routeInfo && (
                 <div className="mt-2 rounded-md border border-edge bg-surface p-2 text-xs text-ink">
                   <div className="flex justify-between"><span className="text-ink-muted">Distance</span><span>{fmtDistance(routeInfo.distanceM)}</span></div>
                   <div className="flex justify-between"><span className="text-ink-muted">Duration</span><span>{fmtDuration(routeInfo.durationS)}</span></div>

@@ -719,6 +719,20 @@ export default function AthenaApp({
         });
         break;
       }
+      case "open_tour": {
+        const id = ensureMapsWindow();
+        issueMapCmdRef.current(id, "open_tour", {
+          tourId: payload.tourId ? String(payload.tourId) : undefined,
+        });
+        break;
+      }
+      case "draw_tour": {
+        const id = ensureMapsWindow();
+        issueMapCmdRef.current(id, "draw_tour", {
+          tourDays: payload.tourDays as { name: string; geometry: [number, number][] }[] | undefined,
+        });
+        break;
+      }
       default: {
         console.warn(`[athena] unhandled client_action: tool=${action.tool} action=${act}`);
         break;

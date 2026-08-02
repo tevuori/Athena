@@ -22,10 +22,15 @@ import {
   getTrip,
   createTrip,
   deleteTrip,
+  listTours,
+  getTour,
+  createTour,
+  deleteTour,
   hasApiKey,
   MapyNotConfiguredError,
   type PoiCategoryGroup,
 } from "../../mapy";
+import { generateTour, regenerateDay, type Difficulty } from "../../tour-planner";
 
 /** Wrap a handler so MapyNotConfiguredError → a clear error object (not a throw). */
 function safe<T>(fn: (args: any, ctx: any) => Promise<T>): (args: any, ctx: any) => Promise<T | { error: string }> {
@@ -411,6 +416,229 @@ export const mapTools: ToolDef[] = [
     clientAction: true,
     parameters: [{ name: "tripId", type: "string", description: "Trip id to open.", required: true }],
     handler: async (args) => ({ action: "open_trip", tripId: String(args.tripId ?? "") }),
+  },
+
+  // ===== Multi-day hiking tour tools (LLM-integrated) =====
+  // The flagship tool is plan_hiking_tour: it geocodes the base, runs the
+  // deterministic tour-planner (which calls mapy.com routing + POI search per
+  // day), then the LLM narrates a full day-by-day plan (overview, per-day
+  // guidance, packing list, safety notes) using the REAL stats + POIs +
+  // overnight spots. The narrated plan is saved as the tour summary and
+  // returned to Athena so it can be echoed in the chat reply.
+
+  {
+    name: "plan_hiking_tour",
+    description:
+      "Plan a multi-day hiking tour and narrate it with the LLM. This is the ADVANCED planner: specify a base point (where you sleep each night in hub mode, or the start in through mode), the number of days, and a difficulty. Two modes: 'hub' = loop hikes from a single base each day (directions spread around the compass so loops don't overlap, return to base each evening); 'through' = point-to-point chain from base to an end point, with overnight stops auto-found at mountain huts/shelters near each day's endpoint (flagged as wild-camp if none found). The tool geocodes the base (+ end for through mode), runs the routing + POI enrichment per day, then the LLM writes a full plan: overview, day-by-day guidance (terrain, water sources, landmarks, where you sleep), packing list calibrated to difficulty, and safety notes. Hard days (ascent >150% of target) are flagged with rest-day suggestions. Returns { tourId, numDays, totals, summary (the LLM plan), days[] }. After calling this, ALWAYS open_tour to display it on the map, then narrate the plan in your reply using the returned summary. The tour is saved automatically.",
+    destructive: true,
+    clientAction: true,
+    parameters: [
+      { name: "base", type: "string", description: "Base location name (e.g. 'Špindlerův Mlýn', 'Pec pod Sněžkou'). Resolved via geocode.", required: true },
+      {
+        name: "mode",
+        type: "string",
+        description: "Tour mode: 'hub' (loop hikes from base each day) or 'through' (point-to-point chain).",
+        enum: ["hub", "through"],
+        required: true,
+      },
+      { name: "days", type: "number", description: "Number of days (1-14).", required: true },
+      {
+        name: "difficulty",
+        type: "string",
+        description: "Difficulty preset: 'easy' (~10 km/day, ≤400 m ascent), 'medium' (~15 km, ≤800 m), 'hard' (~20 km, ≤1200 m), 'expert' (~28 km, ≤1600 m).",
+        enum: ["easy", "medium", "hard", "expert"],
+        required: true,
+      },
+      { name: "end", type: "string", description: "End location name — REQUIRED for through mode (where the tour finishes). Ignored for hub mode." },
+      { name: "notes", type: "string", description: "Optional notes for the LLM planner: fitness level, season, gear constraints, anything to factor into the plan." },
+      { name: "tourName", type: "string", description: "Optional custom tour name (defaults to '<base> <days>-day <difficulty> hike')." },
+    ],
+    handler: safe(async (args, { userId }) => {
+      // Geocode the base.
+      const baseItems = await geocode(userId, String(args.base ?? ""), 1);
+      if (baseItems.length === 0) return { error: `Could not geocode base location: ${args.base}` };
+      const base = baseItems[0];
+
+      let endLat: number | undefined;
+      let endLon: number | undefined;
+      let endName: string | undefined;
+      const mode = String(args.mode ?? "hub") as "hub" | "through";
+      if (mode === "through") {
+        const endStr = String(args.end ?? "").trim();
+        if (!endStr) return { error: "Through-hike mode requires an 'end' location." };
+        const endItems = await geocode(userId, endStr, 1);
+        if (endItems.length === 0) return { error: `Could not geocode end location: ${endStr}` };
+        endLat = endItems[0].lat;
+        endLon = endItems[0].lon;
+        endName = endItems[0].name;
+      }
+
+      const numDays = Math.max(1, Math.min(14, Math.floor(Number(args.days ?? 3))));
+      const difficulty = (String(args.difficulty ?? "medium") as Difficulty);
+
+      // Generate the tour (deterministic routing + LLM narration).
+      const generated = await generateTour(userId, {
+        mode,
+        baseLat: base.lat,
+        baseLon: base.lon,
+        baseName: base.name,
+        endLat,
+        endLon,
+        endName,
+        numDays,
+        difficulty,
+        notes: args.notes ? String(args.notes) : undefined,
+      });
+
+      // Persist the tour + its days.
+      const tourName = String(args.tourName ?? "").trim() || `${base.name} ${numDays}-day ${difficulty} hike`;
+      const saved = await createTour(userId, {
+        name: tourName,
+        mode: generated.mode,
+        baseLat: generated.baseLat,
+        baseLon: generated.baseLon,
+        baseName: generated.baseName,
+        endLat: generated.endLat,
+        endLon: generated.endLon,
+        endName: generated.endName,
+        numDays: generated.numDays,
+        difficulty: generated.difficulty,
+        totalDistanceM: generated.totalDistanceM,
+        totalAscentM: generated.totalAscentM,
+        totalDurationS: generated.totalDurationS,
+        summary: generated.summary,
+        days: generated.days.map((d) => ({
+          dayNumber: d.dayNumber,
+          name: d.name,
+          distanceM: d.distanceM,
+          durationS: d.durationS,
+          ascentM: d.ascentM,
+          descentM: d.descentM,
+          geometry: d.geometry,
+          waypoints: d.waypoints,
+          pois: d.pois,
+        })),
+      });
+
+      return {
+        tourId: saved.tour.id,
+        saved: true,
+        mode: generated.mode,
+        baseName: generated.baseName,
+        endName: generated.endName,
+        numDays: generated.numDays,
+        difficulty: generated.difficulty,
+        totalDistanceM: generated.totalDistanceM,
+        totalAscentM: generated.totalAscentM,
+        totalDurationS: generated.totalDurationS,
+        summary: generated.summary,
+        days: generated.days.map((d) => ({
+          dayNumber: d.dayNumber,
+          name: d.name,
+          distanceM: d.distanceM,
+          ascentM: d.ascentM,
+          durationS: d.durationS,
+          overnight: d.overnight?.name,
+          wildCamp: d.wildCamp,
+          hardDay: d.hardDay,
+          waterSources: d.pois.filter((p) => p.category === "water").length,
+          landmarks: d.pois.filter((p) => p.category === "landmarks").length,
+        })),
+        // Client-action payload: open the tour on the map.
+        action: "open_tour",
+      };
+    }),
+  },
+
+  {
+    name: "list_tours",
+    description:
+      "List the user's saved multi-day hiking tours. Returns id, name, mode, baseName, numDays, difficulty, totalDistanceM, totalAscentM, createdAt. Use get_tour for full details (days + summary).",
+    parameters: [],
+    handler: safe(async (_args, { userId }) => {
+      const tours = await listTours(userId);
+      return { count: tours.length, tours };
+    }),
+  },
+
+  {
+    name: "get_tour",
+    description:
+      "Get full details of a saved multi-day hiking tour: the LLM-narrated summary + all days (geometry, waypoints, POIs, overnight spots, stats). Use the id from list_tours. After getting it, you can open_tour to display it on the map.",
+    parameters: [{ name: "tourId", type: "string", description: "Tour id (from list_tours).", required: true }],
+    handler: safe(async (args, { userId }) => {
+      const result = await getTour(userId, String(args.tourId ?? ""));
+      if (!result) return { error: "Tour not found" };
+      return result;
+    }),
+  },
+
+  {
+    name: "open_tour",
+    description:
+      "Open a saved multi-day hiking tour on the map — draws all days as overlaid colored routes. Use the tour id from plan_hiking_tour or list_tours. If no Maps window is open, one is opened.",
+    clientAction: true,
+    parameters: [{ name: "tourId", type: "string", description: "Tour id to open.", required: true }],
+    handler: async (args) => ({ action: "open_tour", tourId: String(args.tourId ?? "") }),
+  },
+
+  {
+    name: "regenerate_tour_day",
+    description:
+      "Re-plan a single day of a saved multi-day hiking tour, keeping the other days unchanged. Useful when the user didn't like a particular day's route. For hub mode the compass bearing is reused; for through mode the from/to points are reused so the chain stays consistent. Returns the new day's stats. After regenerating, open_tour to refresh the map.",
+    destructive: true,
+    parameters: [
+      { name: "tourId", type: "string", description: "Tour id.", required: true },
+      { name: "day", type: "number", description: "Day number to regenerate (1-based).", required: true },
+    ],
+    handler: safe(async (args, { userId }) => {
+      const tourId = String(args.tourId ?? "");
+      const dayNumber = Math.floor(Number(args.day ?? 0));
+      const existing = await getTour(userId, tourId);
+      if (!existing) return { error: "Tour not found" };
+      if (!Number.isInteger(dayNumber) || dayNumber < 1 || dayNumber > existing.tour.numDays) {
+        return { error: `day must be 1..${existing.tour.numDays}` };
+      }
+      const tourShape = {
+        mode: existing.tour.mode as "hub" | "through",
+        baseLat: existing.tour.baseLat,
+        baseLon: existing.tour.baseLon,
+        baseName: existing.tour.baseName,
+        endLat: existing.tour.endLat ?? undefined,
+        endLon: existing.tour.endLon ?? undefined,
+        endName: existing.tour.endName ?? undefined,
+        numDays: existing.tour.numDays,
+        difficulty: existing.tour.difficulty as Difficulty,
+        days: existing.days.map((d) => ({
+          dayNumber: d.dayNumber ?? 0,
+          name: d.name,
+          distanceM: d.distanceM,
+          durationS: d.durationS,
+          ascentM: d.ascentM,
+          descentM: d.descentM,
+          geometry: d.geometry,
+          waypoints: d.waypoints,
+          pois: d.pois,
+        })),
+        totalDistanceM: existing.tour.totalDistanceM,
+        totalAscentM: existing.tour.totalAscentM,
+        totalDurationS: existing.tour.totalDurationS,
+        summary: existing.tour.summary,
+      };
+      const day = await regenerateDay(userId, tourShape, dayNumber);
+      return { day };
+    }),
+  },
+
+  {
+    name: "delete_tour",
+    description: "Delete a saved multi-day hiking tour and all its days.",
+    destructive: true,
+    parameters: [{ name: "tourId", type: "string", description: "Tour id to delete.", required: true }],
+    handler: safe(async (args, { userId }) => {
+      const ok = await deleteTour(userId, String(args.tourId ?? ""));
+      return ok ? { deleted: true } : { error: "Tour not found" };
+    }),
   },
 
   // ===== Status helper =====

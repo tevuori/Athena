@@ -519,6 +519,9 @@ export interface TripRow {
   waypoints: { name: string; lat: number; lon: number; type?: string }[];
   pois: { name: string; lat: number; lon: number; category: string; description?: string }[];
   summary: string;
+  /** Tour linkage (null for standalone trips). */
+  tourId: string | null;
+  dayNumber: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -535,6 +538,8 @@ function toRow(t: {
   waypoints: string;
   pois: string;
   summary: string;
+  tourId: string | null;
+  dayNumber: number | null;
   createdAt: Date;
   updatedAt: Date;
 }): TripRow {
@@ -550,6 +555,8 @@ function toRow(t: {
     waypoints: JSON.parse(t.waypoints) as TripRow["waypoints"],
     pois: JSON.parse(t.pois) as TripRow["pois"],
     summary: t.summary,
+    tourId: t.tourId,
+    dayNumber: t.dayNumber,
     createdAt: t.createdAt.toISOString(),
     updatedAt: t.updatedAt.toISOString(),
   };
@@ -630,5 +637,314 @@ export async function updateTrip(
 
 export async function deleteTrip(userId: string, tripId: string): Promise<boolean> {
   const r = await prisma.trip.deleteMany({ where: { id: tripId, userId } });
+  return r.count > 0;
+}
+
+// ===== GPX export =====
+
+/** XML-escape a string for safe inclusion in GPX text nodes. */
+function gpxEscape(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function gpxTime(d: Date | string): string {
+  const date = typeof d === "string" ? new Date(d) : d;
+  return date.toISOString();
+}
+
+/**
+ * Build a GPX 1.1 document from a trip's geometry + waypoints + POIs.
+ * - `<wpt>` entries for each waypoint and POI (with name + description).
+ * - A single `<trk>` with one `<trkseg>` containing `<trkpt>` per geometry point.
+ * No external deps — straight XML string building.
+ */
+export function tripToGpx(trip: TripRow): string {
+  const waypoints = trip.waypoints ?? [];
+  const pois = trip.pois ?? [];
+  const lines: string[] = [
+    `<?xml version="1.0" encoding="UTF-8"?>`,
+    `<gpx version="1.1" creator="Athena" xmlns="http://www.topografix.com/GPX/1/1">`,
+    `  <metadata>`,
+    `    <name>${gpxEscape(trip.name)}</name>`,
+    `    <time>${gpxTime(trip.updatedAt)}</time>`,
+    `  </metadata>`,
+  ];
+  // Waypoints
+  for (const w of waypoints) {
+    lines.push(
+      `  <wpt lat="${w.lat}" lon="${w.lon}">`,
+      `    <name>${gpxEscape(w.name)}</name>`,
+      w.type ? `    <type>${gpxEscape(w.type)}</type>` : ``,
+      `  </wpt>`
+    );
+  }
+  // POIs as waypoints too (so they show up in Garmin/Komoot)
+  for (const p of pois) {
+    lines.push(
+      `  <wpt lat="${p.lat}" lon="${p.lon}">`,
+      `    <name>${gpxEscape(p.name)}</name>`,
+      `    <desc>${gpxEscape(p.description ?? p.category)}</desc>`,
+      `    <type>${gpxEscape(p.category)}</type>`,
+      `  </wpt>`
+    );
+  }
+  // Track
+  lines.push(`  <trk>`, `    <name>${gpxEscape(trip.name)}</name>`, `    <trkseg>`);
+  for (const [lat, lon] of trip.geometry) {
+    lines.push(`      <trkpt lat="${lat}" lon="${lon}"></trkpt>`);
+  }
+  lines.push(`    </trkseg>`, `  </trk>`, `</gpx>`);
+  return lines.filter((l) => l !== ``).join("\n");
+}
+
+/**
+ * Build a single GPX document containing all days of a tour as separate
+ * `<trk>` elements (one per day), plus waypoints for overnights + POIs.
+ */
+export function tourToGpx(
+  tour: { name: string; updatedAt: string },
+  days: TripRow[]
+): string {
+  const lines: string[] = [
+    `<?xml version="1.0" encoding="UTF-8"?>`,
+    `<gpx version="1.1" creator="Athena" xmlns="http://www.topografix.com/GPX/1/1">`,
+    `  <metadata>`,
+    `    <name>${gpxEscape(tour.name)}</name>`,
+    `    <time>${gpxTime(tour.updatedAt)}</time>`,
+    `  </metadata>`,
+  ];
+  // Collect all POIs + overnights as waypoints (deduped by name+coords).
+  const seenWpt = new Set<string>();
+  for (const day of days) {
+    for (const w of day.waypoints ?? []) {
+      const key = `${w.name}|${w.lat.toFixed(5)},${w.lon.toFixed(5)}`;
+      if (seenWpt.has(key)) continue;
+      seenWpt.add(key);
+      lines.push(
+        `  <wpt lat="${w.lat}" lon="${w.lon}">`,
+        `    <name>${gpxEscape(w.name)}</name>`,
+        w.type ? `    <type>${gpxEscape(w.type)}</type>` : ``,
+        `  </wpt>`
+      );
+    }
+    for (const p of day.pois ?? []) {
+      const key = `${p.name}|${p.lat.toFixed(5)},${p.lon.toFixed(5)}`;
+      if (seenWpt.has(key)) continue;
+      seenWpt.add(key);
+      lines.push(
+        `  <wpt lat="${p.lat}" lon="${p.lon}">`,
+        `    <name>${gpxEscape(p.name)}</name>`,
+        `    <desc>${gpxEscape(p.description ?? p.category)}</desc>`,
+        `    <type>${gpxEscape(p.category)}</type>`,
+        `  </wpt>`
+      );
+    }
+  }
+  // One track per day
+  for (const day of days) {
+    lines.push(`  <trk>`, `    <name>${gpxEscape(day.name)}</name>`, `    <trkseg>`);
+    for (const [lat, lon] of day.geometry) {
+      lines.push(`      <trkpt lat="${lat}" lon="${lon}"></trkpt>`);
+    }
+    lines.push(`    </trkseg>`, `  </trk>`);
+  }
+  lines.push(`</gpx>`);
+  return lines.filter((l) => l !== ``).join("\n");
+}
+
+// ===== Multi-day hiking tour persistence =====
+
+export interface HikingTourRow {
+  id: string;
+  name: string;
+  mode: string;
+  baseLat: number;
+  baseLon: number;
+  baseName: string;
+  endLat: number | null;
+  endLon: number | null;
+  endName: string | null;
+  numDays: number;
+  difficulty: string;
+  totalDistanceM: number;
+  totalAscentM: number;
+  totalDurationS: number;
+  summary: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function tourToRow(t: {
+  id: string;
+  name: string;
+  mode: string;
+  baseLat: number;
+  baseLon: number;
+  baseName: string;
+  endLat: number | null;
+  endLon: number | null;
+  endName: string | null;
+  numDays: number;
+  difficulty: string;
+  totalDistanceM: number;
+  totalAscentM: number;
+  totalDurationS: number;
+  summary: string;
+  createdAt: Date;
+  updatedAt: Date;
+}): HikingTourRow {
+  return {
+    id: t.id,
+    name: t.name,
+    mode: t.mode,
+    baseLat: t.baseLat,
+    baseLon: t.baseLon,
+    baseName: t.baseName,
+    endLat: t.endLat,
+    endLon: t.endLon,
+    endName: t.endName,
+    numDays: t.numDays,
+    difficulty: t.difficulty,
+    totalDistanceM: t.totalDistanceM,
+    totalAscentM: t.totalAscentM,
+    totalDurationS: t.totalDurationS,
+    summary: t.summary,
+    createdAt: t.createdAt.toISOString(),
+    updatedAt: t.updatedAt.toISOString(),
+  };
+}
+
+export async function listTours(userId: string): Promise<
+  Array<{
+    id: string;
+    name: string;
+    mode: string;
+    baseName: string;
+    numDays: number;
+    difficulty: string;
+    totalDistanceM: number;
+    totalAscentM: number;
+    createdAt: string;
+  }>
+> {
+  const rows = await prisma.hikingTour.findMany({
+    where: { userId },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      name: true,
+      mode: true,
+      baseName: true,
+      numDays: true,
+      difficulty: true,
+      totalDistanceM: true,
+      totalAscentM: true,
+      createdAt: true,
+    },
+  });
+  return rows.map((r) => ({ ...r, createdAt: r.createdAt.toISOString() }));
+}
+
+export async function getTour(userId: string, tourId: string): Promise<{
+  tour: HikingTourRow;
+  days: TripRow[];
+} | null> {
+  const t = await prisma.hikingTour.findFirst({ where: { id: tourId, userId } });
+  if (!t) return null;
+  const dayRows = await prisma.trip.findMany({
+    where: { tourId },
+    orderBy: { dayNumber: "asc" },
+  });
+  return {
+    tour: tourToRow(t),
+    days: dayRows.map(toRow),
+  };
+}
+
+export async function createTour(
+  userId: string,
+  input: {
+    name: string;
+    mode: string;
+    baseLat: number;
+    baseLon: number;
+    baseName: string;
+    endLat?: number;
+    endLon?: number;
+    endName?: string;
+    numDays: number;
+    difficulty: string;
+    totalDistanceM: number;
+    totalAscentM: number;
+    totalDurationS: number;
+    summary: string;
+    days: Array<{
+      dayNumber: number;
+      name: string;
+      distanceM: number;
+      durationS: number;
+      ascentM: number;
+      descentM: number;
+      geometry: [number, number][];
+      waypoints: { name: string; lat: number; lon: number; type?: string }[];
+      pois: { name: string; lat: number; lon: number; category: string; description?: string }[];
+      summary?: string;
+    }>;
+  }
+): Promise<{ tour: HikingTourRow; days: TripRow[] }> {
+  const t = await prisma.hikingTour.create({
+    data: {
+      userId,
+      name: input.name,
+      mode: input.mode,
+      baseLat: input.baseLat,
+      baseLon: input.baseLon,
+      baseName: input.baseName,
+      endLat: input.endLat ?? null,
+      endLon: input.endLon ?? null,
+      endName: input.endName ?? null,
+      numDays: input.numDays,
+      difficulty: input.difficulty,
+      totalDistanceM: input.totalDistanceM,
+      totalAscentM: input.totalAscentM,
+      totalDurationS: input.totalDurationS,
+      summary: input.summary,
+    },
+  });
+  const dayRows: TripRow[] = [];
+  for (const d of input.days) {
+    const row = await prisma.trip.create({
+      data: {
+        userId,
+        tourId: t.id,
+        dayNumber: d.dayNumber,
+        name: d.name,
+        type: "hiking",
+        distanceM: d.distanceM,
+        durationS: d.durationS,
+        ascentM: d.ascentM,
+        descentM: d.descentM,
+        geometry: JSON.stringify(d.geometry),
+        waypoints: JSON.stringify(d.waypoints),
+        pois: JSON.stringify(d.pois),
+        summary: d.summary ?? "",
+      },
+    });
+    dayRows.push(toRow(row));
+  }
+  return { tour: tourToRow(t), days: dayRows };
+}
+
+export async function deleteTour(userId: string, tourId: string): Promise<boolean> {
+  // Delete the tour row; the day Trips are deleted via a separate call (or
+  // could be cascaded — but Trip has no FK to HikingTour, only a loose
+  // tourId string, so we delete them explicitly).
+  await prisma.trip.deleteMany({ where: { tourId, userId } });
+  const r = await prisma.hikingTour.deleteMany({ where: { id: tourId, userId } });
   return r.count > 0;
 }

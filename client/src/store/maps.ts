@@ -10,8 +10,10 @@ export type MapCommandKind =
   | "show" // center on lat/lon at zoom (optional label)
   | "add_marker" // add a single marker
   | "draw_route" // draw a route + its waypoints + POIs
+  | "draw_tour" // draw all days of a multi-day tour as overlaid colored routes
   | "show_pois" // render a set of POI markers
   | "open_trip" // load a saved trip by id
+  | "open_tour" // load a saved multi-day tour by id
   | "clear"; // clear markers + routes
 
 export interface MapPoi {
@@ -46,6 +48,10 @@ export interface MapCommand {
   distanceM?: number;
   durationS?: number;
   tripId?: string;
+  /** For draw_tour: the per-day routes to overlay (each drawn in a distinct color). */
+  tourDays?: { name: string; geometry: [number, number][] }[];
+  /** For open_tour: the saved tour id to load. */
+  tourId?: string;
 }
 
 interface MapsState {
