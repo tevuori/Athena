@@ -182,19 +182,45 @@ athena.post("/chat", zValidator("json", chatSchema, (result, c) => {
       model.addPlugin(plugin);
 
       // Patch the internal OpenAI client's fetch to retry on transient
-      // "Upstream request failed" 400 errors from the provider. This happens
-      // intermittently during multi-step tool call loops and is not a request
-      // format issue.
+      // failures from the provider. Two classes of transient failure are
+      // handled:
+      //   1. HTTP 400 "Upstream request failed" — the provider's upstream
+      //      dropped mid-request but returned a 400 wrapper. Happens
+      //      intermittently during multi-step tool call loops and is not a
+      //      request format issue.
+      //   2. Network-level throws — fetch() rejects with no Response at all
+      //      (connection reset, socket hangup, DNS hiccup, ETIMEDOUT, abort
+      //      due to provider-side timeout). Previously these propagated
+      //      immediately and killed the whole turn even when tools had
+      //      already completed, surfacing as an opaque "network error" /
+      //      "Failed to fetch" / "fetch failed" to the user.
       const engine = (model as any).engine;
       const client = engine?.client;
       if (client && typeof client.fetch === "function") {
         const origFetch = client.fetch.bind(client);
+        const backoff = (attempt: number) =>
+          Math.min(2000 * 2 ** attempt, 32000) + Math.floor(Math.random() * 500);
         client.fetch = async (url: string, init?: any) => {
           const maxRetries = 5;
           for (let attempt = 0; attempt <= maxRetries; attempt++) {
-            const res = await origFetch(url, init);
+            // --- Network-level failure: fetch itself throws (no Response) ---
+            let res: Response;
+            try {
+              res = await origFetch(url, init);
+            } catch (e) {
+              // Don't retry if the caller aborted (user navigated away).
+              const isAbort = (e instanceof Error && e.name === "AbortError")
+                || (init?.signal as AbortSignal | undefined)?.aborted;
+              if (isAbort || attempt === maxRetries) throw e;
+              const reason = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+              console.warn(
+                `[athena] network error from provider (attempt ${attempt + 1}/${maxRetries + 1}): ${reason}`
+              );
+              await new Promise((r) => setTimeout(r, backoff(attempt)));
+              continue;
+            }
+            // --- HTTP 400 "Upstream request failed" (transient wrapper) ---
             if (res.status !== 400 || attempt === maxRetries) return res;
-            // Check if the error body is "Upstream request failed" (transient)
             const cloned = res.clone();
             let isTransient = false;
             let rawBody = "";
@@ -230,10 +256,7 @@ athena.post("/chat", zValidator("json", chatSchema, (result, c) => {
               );
             } catch { /* not readable */ }
             if (!isTransient) return res;
-            // Exponential backoff with jitter: ~2s, ~4s, ~8s, ~16s, ~32s
-            const base = Math.min(2000 * 2 ** attempt, 32000);
-            const jitter = Math.floor(Math.random() * 500);
-            await new Promise((r) => setTimeout(r, base + jitter));
+            await new Promise((r) => setTimeout(r, backoff(attempt)));
           }
           return origFetch(url, init);
         };
@@ -330,26 +353,33 @@ athena.post("/chat", zValidator("json", chatSchema, (result, c) => {
 
         // Graceful fallback: if the model already completed tool calls
         // successfully (e.g. created tasks/notes) but the final text
-        // generation failed with a transient upstream error, tell the user
-        // their actions were performed instead of showing a raw error.
-        const isUpstreamError = /upstream request failed/i.test(msg);
-        if (isUpstreamError && completedTools > 0 && failedTools === 0) {
+        // generation failed with a transient error, tell the user their
+        // actions were performed instead of showing a raw error. Covers both
+        // the provider's "Upstream request failed" 400 wrapper and raw
+        // network-level failures (fetch rejected: "network error",
+        // "Failed to fetch", "fetch failed", socket hangup, ETIMEDOUT, etc.)
+        // — the latter previously surfaced as an opaque "network error" even
+        // though all requested actions had already succeeded.
+        const isTransientError =
+          /upstream request failed/i.test(msg) ||
+          /network error|failed to fetch|fetch failed|socket hang up|etimedout|econnreset|econnrefused|terminated/i.test(msg);
+        if (isTransientError && completedTools > 0 && failedTools === 0) {
           const fallbackText =
             `I completed ${completedTools} action${completedTools > 1 ? "s" : ""} ` +
             `you requested, but my connection to the AI provider dropped while ` +
-            `generating this final response (transient upstream error). ` +
+            `generating this final response (transient network error). ` +
             `Everything was saved successfully — no need to resend.`;
           await stream.writeSSE({
             event: "content",
             data: JSON.stringify({ text: fallbackText, done: true }),
           });
           await stream.writeSSE({ event: "done", data: "{}" });
-        } else if (isUpstreamError && completedTools > 0) {
+        } else if (isTransientError && completedTools > 0) {
           const fallbackText =
             `I completed ${completedTools} action${completedTools > 1 ? "s" : ""} ` +
             `(${failedTools} reported an error), but my connection to the AI ` +
             `provider dropped while generating this final response ` +
-            `(transient upstream error). Please verify the results.`;
+            `(transient network error). Please verify the results.`;
           await stream.writeSSE({
             event: "content",
             data: JSON.stringify({ text: fallbackText, done: true }),

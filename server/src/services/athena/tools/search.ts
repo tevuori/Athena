@@ -9,7 +9,7 @@ export const searchTools: ToolDef[] = [
   {
     name: "web_search",
     description:
-      "Search the web (DuckDuckGo) for current information. Returns titles, URLs, and short snippets. Use this when the user asks about recent events, facts you're unsure of, or anything not in their workspace. For deeper research with full-page fetching and a synthesized cited answer, use the 'research' tool instead.",
+      "Search the web (Tavily/DuckDuckGo) for current information. Returns titles, URLs, and short snippets. Use this when the user asks about recent events, facts you're unsure of, or anything not in their workspace. For deeper research with full-page fetching and a synthesized cited answer, use the 'research' tool instead.",
     parameters: [
       { name: "query", type: "string", description: "Search query", required: true },
       { name: "count", type: "number", description: "Max results (1-10, default 6)" },
