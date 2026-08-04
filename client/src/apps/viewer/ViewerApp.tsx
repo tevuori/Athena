@@ -21,12 +21,27 @@ export default function ViewerApp({ win }: { win: WindowInstance }) {
   // Interactive Teacher: consume show-control commands for this window.
   const showCommands = useShowControl((s) => s.commands);
   const removeShowWindow = useShowControl((s) => s.removeWindow);
+  const reportShowResult = useShowControl((s) => s.reportResult);
   const lastShowSeq = useRef(0);
   const activeShowCmd = showCommands[win.id];
   const [pdfSearch, setPdfSearch] = useState<string | null>(null);
   useEffect(() => {
     if (!activeShowCmd || activeShowCmd.seq === lastShowSeq.current) return;
     lastShowSeq.current = activeShowCmd.seq;
+    // Report back to the Teacher whether the passage could actually be shown,
+    // so it can quote the text inline instead of relying on the visual.
+    if (!file) {
+      reportShowResult(win.id, activeShowCmd.seq, activeShowCmd.kind, false, "file-not-found");
+    } else if (activeShowCmd.kind === "highlight" || activeShowCmd.kind === "scroll_to") {
+      const showable = isPdfFile(file) ? Boolean(activeShowCmd.text ?? activeShowCmd.selector) : isImageFile(file);
+      reportShowResult(
+        win.id,
+        activeShowCmd.seq,
+        activeShowCmd.kind,
+        showable,
+        showable ? undefined : isPdfFile(file) ? "no-match" : "unsupported-type"
+      );
+    }
     // For PDFs: use PDF Open Parameters (#search=) to jump to text in the
     // native viewer. For audio/video: seek via the media element. For images:
     // handled by the ImageViewer via the command prop below.
@@ -49,7 +64,7 @@ export default function ViewerApp({ win }: { win: WindowInstance }) {
         if (el) { try { el.currentTime = t; void el.play(); } catch { /* noop */ } }
       }
     }
-  }, [activeShowCmd, file, win.id]);
+  }, [activeShowCmd, file, win.id, reportShowResult]);
   useEffect(() => {
     return () => { if (win.id) removeShowWindow(win.id); };
   }, [win.id, removeShowWindow]);

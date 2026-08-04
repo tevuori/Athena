@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { BookOpen, Brain, FileText, Lightbulb, List, Plus, Sparkles } from "lucide-react";
+import { BookOpen, Brain, FileText, GraduationCap, Lightbulb, List, Plus, Sparkles } from "lucide-react";
 import { studyApi, type SourceDescriptor, type StudySession } from "../services/study";
 import { flashcardsApi } from "../services/flashcards";
+import type { MobileTool } from "./MobileLauncher";
 import { MobileContainer, MobileEmpty, MobileFab, MobileHeader, MobileInput, MobileLoading, MobileTextarea } from "./MobileUi";
 
 type Action = "summarize" | "explain" | "studyGuide" | "flashcards";
@@ -13,7 +14,13 @@ const ACTIONS: { id: Action; label: string; icon: React.ReactNode }[] = [
   { id: "flashcards", label: "Flashcards", icon: <Brain size={16} /> },
 ];
 
-export default function MobileStudy({ onClose }: { onClose?: () => void }) {
+export default function MobileStudy({
+  onClose,
+  onOpenTool,
+}: {
+  onClose?: () => void;
+  onOpenTool?: (tool: MobileTool) => void;
+}) {
   const [sessions, setSessions] = useState<StudySession[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"list" | "new">("list");
@@ -148,6 +155,19 @@ export default function MobileStudy({ onClose }: { onClose?: () => void }) {
 
       <div className="mb-5 rounded-2xl border border-white/10 bg-white/[.045] p-4">
         <p className="mb-3 text-sm font-semibold text-white">Quick start</p>
+        {onOpenTool && (
+          <button
+            type="button"
+            onClick={() => onOpenTool("teach")}
+            className="mb-2 flex w-full items-center gap-3 rounded-xl bg-indigo-500/15 px-3 py-3 text-left text-indigo-200 active:bg-indigo-500/25"
+          >
+            <GraduationCap size={18} />
+            <span>
+              <span className="block text-sm font-medium text-white">Teach Me</span>
+              <span className="block text-xs text-indigo-200/75">Interactive AI tutor</span>
+            </span>
+          </button>
+        )}
         <div className="grid grid-cols-2 gap-2">
           {ACTIONS.slice(0, 4).map((a) => (
             <button

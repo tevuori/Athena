@@ -20,7 +20,28 @@ import {
   DESTRUCTIVE_TOOLS,
   type ClientWindowInfo,
 } from "../services/athena/tools";
-import { teacherSystemPrompt, type SourceHistoryEntry, type TeacherSessionState } from "../services/study/teacher-prompt";
+import {
+  teacherSystemPrompt,
+  applyAssessmentToState,
+  inferAdaptiveLevel,
+  weakConceptsFallback,
+  type SourceHistoryEntry,
+  type TeacherSessionState,
+} from "../services/study/teacher-prompt";
+import {
+  assessComprehension,
+  generateLessonPlan,
+  generateSessionTitle,
+  lessonFlashcardsPrompt,
+  lessonFlashcardsSchemaHint,
+  lessonSummaryMarkdown,
+  normalizeFlashcards,
+  weakConcepts,
+  type LessonExportContext,
+} from "../services/study/teacher-lesson";
+import { generateJson } from "../services/study/llm-json";
+import { createQuiz, type StoredQuizQuestion } from "../services/study/quiz-store";
+import { quizGeneratePrompt, quizGenerateSchemaHint, type QuizQuestionSpec } from "../services/study/prompts";
 import type { GroundedSource, StudyLanguage } from "../services/study/prompts";
 import { logSessionSafe } from "../services/study/logSession";
 
@@ -82,6 +103,40 @@ async function loadSessionSources(userId: string, sourceIds: string[]): Promise<
     .filter((x): x is GroundedSource => x !== null);
 }
 
+/** Pick the source text most likely to cover a concept (for grading). */
+function pickRelevantText(sources: GroundedSource[], concept: string, limit = 6000): string {
+  if (sources.length === 0) return "";
+  const needle = concept.trim().toLowerCase();
+  if (needle) {
+    const hit = sources.find((s) => s.text.toLowerCase().includes(needle));
+    if (hit) return hit.text.slice(0, limit);
+  }
+  const per = Math.max(600, Math.floor(limit / sources.length));
+  return sources.map((s) => s.text.slice(0, per)).join("\n\n").slice(0, limit);
+}
+
+/**
+ * Merge the client's view of the session state with the row's persisted state.
+ * The client owns the live UI state (source history, level, style, pace) while
+ * the server owns everything it computes itself (assessments → mastery,
+ * comprehension log, lesson plan), so neither side can clobber the other.
+ */
+function mergeState(persisted: TeacherSessionState, incoming?: TeacherSessionState): TeacherSessionState {
+  if (!incoming || typeof incoming !== "object") return persisted;
+  const merged: TeacherSessionState = { ...persisted, ...incoming };
+  // Server-owned fields win when the client hasn't caught up yet.
+  const persistedLog = persisted.comprehensionLog ?? [];
+  const incomingLog = incoming.comprehensionLog ?? [];
+  merged.comprehensionLog = incomingLog.length >= persistedLog.length ? incomingLog : persistedLog;
+  merged.mastery = { ...(persisted.mastery ?? {}), ...(incoming.mastery ?? {}) };
+  merged.lessonPlan = incoming.lessonPlan ?? persisted.lessonPlan;
+  merged.coveredConcepts = [
+    ...new Set([...(persisted.coveredConcepts ?? []), ...(incoming.coveredConcepts ?? [])]),
+  ];
+  merged.inferredLevel = inferAdaptiveLevel(merged);
+  return merged;
+}
+
 function serialize(s: any) {
   return {
     id: s.id,
@@ -101,6 +156,7 @@ const createSchema = z.object({
   title: z.string().max(200).optional(),
   sourceIds: z.array(z.string()).max(10).default([]),
   studentLevel: z.enum(["beginner", "intermediate", "advanced"]).optional(),
+  teachingStyle: z.enum(["explain", "socratic"]).optional(),
   sources: z
     .array(
       z.object({
@@ -151,6 +207,9 @@ teacher.post("/", zValidator("json", createSchema), async (c) => {
     sourceHistory: [],
     coveredConcepts: [],
     comprehensionLog: [],
+    mastery: {},
+    teachingStyle: body.teachingStyle ?? "explain",
+    followPlan: true,
   };
 
   const created = await prisma.teacherSession.create({
@@ -161,6 +220,12 @@ teacher.post("/", zValidator("json", createSchema), async (c) => {
       messages: "[]",
       state: JSON.stringify(state),
     },
+  });
+
+  await logSessionSafe(userId, "teach_session_started", created.title, sourceIds[0] ?? "", {
+    sources: sourceIds.length,
+    studentLevel: state.studentLevel,
+    teachingStyle: state.teachingStyle,
   });
 
   return c.json({ session: serialize(created) }, 201);
@@ -191,6 +256,17 @@ const patchSchema = z.object({
   state: z.any().optional(),
 });
 
+/** Validate that the given ids all belong to the user, preserving order. */
+async function ownedSourceIds(userId: string, ids: string[]): Promise<string[]> {
+  if (ids.length === 0) return [];
+  const rows = await prisma.studySource.findMany({
+    where: { id: { in: ids }, userId },
+    select: { id: true },
+  });
+  const owned = new Set(rows.map((r) => r.id));
+  return ids.filter((id) => owned.has(id));
+}
+
 /** PATCH /:id — update title / sourceIds / state. */
 teacher.patch("/:id", zValidator("json", patchSchema), async (c) => {
   const { userId } = c.get("auth");
@@ -199,8 +275,14 @@ teacher.patch("/:id", zValidator("json", patchSchema), async (c) => {
   if (!row) return c.json({ error: "Session not found" }, 404);
   const data: any = {};
   if (body.title !== undefined) data.title = body.title.slice(0, 200);
-  if (body.sourceIds !== undefined) data.sourceIds = JSON.stringify(body.sourceIds);
-  if (body.state !== undefined) data.state = JSON.stringify(body.state);
+  if (body.sourceIds !== undefined) {
+    // Drop ids the user doesn't own so a session can never point at foreign
+    // sources, and keep the client's order (it drives the [n] citation order).
+    data.sourceIds = JSON.stringify(await ownedSourceIds(userId, body.sourceIds));
+  }
+  if (body.state !== undefined) {
+    data.state = JSON.stringify(mergeState(parseState(row.state), body.state as TeacherSessionState));
+  }
   const updated = await prisma.teacherSession.update({ where: { id: row.id }, data });
   return c.json({ session: serialize(updated) });
 });
@@ -212,6 +294,276 @@ teacher.delete("/:id", async (c) => {
   if (!row) return c.json({ error: "Session not found" }, 404);
   await prisma.teacherSession.delete({ where: { id: row.id } });
   return c.json({ ok: true });
+});
+
+// ---------- Lesson plan ----------
+
+const planSchema = z.object({
+  focus: z.string().max(2000).optional(),
+  language: z.enum(["en", "cs"]).optional().default("en"),
+});
+
+/** POST /:id/plan — generate (or regenerate) the lesson agenda for a session. */
+teacher.post("/:id/plan", zValidator("json", planSchema), async (c) => {
+  const { userId } = c.get("auth");
+  const body = c.req.valid("json");
+  const row = await prisma.teacherSession.findFirst({ where: { id: c.req.param("id"), userId } });
+  if (!row) return c.json({ error: "Session not found" }, 404);
+
+  const sources = await loadSessionSources(userId, parseSourceIds(row.sourceIds));
+  if (sources.length === 0) return c.json({ error: "This session has no sources." }, 400);
+
+  const state = parseState(row.state);
+  let plan;
+  try {
+    const { model } = await acquireLlmModel(userId);
+    plan = await generateLessonPlan(model, sources, {
+      studentLevel: state.studentLevel ?? "intermediate",
+      focus: body.focus,
+      language: body.language as StudyLanguage,
+    });
+  } catch (e) {
+    const status = e instanceof LlmError ? e.status : 502;
+    return c.json({ error: e instanceof Error ? e.message : "Lesson planning failed" }, status as 400);
+  }
+  if (!plan) return c.json({ error: "The AI did not return a usable lesson plan." }, 502);
+
+  const nextState: TeacherSessionState = { ...state, lessonPlan: plan, followPlan: true };
+  const updated = await prisma.teacherSession.update({
+    where: { id: row.id },
+    data: {
+      state: JSON.stringify(nextState),
+      // Only replace a placeholder title, never one the student edited.
+      title: /^Teach Me( session|:)/.test(row.title) ? plan.title.slice(0, 200) : row.title,
+    },
+  });
+  return c.json({ plan, session: serialize(updated) });
+});
+
+// ---------- Comprehension assessment ----------
+
+const assessSchema = z.object({
+  question: z.string().min(1).max(2000),
+  answer: z.string().max(4000),
+  expectedConcept: z.string().max(200).optional(),
+  language: z.enum(["en", "cs"]).optional().default("en"),
+});
+
+/** POST /:id/assess — grade a comprehension answer and update mastery state. */
+teacher.post("/:id/assess", zValidator("json", assessSchema), async (c) => {
+  const { userId } = c.get("auth");
+  const body = c.req.valid("json");
+  const row = await prisma.teacherSession.findFirst({ where: { id: c.req.param("id"), userId } });
+  if (!row) return c.json({ error: "Session not found" }, 404);
+
+  const state = parseState(row.state);
+  const concept = (body.expectedConcept ?? "").trim();
+  const sources = await loadSessionSources(userId, parseSourceIds(row.sourceIds));
+
+  let result;
+  try {
+    const { model } = await acquireLlmModel(userId);
+    result = await assessComprehension(model, {
+      question: body.question,
+      expectedConcept: concept || undefined,
+      answer: body.answer,
+      sourceText: pickRelevantText(sources, concept),
+      teachingStyle: state.teachingStyle === "socratic" ? "socratic" : "explain",
+      language: body.language as StudyLanguage,
+    });
+  } catch (e) {
+    const status = e instanceof LlmError ? e.status : 502;
+    return c.json({ error: e instanceof Error ? e.message : "Assessment failed" }, status as 400);
+  }
+
+  const nextState = applyAssessmentToState(state, {
+    concept: concept || body.question.slice(0, 80),
+    passed: result.passed,
+    feedback: result.feedback,
+    misconception: result.misconception,
+    question: body.question,
+    answer: body.answer,
+  });
+  const updated = await prisma.teacherSession.update({
+    where: { id: row.id },
+    data: { state: JSON.stringify(nextState) },
+  });
+  await logSessionSafe(
+    userId,
+    result.passed ? "teach_comprehension_passed" : "teach_comprehension_failed",
+    row.title,
+    row.id,
+    { concept: concept || undefined, score: result.score }
+  );
+  return c.json({ assessment: result, state: parseState(updated.state) });
+});
+
+// ---------- Title generation ----------
+
+/** POST /:id/title — derive a short topic title from the first exchange. */
+teacher.post("/:id/title", async (c) => {
+  const { userId } = c.get("auth");
+  const row = await prisma.teacherSession.findFirst({ where: { id: c.req.param("id"), userId } });
+  if (!row) return c.json({ error: "Session not found" }, 404);
+  const messages = parseMessages(row.messages);
+  const firstUser = messages.find((m) => m.role === "user");
+  const firstAssistant = messages.find((m) => m.role === "assistant");
+  if (!firstUser || !firstAssistant) return c.json({ error: "Not enough conversation yet." }, 400);
+
+  let title: string;
+  try {
+    const { model } = await acquireLlmModel(userId);
+    title = await generateSessionTitle(model, {
+      question: firstUser.content,
+      answer: firstAssistant.content,
+    });
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : "Title generation failed" }, 502);
+  }
+  if (!title) return c.json({ error: "The AI did not return a title." }, 502);
+  const updated = await prisma.teacherSession.update({
+    where: { id: row.id },
+    data: { title: title.slice(0, 200) },
+  });
+  return c.json({ session: serialize(updated) });
+});
+
+// ---------- Export the lesson to study artifacts ----------
+
+const exportSchema = z.object({
+  target: z.enum(["note", "flashcards", "quiz", "tasks"]),
+  language: z.enum(["en", "cs"]).optional().default("en"),
+  /** Flashcards / quiz: how many items to generate. */
+  count: z.number().int().min(1).max(20).optional(),
+});
+
+teacher.post("/:id/export", zValidator("json", exportSchema), async (c) => {
+  const { userId } = c.get("auth");
+  const body = c.req.valid("json");
+  const row = await prisma.teacherSession.findFirst({ where: { id: c.req.param("id"), userId } });
+  if (!row) return c.json({ error: "Session not found" }, 404);
+
+  const state = parseState(row.state);
+  const messages = parseMessages(row.messages).map((m) => ({ role: m.role, content: m.content }));
+  if (messages.length === 0) return c.json({ error: "Nothing to export yet — teach something first." }, 400);
+  const sources = await loadSessionSources(userId, parseSourceIds(row.sourceIds));
+  const ctx: LessonExportContext = {
+    title: row.title,
+    state,
+    messages,
+    sources: sources.map((s) => ({ name: s.name, kind: s.kind })),
+  };
+  const weak = weakConcepts(state).length ? weakConcepts(state) : weakConceptsFallback(state);
+
+  if (body.target === "note") {
+    const note = await prisma.note.create({
+      data: {
+        userId,
+        title: `Lesson: ${row.title}`.slice(0, 200),
+        content: lessonSummaryMarkdown(ctx),
+        tags: "teach-me,lesson",
+      },
+    });
+    await logSessionSafe(userId, "teach_export_created", row.title, row.id, { target: "note" });
+    return c.json({ target: "note", noteId: note.id, title: note.title });
+  }
+
+  if (body.target === "tasks") {
+    if (weak.length === 0) {
+      return c.json({ error: "No weak concepts to review — nothing to schedule." }, 400);
+    }
+    const due = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const created = await Promise.all(
+      weak.slice(0, 8).map((concept) =>
+        prisma.task.create({
+          data: {
+            userId,
+            title: `Review: ${concept}`.slice(0, 200),
+            description: `From the Teach Me lesson "${row.title}".${
+              state.mastery?.[concept]?.misconception
+                ? ` Watch out for: ${state.mastery[concept].misconception}`
+                : ""
+            }`,
+            dueDate: due,
+            priority: "HIGH",
+          },
+        })
+      )
+    );
+    await logSessionSafe(userId, "teach_export_created", row.title, row.id, { target: "tasks", count: created.length });
+    return c.json({ target: "tasks", count: created.length, concepts: weak.slice(0, 8) });
+  }
+
+  // flashcards / quiz both need a generation pass.
+  let model;
+  try {
+    model = (await acquireLlmModel(userId)).model;
+  } catch (e) {
+    const status = e instanceof LlmError ? e.status : 502;
+    return c.json({ error: e instanceof Error ? e.message : "AI unavailable" }, status as 400);
+  }
+
+  if (body.target === "flashcards") {
+    let cards;
+    try {
+      const raw = await generateJson<unknown>(model, lessonFlashcardsPrompt(ctx), lessonFlashcardsSchemaHint());
+      cards = normalizeFlashcards(raw);
+    } catch (e) {
+      return c.json({ error: e instanceof Error ? e.message : "Flashcard generation failed" }, 502);
+    }
+    if (cards.length === 0) return c.json({ error: "The AI did not generate any cards." }, 502);
+    const deck = await prisma.flashcardDeck.create({
+      data: {
+        userId,
+        name: row.title.slice(0, 120),
+        description: `Generated from a Teach Me lesson${weak.length ? ` — focused on: ${weak.slice(0, 4).join(", ")}` : ""}`,
+        cards: {
+          create: cards.slice(0, body.count ?? 12).map((card) => ({
+            front: card.front,
+            back: card.back,
+            sourceRef: `Teach Me: ${row.title}`.slice(0, 200),
+          })),
+        },
+      },
+      include: { cards: true },
+    });
+    await logSessionSafe(userId, "teach_export_created", row.title, row.id, {
+      target: "flashcards",
+      count: deck.cards.length,
+    });
+    return c.json({ target: "flashcards", deckId: deck.id, deckName: deck.name, count: deck.cards.length });
+  }
+
+  // quiz — build a source text from the lesson transcript + weak concepts so the
+  // questions target what the student actually struggled with.
+  const transcript = messages
+    .filter((m) => m.role === "assistant")
+    .map((m) => m.content)
+    .join("\n\n")
+    .slice(-16000);
+  const quizText = `${weak.length ? `Focus on these concepts: ${weak.join(", ")}\n\n` : ""}${transcript}`;
+  let questions: QuizQuestionSpec[];
+  try {
+    const result = await generateJson<{ questions: QuizQuestionSpec[] }>(
+      model,
+      quizGeneratePrompt(quizText, body.count ?? 5, ["mcq", "short"], body.language as StudyLanguage),
+      quizGenerateSchemaHint()
+    );
+    questions = (result.questions ?? []).filter((q) => q.prompt?.trim());
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : "Quiz generation failed" }, 502);
+  }
+  if (questions.length === 0) return c.json({ error: "The AI did not generate any questions." }, 502);
+  const stored: StoredQuizQuestion[] = questions.map((q, i) => ({
+    id: Number(q.id) || i + 1,
+    type: q.type === "mcq" ? "mcq" : "short",
+    prompt: String(q.prompt),
+    options: Array.isArray(q.options) ? q.options.map(String) : undefined,
+    answer: String(q.answer),
+  }));
+  const quiz = createQuiz(userId, row.title, row.id, quizText, stored);
+  await logSessionSafe(userId, "teach_export_created", row.title, row.id, { target: "quiz", count: stored.length });
+  return c.json({ target: "quiz", quizId: quiz.id, count: stored.length });
 });
 
 // ---------- Streaming teacher turn ----------
@@ -249,7 +601,7 @@ teacher.post("/:id/stream", zValidator("json", streamSchema), async (c) => {
   // Use the client-sent source-history + state (kept in sync by the client
   // store) so Athena can resolve "go back to the first file" etc.
   const history: SourceHistoryEntry[] = Array.isArray(body.sourceHistory) ? body.sourceHistory : [];
-  const state: TeacherSessionState = body.state ?? parseState(row.state);
+  const state: TeacherSessionState = mergeState(parseState(row.state), body.state as TeacherSessionState);
 
   const { model } = await acquireLlmModel(userId);
   const systemPrompt = teacherSystemPrompt(sources, history, state, body.language as StudyLanguage);
@@ -270,7 +622,7 @@ teacher.post("/:id/stream", zValidator("json", streamSchema), async (c) => {
     data: {
       messages: JSON.stringify(updatedMessages),
       lastMessageAt: new Date(),
-      title: history2.length === 0 ? body.message.slice(0, 80) : row.title,
+      state: JSON.stringify(state),
     },
   });
 
@@ -372,8 +724,14 @@ teacher.post("/:id/stream", zValidator("json", streamSchema), async (c) => {
       (await prisma.teacherSession.findFirst({ where: { id: row.id }, select: { messages: true } }))?.messages ?? "[]"
     );
     // Persist the updated state (source-history + comprehension log) sent by
-    // the client so resumption restores the full session context.
-    const stateToPersist: TeacherSessionState = body.state ?? state;
+    // the client so resumption restores the full session context. Re-read the
+    // row because /assess may have written mastery while the turn streamed.
+    const stateToPersist: TeacherSessionState = mergeState(
+      parseState(
+        (await prisma.teacherSession.findFirst({ where: { id: row.id }, select: { state: true } }))?.state ?? "{}"
+      ),
+      state
+    );
     await prisma.teacherSession.update({
       where: { id: row.id },
       data: {
@@ -383,10 +741,14 @@ teacher.post("/:id/stream", zValidator("json", streamSchema), async (c) => {
       },
     });
 
-    await logSessionSafe(userId, "teach", row.title, sourceIds.join(","), {
+    await logSessionSafe(userId, "teach_turn_completed", row.title, sourceIds.join(","), {
       sessionId: row.id,
       tools: toolEvents.length,
     });
+    const sourcesOpened = toolEvents.filter((t) => t.name === "show_source").length;
+    if (sourcesOpened > 0) {
+      await logSessionSafe(userId, "teach_source_opened", row.title, row.id, { count: sourcesOpened });
+    }
 
     if (!errored || full.trim()) {
       await stream.writeSSE({ event: "done", data: JSON.stringify({ done: true }) });

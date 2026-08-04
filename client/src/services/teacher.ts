@@ -21,11 +21,63 @@ export interface TeacherSourceHistoryEntry {
   lastHighlight?: string;
 }
 
+export type TeachingStyle = "explain" | "socratic";
+export type StudentLevel = "beginner" | "intermediate" | "advanced";
+export type PaceFeedback = "too_easy" | "just_right" | "too_hard";
+
+export interface TeacherComprehensionEntry {
+  concept: string;
+  passed: boolean;
+  feedback?: string;
+  misconception?: string;
+  question?: string;
+  answer?: string;
+  at?: string;
+}
+
+export interface TeacherMasteryEntry {
+  checksTotal: number;
+  checksPassed: number;
+  lastAskedAt?: string;
+  misconception?: string;
+}
+
+export interface TeacherLessonPlan {
+  title: string;
+  objectives: string[];
+  keyConcepts: string[];
+  checks?: { concept: string; question: string }[];
+  estimatedTurns?: number;
+  suggestedSources?: number[];
+}
+
+export interface TeacherSourceIssue {
+  name?: string;
+  refId?: string;
+  reason: string;
+  at?: string;
+}
+
 export interface TeacherSessionState {
   studentLevel?: string;
   sourceHistory?: TeacherSourceHistoryEntry[];
   coveredConcepts?: string[];
-  comprehensionLog?: { concept: string; passed: boolean }[];
+  comprehensionLog?: TeacherComprehensionEntry[];
+  lessonPlan?: TeacherLessonPlan;
+  mastery?: Record<string, TeacherMasteryEntry>;
+  teachingStyle?: TeachingStyle;
+  inferredLevel?: string;
+  followPlan?: boolean;
+  sourceIssues?: TeacherSourceIssue[];
+  paceFeedback?: string;
+  lessonCompletedAt?: string;
+}
+
+export interface TeacherAssessment {
+  passed: boolean;
+  score: number;
+  feedback: string;
+  misconception?: string;
 }
 
 export interface TeacherMessage {
@@ -65,7 +117,8 @@ export const teacherApi = {
   async create(input: {
     title?: string;
     sourceIds?: string[];
-    studentLevel?: "beginner" | "intermediate" | "advanced";
+    studentLevel?: StudentLevel;
+    teachingStyle?: TeachingStyle;
     sources?: { kind: string; id?: string; text?: string; url?: string; name?: string }[];
   }): Promise<{ session: TeacherSession }> {
     return api.post("/api/teacher", input);
@@ -81,6 +134,40 @@ export const teacherApi = {
   },
   async delete(id: string): Promise<{ ok: boolean }> {
     return api.delete(`/api/teacher/${id}`);
+  },
+  /** Generate (or regenerate) the lesson agenda. */
+  async plan(id: string, input: { focus?: string; language?: "en" | "cs" } = {}): Promise<{
+    plan: TeacherLessonPlan;
+    session: TeacherSession;
+  }> {
+    return api.post(`/api/teacher/${id}/plan`, input);
+  },
+  /** Grade an answer to a comprehension check (server-side, real assessment). */
+  async assess(
+    id: string,
+    input: { question: string; answer: string; expectedConcept?: string; language?: "en" | "cs" }
+  ): Promise<{ assessment: TeacherAssessment; state: TeacherSessionState }> {
+    return api.post(`/api/teacher/${id}/assess`, input);
+  },
+  /** Ask the model for a short topic title (after the first exchange). */
+  async generateTitle(id: string): Promise<{ session: TeacherSession }> {
+    return api.post(`/api/teacher/${id}/title`, {});
+  },
+  /** Turn the lesson into a note / flashcard deck / quiz / review tasks. */
+  async export(
+    id: string,
+    input: { target: "note" | "flashcards" | "quiz" | "tasks"; language?: "en" | "cs"; count?: number }
+  ): Promise<{
+    target: string;
+    noteId?: string;
+    title?: string;
+    deckId?: string;
+    deckName?: string;
+    quizId?: string;
+    count?: number;
+    concepts?: string[];
+  }> {
+    return api.post(`/api/teacher/${id}/export`, input);
   },
 };
 

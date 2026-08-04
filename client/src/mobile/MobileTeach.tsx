@@ -1,0 +1,645 @@
+// ===== Mobile Teach Me =====
+// A single-column, voice-first phone surface for the Interactive Teacher.
+// All non-visual logic is shared with the desktop TeacherMode through
+// useTeacherSession; this file owns the phone presentation:
+//   - full-width chat bubbles with inline citation chips
+//   - a large push-to-talk mic button (voice-first input)
+//   - a bottom-sheet source viewer (instead of floating windows) that shows the
+//     referenced source as plain text with the spoken passage highlighted
+//   - collapsible lesson agenda + mastery, full-width comprehension cards
+//   - per-message TTS controls with speech-synced source highlighting
+//   - lesson exports (note / flashcards / quiz / review tasks)
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  BookOpen, ChevronDown, GraduationCap, Loader2, Mic, Pause, Play,
+  Plus, Send, Sparkles, Square, Trash2, Volume2, VolumeX, X,
+} from "lucide-react";
+import type { StudentLevel, TeachingStyle } from "../services/teacher";
+import { studySourcesApi, type StudySource } from "../services/study-sources";
+import type { AthenaClientAction } from "../services/athena";
+import { useTeacherSession } from "../apps/study/useTeacherSession";
+import { useTeacherTts } from "../apps/study/useTeacherTts";
+import { prepareSpeech, segmentAtOffset, type SpeechSegment } from "../apps/study/teacherSpeech";
+import { LessonAgenda, ToolChipRow, ComprehensionCard, PaceFeedbackRow, ExportMenu } from "../apps/study/teachPanels";
+import HighlightableMarkdown from "../apps/study/HighlightableMarkdown";
+import type { CitationMeta } from "../apps/study/CitationMarkdown";
+import { isSpeechRecognitionSupported, createTranscriber, type SpeechTranscriber } from "../services/speech";
+import {
+  MobileContainer, MobileEmpty, MobileFab, MobileHeader, MobileLoading, MobileTextarea,
+} from "./MobileUi";
+
+const LEVELS: StudentLevel[] = ["beginner", "intermediate", "advanced"];
+const STYLES: TeachingStyle[] = ["explain", "socratic"];
+
+const KIND_ICON: Record<string, typeof BookOpen> = {
+  note: BookOpen, file: BookOpen, paste: BookOpen, moodle: GraduationCap, url: BookOpen,
+};
+
+/** The source currently shown in the bottom sheet. */
+interface SourceSheet {
+  /** Stable id used as the sourceHistory windowId on phones (no real windows). */
+  windowId: string;
+  refId: string;
+  name: string;
+  kind: string;
+  loading: boolean;
+  text?: string;
+  highlight?: string;
+  error?: string;
+}
+
+interface Props {
+  initialSessionId?: string | null;
+  language?: "en" | "cs";
+  onClose?: () => void;
+}
+
+export default function MobileTeach({ initialSessionId = null, language = "en", onClose }: Props) {
+  // ----- pre-session setup -----
+  const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(new Set());
+  const [studentLevel, setStudentLevel] = useState<StudentLevel>("intermediate");
+  const [teachingStyle, setTeachingStyle] = useState<TeachingStyle>("explain");
+  const [withPlan, setWithPlan] = useState(true);
+  const [view, setView] = useState<"list" | "new">("list");
+
+  const [input, setInput] = useState("");
+  const [autoSpeak, setAutoSpeak] = useState(false);
+  const [sheet, setSheet] = useState<SourceSheet | null>(null);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const sessionRef = useRef<ReturnType<typeof useTeacherSession> | null>(null);
+
+  // ----- source bottom-sheet: resolve text + apply highlight -----
+
+  /** Resolve the cached text for a source (matched by refId in the library). */
+  const resolveSourceText = useCallback(async (refId: string): Promise<string | undefined> => {
+    const lib = sessionRef.current?.library ?? [];
+    const match = lib.find((s) => s.refId === refId || s.id === refId);
+    if (!match) return undefined;
+    if (match.textCache) return match.textCache;
+    try {
+      const full = await studySourcesApi.get(match.id);
+      return full.textCache;
+    } catch {
+      return undefined;
+    }
+  }, []);
+
+  const openSourceSheet = useCallback((
+    entry: { windowId: string; refId: string; name: string; kind: string; highlight?: string }
+  ) => {
+    setSheet({ ...entry, loading: true });
+    void (async () => {
+      const text = await resolveSourceText(entry.refId);
+      setSheet((prev) =>
+        prev && prev.windowId === entry.windowId
+          ? { ...prev, loading: false, text, error: text ? undefined : "Source text is unavailable." }
+          : prev
+      );
+    })();
+  }, [resolveSourceText]);
+
+  // ----- source client actions (phone: bottom sheet, no windows) -----
+
+  const dispatchSourceAction = useCallback((action: AthenaClientAction) => {
+    const p = action.payload as Record<string, unknown>;
+    const act = String(p.action ?? "");
+    const setSourceHistory = sessionRef.current?.setSourceHistory;
+    switch (act) {
+      case "show_source": {
+        const refId = String(p.sourceRef ?? "");
+        const name = String(p.title ?? "Source");
+        const kind = String(p.sourceKind ?? "");
+        const highlight = (p.highlight as Record<string, unknown> | undefined);
+        const highlightText = typeof highlight?.text === "string" ? highlight.text : undefined;
+        // Phones have no window ids — key source history by the source ref.
+        const windowId = refId || name;
+        setSourceHistory?.((prev) => {
+          if (prev.some((h) => h.windowId === windowId)) {
+            return prev.map((h) => (h.windowId === windowId ? { ...h, lastHighlight: highlightText } : h));
+          }
+          return [...prev, {
+            windowId, index: prev.length + 1, name, kind, refId, lastHighlight: highlightText,
+          }];
+        });
+        openSourceSheet({ windowId, refId, name, kind, highlight: highlightText });
+        break;
+      }
+      case "show_command": {
+        const windowId = String(p.windowId ?? "");
+        const kind = String(p.kind ?? "");
+        const text = typeof p.text === "string" ? p.text : undefined;
+        if (kind === "clear_highlight") {
+          setSheet((prev) => (prev && prev.windowId === windowId ? { ...prev, highlight: undefined } : prev));
+        } else if (kind === "highlight" && text) {
+          setSheet((prev) => (prev && prev.windowId === windowId ? { ...prev, highlight: text } : prev));
+          setSourceHistory?.((prev) =>
+            prev.map((h) => (h.windowId === windowId ? { ...h, lastHighlight: text } : h))
+          );
+        }
+        break;
+      }
+      case "focus_source": {
+        const windowId = String(p.windowId ?? "");
+        const entry = sessionRef.current?.sourceHistory.find((h) => h.windowId === windowId);
+        if (entry) {
+          openSourceSheet({
+            windowId: entry.windowId, refId: entry.refId, name: entry.name,
+            kind: entry.kind, highlight: entry.lastHighlight,
+          });
+        }
+        break;
+      }
+      case "close_source": {
+        const windowId = String(p.windowId ?? "");
+        setSheet((prev) => (prev && prev.windowId === windowId ? null : prev));
+        setSourceHistory?.((prev) => prev.filter((h) => h.windowId !== windowId));
+        break;
+      }
+      default:
+        break;
+    }
+  }, [openSourceSheet]);
+
+  const teach = useTeacherSession({ language, initialSessionId, dispatchSourceAction });
+  sessionRef.current = teach;
+  const {
+    sessions, session, sessionId, messages, streaming, streamText, error,
+    loadingSession, library, attachedSources,
+    teachState, sourceHistory, comprehensionChecks, toolChips, planning,
+    exporting, exportResult, setExportResult, exportLesson, generatePlan,
+    loadSession, startNewSession, deleteSession, resetSession,
+    updateTeachState, setPaceFeedback, answerComprehension,
+    send, stop, retry, canRetry, setOnTurnDone,
+  } = teach;
+
+  // ----- speech (TTS) with speech-synced sheet highlighting -----
+
+  const segmentsRef = useRef<SpeechSegment[]>([]);
+  const spokenSegRef = useRef<SpeechSegment | null>(null);
+  const sourceHistoryRef = useRef(sourceHistory);
+  sourceHistoryRef.current = sourceHistory;
+
+  const onWordBoundary = useCallback((charStart: number) => {
+    const seg = segmentAtOffset(segmentsRef.current, charStart);
+    if (!seg || seg === spokenSegRef.current) return;
+    spokenSegRef.current = seg;
+    const cited = seg.citations
+      .map((n) => sourceHistoryRef.current.find((h) => h.index === n))
+      .find((h) => h !== undefined);
+    if (!cited) return;
+    // Bring the cited source into the sheet and highlight the quoted passage.
+    openSourceSheet({
+      windowId: cited.windowId, refId: cited.refId, name: cited.name,
+      kind: cited.kind, highlight: seg.quote ?? cited.lastHighlight,
+    });
+  }, [openSourceSheet]);
+
+  const tts = useTeacherTts({ language, onWordBoundary });
+  const ttsRef = useRef(tts);
+  ttsRef.current = tts;
+  const autoSpeakRef = useRef(autoSpeak);
+  autoSpeakRef.current = autoSpeak;
+
+  const speakMessage = useCallback((text: string, id: string) => {
+    segmentsRef.current = prepareSpeech(text).segments;
+    spokenSegRef.current = null;
+    void ttsRef.current.speak(text, id);
+  }, []);
+
+  useEffect(() => {
+    setOnTurnDone((text) => {
+      if (autoSpeakRef.current && text.trim()) speakMessage(text, "latest");
+    });
+    return () => setOnTurnDone(null);
+  }, [setOnTurnDone, speakMessage]);
+
+  // ----- STT (push-to-talk) -----
+
+  const [listening, setListening] = useState(false);
+  const [interimText, setInterimText] = useState("");
+  const transcriberRef = useRef<SpeechTranscriber | null>(null);
+  const sttSupported = isSpeechRecognitionSupported();
+
+  const startListening = useCallback(() => {
+    if (!sttSupported || listening) return;
+    try {
+      const transcriber = createTranscriber();
+      transcriberRef.current = transcriber;
+      let finalText = "";
+      transcriber.onUpdate(({ interim, final: fin }) => {
+        if (fin) finalText += fin;
+        setInterimText(interim);
+      });
+      transcriber.onEnd(() => {
+        setListening(false);
+        setInterimText("");
+        if (finalText.trim()) send(finalText.trim());
+      });
+      transcriber.onError(() => { setListening(false); setInterimText(""); });
+      transcriber.start();
+      setListening(true);
+    } catch {
+      setListening(false);
+    }
+  }, [sttSupported, listening, send]);
+
+  const stopListening = useCallback(() => {
+    transcriberRef.current?.stop();
+    setListening(false);
+  }, []);
+
+  // ----- misc -----
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [messages, streamText, comprehensionChecks]);
+
+  const citationMeta: CitationMeta[] = useMemo(
+    () => sourceHistory.map((h) => ({ index: h.index, name: h.name, kind: h.kind, refId: h.refId })),
+    [sourceHistory]
+  );
+
+  const openCitation = useCallback((index: number) => {
+    const entry = sourceHistory.find((h) => h.index === index);
+    if (entry) {
+      openSourceSheet({
+        windowId: entry.windowId, refId: entry.refId, name: entry.name,
+        kind: entry.kind, highlight: entry.lastHighlight,
+      });
+    }
+  }, [sourceHistory, openSourceSheet]);
+
+  const toggleSource = (id: string) => {
+    setSelectedSourceIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const startSession = () => {
+    void startNewSession({ sourceIds: [...selectedSourceIds], studentLevel, teachingStyle, withPlan });
+  };
+
+  const submit = () => {
+    const t = input.trim();
+    if (!t || streaming) return;
+    setInput("");
+    if (tts.playing) tts.stop();
+    send(t);
+  };
+
+  // ----- session picker (no active session) -----
+
+  if (!sessionId) {
+    if (view === "new") {
+      return (
+        <MobileContainer>
+          <MobileHeader title="New lesson" subtitle="Teach Me" onBack={() => setView("list")} />
+
+          <p className="mb-2 text-sm font-semibold text-white">Sources</p>
+          <div className="mb-4 space-y-2">
+            {library.length === 0 ? (
+              <MobileEmpty text="No study sources yet. Add materials in Study Hub first." />
+            ) : (
+              library.map((s: StudySource) => {
+                const Icon = KIND_ICON[s.kind] ?? BookOpen;
+                const on = selectedSourceIds.has(s.id);
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => toggleSource(s.id)}
+                    className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left ${
+                      on ? "border-indigo-400/60 bg-indigo-500/15" : "border-white/10 bg-white/[.045]"
+                    }`}
+                  >
+                    <Icon size={18} className={on ? "text-indigo-300" : "text-slate-400"} />
+                    <span className="min-w-0 flex-1 truncate text-sm text-white">{s.name}</span>
+                    {on && <span className="text-xs text-indigo-300">Selected</span>}
+                  </button>
+                );
+              })
+            )}
+          </div>
+
+          <p className="mb-2 text-sm font-semibold text-white">Level</p>
+          <div className="mb-4 flex gap-2">
+            {LEVELS.map((l) => (
+              <button
+                key={l}
+                type="button"
+                onClick={() => setStudentLevel(l)}
+                className={`flex-1 rounded-2xl py-2.5 text-sm font-medium capitalize ${
+                  studentLevel === l ? "bg-indigo-500 text-white" : "bg-white/[.06] text-slate-300"
+                }`}
+              >
+                {l}
+              </button>
+            ))}
+          </div>
+
+          <p className="mb-2 text-sm font-semibold text-white">Teaching style</p>
+          <div className="mb-4 flex gap-2">
+            {STYLES.map((st) => (
+              <button
+                key={st}
+                type="button"
+                onClick={() => setTeachingStyle(st)}
+                className={`flex-1 rounded-2xl py-2.5 text-sm font-medium capitalize ${
+                  teachingStyle === st ? "bg-indigo-500 text-white" : "bg-white/[.06] text-slate-300"
+                }`}
+              >
+                {st}
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setWithPlan((v) => !v)}
+            className={`mb-4 flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-sm ${
+              withPlan ? "border-indigo-400/60 bg-indigo-500/15 text-white" : "border-white/10 bg-white/[.045] text-slate-300"
+            }`}
+          >
+            <span className="flex items-center gap-2"><Sparkles size={16} /> Generate a lesson plan</span>
+            <span className={`h-5 w-9 rounded-full p-0.5 transition ${withPlan ? "bg-indigo-500" : "bg-white/15"}`}>
+              <span className={`block h-4 w-4 rounded-full bg-white transition ${withPlan ? "translate-x-4" : ""}`} />
+            </span>
+          </button>
+
+          {error && <p className="mb-3 rounded-2xl bg-red-500/10 px-4 py-3 text-sm text-red-300">{error}</p>}
+
+          <button
+            type="button"
+            onClick={startSession}
+            disabled={selectedSourceIds.size === 0 || loadingSession}
+            className="w-full rounded-2xl bg-indigo-500 py-3 text-sm font-semibold text-white disabled:opacity-50"
+          >
+            {loadingSession ? "Starting…" : "Start lesson"}
+          </button>
+        </MobileContainer>
+      );
+    }
+
+    return (
+      <MobileContainer>
+        <MobileHeader
+          title="Teach Me"
+          subtitle="Interactive tutor"
+          onClose={onClose}
+          right={<MobileFab onClick={() => { resetSession(); setSelectedSourceIds(new Set()); setView("new"); }} icon={<Plus size={22} />} />}
+        />
+        <p className="mb-3 text-sm font-semibold text-white">Recent lessons</p>
+        <div className="space-y-2">
+          {loadingSession ? (
+            <MobileLoading />
+          ) : sessions.length ? (
+            sessions.map((s) => (
+              <article
+                key={s.id}
+                className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[.045] p-4"
+              >
+                <button onClick={() => void loadSession(s.id)} className="flex min-w-0 flex-1 flex-col text-left">
+                  <span className="flex items-center gap-2 truncate font-medium text-white">
+                    <GraduationCap size={16} className="shrink-0 text-indigo-300" /> {s.title}
+                  </span>
+                  <span className="mt-1 text-xs text-slate-500">
+                    {s.sourceIds.length} source{s.sourceIds.length === 1 ? "" : "s"}
+                  </span>
+                </button>
+                <button
+                  onClick={() => void deleteSession(s.id)}
+                  className="shrink-0 rounded-xl p-2 text-slate-500 active:bg-white/[.08] active:text-red-400"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </article>
+            ))
+          ) : (
+            <MobileEmpty text="No lessons yet. Tap + to start learning." />
+          )}
+        </div>
+      </MobileContainer>
+    );
+  }
+
+  // ----- active lesson -----
+
+  const latestSpeaking = tts.speakingId === "latest" && (tts.playing || tts.paused);
+
+  return (
+    <div className="mx-auto flex h-full max-w-md flex-col px-4 pt-[max(1rem,env(safe-area-inset-top))]">
+      {/* header */}
+      <header className="mb-2 flex items-center gap-2">
+        <button
+          onClick={() => { stop(); resetSession(); setView("list"); }}
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/[.06] text-white active:bg-white/[.1]"
+        >
+          <ChevronDown size={20} className="rotate-90" />
+        </button>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-lg font-bold text-white">{session?.title ?? "Lesson"}</p>
+        </div>
+        <button
+          onClick={() => setAutoSpeak((v) => !v)}
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${
+            autoSpeak ? "bg-indigo-500 text-white" : "bg-white/[.06] text-slate-300"
+          }`}
+          title={autoSpeak ? "Auto-speak on" : "Auto-speak off"}
+        >
+          {autoSpeak ? <Volume2 size={18} /> : <VolumeX size={18} />}
+        </button>
+        <ExportMenu onExport={exportLesson} exporting={exporting} result={exportResult} onDismissResult={() => setExportResult("")} />
+      </header>
+
+      {/* agenda + mastery + pace */}
+      <div className="mb-2 space-y-2">
+        <LessonAgenda
+          plan={teachState.lessonPlan}
+          covered={teachState.coveredConcepts ?? []}
+          mastery={teachState.mastery ?? {}}
+          followPlan={teachState.followPlan ?? true}
+          onToggleFollow={(v) => void updateTeachState({ followPlan: v })}
+          onRegenerate={() => void generatePlan()}
+          planning={planning}
+        />
+        <PaceFeedbackRow value={teachState.paceFeedback} onChange={setPaceFeedback} />
+      </div>
+
+      {/* transcript */}
+      <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto pb-3">
+        {messages.length === 0 && !streaming && (
+          <MobileEmpty text="Ask a question, or tap the mic to speak. Athena will teach from your sources." />
+        )}
+        {messages.map((m, i) => (
+          <div key={i} className={m.role === "user" ? "flex justify-end" : ""}>
+            {m.role === "user" ? (
+              <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-indigo-500 px-3.5 py-2 text-sm text-white">
+                {m.content}
+              </div>
+            ) : (
+              <div className="rounded-2xl rounded-bl-sm border border-white/10 bg-white/[.045] px-3.5 py-2.5">
+                <HighlightableMarkdown
+                  content={m.content}
+                  scope="teacher"
+                  scopeId={`${sessionId}:${i}`}
+                  citations={citationMeta}
+                  onOpenCitation={openCitation}
+                  enabled={false}
+                />
+                <div className="mt-1.5 flex items-center gap-2">
+                  {latestSpeaking && i === messages.length - 1 ? (
+                    <>
+                      <button
+                        onClick={() => (tts.paused ? tts.resume() : tts.pause())}
+                        className="flex items-center gap-1 rounded-lg bg-white/[.08] px-2 py-1 text-xs text-slate-200"
+                      >
+                        {tts.paused ? <Play size={12} /> : <Pause size={12} />}
+                        {tts.paused ? "Resume" : "Pause"}
+                      </button>
+                      <button onClick={() => tts.stop()} className="rounded-lg bg-white/[.08] p-1 text-slate-200">
+                        <Square size={12} />
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={() => speakMessage(m.content, `msg-${i}`)}
+                      className="flex items-center gap-1 rounded-lg bg-white/[.08] px-2 py-1 text-xs text-slate-200"
+                    >
+                      <Volume2 size={12} /> Play
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+
+        {streaming && (
+          <div className="rounded-2xl rounded-bl-sm border border-white/10 bg-white/[.045] px-3.5 py-2.5">
+            {toolChips.length > 0 && <div className="mb-2"><ToolChipRow chips={toolChips} /></div>}
+            {streamText ? (
+              <HighlightableMarkdown
+                content={streamText}
+                scope="teacher"
+                scopeId={`${sessionId}:stream`}
+                citations={citationMeta}
+                onOpenCitation={openCitation}
+                enabled={false}
+              />
+            ) : (
+              <Loader2 size={16} className="animate-spin text-indigo-300" />
+            )}
+          </div>
+        )}
+
+        {comprehensionChecks.map((c) => (
+          <ComprehensionCard key={c.id} check={c} onAnswer={(a) => void answerComprehension(c.id, a)} fullWidth />
+        ))}
+
+        {error && (
+          <div className="flex items-center justify-between gap-2 rounded-2xl bg-red-500/10 px-3.5 py-2.5 text-sm text-red-300">
+            <span className="min-w-0 flex-1">{error}</span>
+            {canRetry && (
+              <button onClick={retry} className="shrink-0 rounded-lg bg-red-500/20 px-2 py-1 text-xs">Retry</button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* interim STT transcript */}
+      {listening && (
+        <p className="mb-1 text-center text-xs text-indigo-300">{interimText || "Listening…"}</p>
+      )}
+
+      {/* composer */}
+      <div className="flex items-end gap-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        <MobileTextarea
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
+          }}
+          placeholder="Ask Athena…"
+          rows={1}
+          className="flex-1"
+        />
+        {sttSupported && (
+          <button
+            type="button"
+            onClick={listening ? stopListening : startListening}
+            className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${
+              listening ? "animate-pulse bg-red-500 text-white" : "bg-white/[.08] text-slate-200"
+            }`}
+          >
+            <Mic size={20} />
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={streaming ? stop : submit}
+          disabled={!streaming && !input.trim()}
+          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-indigo-500 text-white disabled:opacity-50"
+        >
+          {streaming ? <Square size={18} /> : <Send size={18} />}
+        </button>
+      </div>
+
+      {/* source bottom sheet */}
+      {sheet && (
+        <div className="fixed inset-0 z-50 flex items-end" onClick={() => setSheet(null)}>
+          <div className="absolute inset-0 bg-black/50" />
+          <div
+            className="relative flex max-h-[75vh] w-full flex-col rounded-t-3xl border-t border-white/10 bg-[#0f1117] pb-[max(1rem,env(safe-area-inset-bottom))]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 border-b border-white/10 px-4 py-3">
+              <BookOpen size={16} className="shrink-0 text-indigo-300" />
+              <span className="min-w-0 flex-1 truncate text-sm font-semibold text-white">{sheet.name}</span>
+              <button onClick={() => setSheet(null)} className="rounded-xl p-1.5 text-slate-400 active:bg-white/[.08]">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="overflow-y-auto px-4 py-3">
+              {sheet.loading ? (
+                <div className="flex items-center gap-2 text-sm text-slate-400">
+                  <Loader2 size={14} className="animate-spin" /> Loading source…
+                </div>
+              ) : sheet.error ? (
+                <p className="text-sm text-slate-400">{sheet.error}</p>
+              ) : (
+                <SourceText text={sheet.text ?? ""} highlight={sheet.highlight} />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Plain-text source view with the spoken passage highlighted + scrolled into view. */
+function SourceText({ text, highlight }: { text: string; highlight?: string }) {
+  const markRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    markRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [highlight]);
+
+  if (!highlight) {
+    return <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-6 text-slate-300">{text}</pre>;
+  }
+  const idx = text.toLowerCase().indexOf(highlight.toLowerCase());
+  if (idx === -1) {
+    return <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-6 text-slate-300">{text}</pre>;
+  }
+  return (
+    <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-6 text-slate-300">
+      {text.slice(0, idx)}
+      <mark ref={markRef} className="rounded bg-amber-400/30 text-amber-100">{text.slice(idx, idx + highlight.length)}</mark>
+      {text.slice(idx + highlight.length)}
+    </pre>
+  );
+}

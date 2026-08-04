@@ -663,7 +663,7 @@ const TEACHER_SHOW_SCRIPT = `<script>(function(){
   // search text, then splits the text node and wraps the match.
   function highlightText(text) {
     clearHighlights();
-    if (!text || !text.trim()) return;
+    if (!text || !text.trim()) return false;
     var needle = text.trim();
     var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
       acceptNode: function(node) {
@@ -690,7 +690,7 @@ const TEACHER_SHOW_SCRIPT = `<script>(function(){
         }
       });
       node = walker.nextNode();
-      if (!node) return;
+      if (!node) return false;
       // Wrap the case-insensitive match.
       var val = node.nodeValue;
       var idx = val.toLowerCase().indexOf(lower);
@@ -703,7 +703,7 @@ const TEACHER_SHOW_SCRIPT = `<script>(function(){
       range.surroundContents(mark);
       currentMarks.push(mark);
       mark.scrollIntoView({ behavior: "smooth", block: "center" });
-      return;
+      return true;
     }
     var val = node.nodeValue;
     var idx = val.indexOf(needle);
@@ -716,13 +716,14 @@ const TEACHER_SHOW_SCRIPT = `<script>(function(){
     range.surroundContents(mark);
     currentMarks.push(mark);
     mark.scrollIntoView({ behavior: "smooth", block: "center" });
+    return true;
   }
 
   // Scroll to the first occurrence of text without highlighting.
   function scrollToText(text) {
     if (!text || !text.trim()) {
       window.scrollTo({ top: 0, behavior: "smooth" });
-      return;
+      return true;
     }
     var needle = text.trim();
     var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
@@ -738,17 +739,18 @@ const TEACHER_SHOW_SCRIPT = `<script>(function(){
     var node = walker.nextNode();
     if (node) {
       node.parentElement.scrollIntoView({ behavior: "smooth", block: "center" });
-    } else {
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      return true;
     }
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    return false;
   }
 
   // Highlight a CSS selector match.
   function highlightSelector(selector) {
     clearHighlights();
-    if (!selector) return;
+    if (!selector) return false;
     var el = document.querySelector(selector);
-    if (!el) return;
+    if (!el) return false;
     var mark = document.createElement("mark");
     mark.className = HL_CLASS;
     // Wrap the element's contents.
@@ -756,30 +758,46 @@ const TEACHER_SHOW_SCRIPT = `<script>(function(){
     el.appendChild(mark);
     currentMarks.push(mark);
     mark.scrollIntoView({ behavior: "smooth", block: "center" });
+    return true;
   }
 
   window.addEventListener("message", function(e) {
     if (!e.data || !e.data.__athenaTeacherShow) return;
     var d = e.data;
+    var ok = false;
     try {
       if (d.kind === "clear_highlight") {
         clearHighlights();
+        ok = true;
       } else if (d.kind === "highlight") {
-        if (d.selector) highlightSelector(d.selector);
-        else if (d.text) highlightText(d.text);
+        if (d.selector) ok = highlightSelector(d.selector);
+        else if (d.text) ok = highlightText(d.text);
       } else if (d.kind === "scroll_to") {
         if (d.selector) {
           var el = document.querySelector(d.selector);
-          if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+          if (el) { el.scrollIntoView({ behavior: "smooth", block: "center" }); ok = true; }
         } else if (d.text) {
-          scrollToText(d.text);
+          ok = scrollToText(d.text);
         } else {
           window.scrollTo({ top: 0, behavior: "smooth" });
+          ok = true;
         }
       }
     } catch(err) {
       // Never let a highlight error break the page.
     }
+    // Tell the Teacher whether the passage was actually found, so it can fall
+    // back to quoting the text inline instead of trusting an invisible visual.
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({
+          __athenaTeacherShowResult: true,
+          id: d.id,
+          kind: d.kind,
+          ok: !!ok
+        }, "*");
+      }
+    } catch(err2) { /* noop */ }
   });
 })();<\/script>`;
 

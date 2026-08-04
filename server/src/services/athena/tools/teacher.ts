@@ -74,6 +74,44 @@ function payloadForSource(
   return {};
 }
 
+// ----- highlight verification -----
+
+/** Normalize whitespace/quotes so "nearly verbatim" phrases still match. */
+export function normalizeForMatch(s: string): string {
+  return s
+    .replace(/[\u2018\u2019\u201b]/g, "'")
+    .replace(/[\u201c\u201d]/g, '"')
+    .replace(/[\u2013\u2014]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * Check that a highlight phrase actually occurs in the source text, and if not,
+ * try to recover a verbatim substring (longest word window that does occur).
+ * Returns the phrase to send to the client, or null when nothing matches.
+ */
+export function resolveHighlightText(
+  requested: string,
+  sourceText: string | undefined | null
+): { text: string | null; exact: boolean } {
+  const phrase = requested.trim();
+  if (!phrase) return { text: null, exact: false };
+  if (!sourceText) return { text: phrase, exact: false }; // can't verify — pass through
+  const hay = normalizeForMatch(sourceText);
+  if (hay.includes(normalizeForMatch(phrase))) return { text: phrase, exact: true };
+  // Fall back to the longest contiguous word window of the phrase that matches.
+  const words = phrase.split(/\s+/);
+  for (let len = words.length - 1; len >= 3; len--) {
+    for (let start = 0; start + len <= words.length; start++) {
+      const candidate = words.slice(start, start + len).join(" ");
+      if (hay.includes(normalizeForMatch(candidate))) return { text: candidate, exact: false };
+    }
+  }
+  return { text: null, exact: false };
+}
+
 export const teacherTools: ToolDef[] = [
   {
     name: "show_source",
@@ -146,9 +184,30 @@ export const teacherTools: ToolDef[] = [
 
       const appId = appForSource(kind, file);
       const openPayload = payloadForSource(kind, refId, file);
-      const highlightText = args.highlightText ? String(args.highlightText) : undefined;
+      const requestedHighlight = args.highlightText ? String(args.highlightText) : undefined;
       const highlightLine = typeof args.highlightLine === "number" ? Number(args.highlightLine) : undefined;
       const highlightLineEnd = typeof args.highlightLineEnd === "number" ? Number(args.highlightLineEnd) : undefined;
+
+      // Verify the requested phrase against the cached source text so the model
+      // learns immediately when it paraphrased instead of quoting.
+      let highlightText = requestedHighlight;
+      let highlightWarning: string | undefined;
+      if (requestedHighlight) {
+        const cached = await prisma.studySource.findFirst({
+          where: { userId, kind, refId },
+          select: { textCache: true },
+        });
+        const resolved = resolveHighlightText(requestedHighlight, cached?.textCache);
+        if (!resolved.text) {
+          highlightText = undefined;
+          highlightWarning =
+            "highlightText was not found verbatim in the source, so nothing was highlighted. " +
+            "Quote the passage inline in your reply, or retry with an exact phrase copied from the source.";
+        } else if (!resolved.exact) {
+          highlightText = resolved.text;
+          highlightWarning = `Highlighted the closest verbatim fragment ("${resolved.text}") — your phrase was not literally in the source.`;
+        }
+      }
 
       return {
         action: "show_source",
@@ -162,6 +221,7 @@ export const teacherTools: ToolDef[] = [
           line: highlightLine,
           lineEnd: highlightLineEnd,
         },
+        ...(highlightWarning ? { warning: highlightWarning } : {}),
       };
     },
   },
@@ -247,17 +307,65 @@ export const teacherTools: ToolDef[] = [
     name: "check_comprehension",
     description:
       "Ask the student a comprehension question to check understanding during a lesson. " +
-      "The question appears as an interactive chip in the Teacher UI; the student's answer " +
-      "is fed back into the conversation. Use this every few turns and after explaining a key concept.",
+      "The question appears as an interactive card in the Teacher UI; the answer is graded " +
+      "automatically and fed back to you with the verdict. Use this after explaining a key concept. " +
+      "Always pass expectedConcept so mastery tracking works.",
     clientAction: true,
     parameters: [
       { name: "question", type: "string", description: "The comprehension question to ask", required: true },
-      { name: "expectedConcept", type: "string", description: "The concept this question tests (for logging)" },
+      { name: "expectedConcept", type: "string", description: "The concept this question tests (used for mastery tracking)" },
+      {
+        name: "options",
+        type: "array",
+        description: "Optional 2-4 multiple-choice options (omit for an open question)",
+        items: { type: "string" },
+      },
     ],
     handler: async (args) => ({
       action: "check_comprehension",
       question: String(args.question ?? ""),
       expectedConcept: args.expectedConcept ? String(args.expectedConcept) : undefined,
+      options: Array.isArray(args.options)
+        ? (args.options as unknown[]).map((o) => String(o)).filter(Boolean).slice(0, 4)
+        : undefined,
+    }),
+  },
+  {
+    name: "mark_concept_covered",
+    description:
+      "Record that you have finished explaining a concept, so the lesson agenda and the " +
+      "student's progress indicator stay in sync. Call it right after the explanation.",
+    clientAction: true,
+    parameters: [
+      { name: "concept", type: "string", description: "The concept just taught (short label)", required: true },
+    ],
+    handler: async (args) => ({
+      action: "mark_concept_covered",
+      concept: String(args.concept ?? "").slice(0, 120),
+    }),
+  },
+  {
+    name: "finish_lesson",
+    description:
+      "Wrap up the lesson: shows the student a recap card with what they mastered and what " +
+      "still needs review, plus export options. Call this when the objectives are covered " +
+      "or the student asks to stop.",
+    clientAction: true,
+    parameters: [
+      { name: "recap", type: "string", description: "2-4 sentence recap of the lesson", required: true },
+      {
+        name: "needsReview",
+        type: "array",
+        description: "Concepts the student should review later",
+        items: { type: "string" },
+      },
+    ],
+    handler: async (args) => ({
+      action: "finish_lesson",
+      recap: String(args.recap ?? "").slice(0, 2000),
+      needsReview: Array.isArray(args.needsReview)
+        ? (args.needsReview as unknown[]).map((c) => String(c)).filter(Boolean).slice(0, 10)
+        : undefined,
     }),
   },
 ];

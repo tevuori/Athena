@@ -116,6 +116,7 @@ export function useCodemirrorShowControl(
   const viewRef = useRef<EditorView | null>(null);
   const lastSeq = useRef(0);
   const commands = useShowControl((s) => s.commands);
+  const reportResult = useShowControl((s) => s.reportResult);
 
   const onCreateEditor = useCallback((view: EditorView) => {
     viewRef.current = view;
@@ -130,7 +131,10 @@ export function useCodemirrorShowControl(
     if (!cmd || cmd.seq === lastSeq.current) return;
     lastSeq.current = cmd.seq;
     const view = viewRef.current;
-    if (!view) return;
+    if (!view) {
+      reportResult(winId, cmd.seq, cmd.kind, false, "not-loaded");
+      return;
+    }
 
     switch (cmd.kind) {
       case "scroll_to": {
@@ -138,6 +142,7 @@ export function useCodemirrorShowControl(
         if (range) {
           scrollRangeIntoView(view, range.from, range.to);
         }
+        reportResult(winId, cmd.seq, cmd.kind, Boolean(range), range ? undefined : "no-match");
         break;
       }
       case "highlight": {
@@ -148,17 +153,19 @@ export function useCodemirrorShowControl(
           });
           scrollRangeIntoView(view, range.from, range.to);
         }
+        reportResult(winId, cmd.seq, cmd.kind, Boolean(range), range ? undefined : "no-match");
         break;
       }
       case "clear_highlight": {
         view.dispatch({ effects: setHighlightEffect.of(null) });
+        reportResult(winId, cmd.seq, cmd.kind, true);
         break;
       }
       default:
         // focus / close handled by the window store, not here.
         break;
     }
-  }, [winId, commands]);
+  }, [winId, commands, reportResult]);
 
   return { extensions, onCreateEditor };
 }
