@@ -529,6 +529,7 @@ export default function BrowserApp({ win }: { win: WindowInstance }) {
 
   const showCommands = useShowControl((s) => s.commands);
   const removeShowWindow = useShowControl((s) => s.removeWindow);
+  const reportShowResult = useShowControl((s) => s.reportResult);
   const lastShowSeq = useRef(0);
   const showCmd = showCommands[win.id];
   useEffect(() => {
@@ -546,11 +547,17 @@ export default function BrowserApp({ win }: { win: WindowInstance }) {
       return;
     }
     const iframe = iframeRef.current;
-    if (!iframe || !iframe.contentWindow) return;
+    if (!iframe || !iframe.contentWindow) {
+      reportShowResult(win.id, showCmd.seq, showCmd.kind, false, "not-loaded");
+      return;
+    }
     if (showCmd.kind === "scroll_to" || showCmd.kind === "highlight" || showCmd.kind === "clear_highlight") {
+      // The injected teacher script replies with __athenaTeacherShowResult,
+      // echoing this seq, so the Teacher learns whether the text was found.
       iframe.contentWindow.postMessage(
         {
           __athenaTeacherShow: true,
+          id: showCmd.seq,
           kind: showCmd.kind,
           text: showCmd.text,
           selector: showCmd.selector,
@@ -559,10 +566,36 @@ export default function BrowserApp({ win }: { win: WindowInstance }) {
         "*"
       );
     }
-  }, [showCmd]);
+  }, [showCmd, win.id, reportShowResult]);
+
+  // Relay the injected script's show results into the show-control store.
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      const data = e.data;
+      if (!data || typeof data !== "object" || !data.__athenaTeacherShowResult) return;
+      reportShowResult(
+        win.id,
+        Number(data.id) || 0,
+        (data.kind as "highlight" | "scroll_to" | "clear_highlight") ?? "highlight",
+        Boolean(data.ok),
+        data.ok ? undefined : "no-match"
+      );
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, [win.id, reportShowResult]);
   useEffect(() => {
     return () => { if (win.id) removeShowWindow(win.id); };
   }, [win.id, removeShowWindow]);
+
+  // A page that refuses to embed (X-Frame-Options / CSP) or never rendered can
+  // never be highlighted — tell the Teacher so it quotes the cached text.
+  const blockedFromEmbedding = activeTab?.embeddable === false || activeTab?.renderFailed === true;
+  useEffect(() => {
+    if (blockedFromEmbedding) {
+      reportShowResult(win.id, 0, "highlight", false, "blocked-by-cors");
+    }
+  }, [blockedFromEmbedding, win.id, reportShowResult]);
 
   // ===== Loading + fail timeout =====
 

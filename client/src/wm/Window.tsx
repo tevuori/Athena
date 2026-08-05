@@ -2,6 +2,7 @@ import { useRef, useCallback, useState, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { Minus, Square, X, Copy } from "lucide-react";
 import { useWindows, type WindowInstance, type SnapZone } from "../store/windows";
+import { useShowControl } from "../store/showControl";
 import ContextMenu, { type MenuItem } from "../shell/ContextMenu";
 
 interface Props {
@@ -45,6 +46,8 @@ function detectSnapZone(clientX: number, clientY: number): SnapZone {
 export default function Window({ win, children }: Props) {
   const { focus, close, minimize, toggleMaximize, snap, setRect } = useWindows();
   const workspaces = useWindows((s) => s.workspaces);
+  // Teach Me: the source the tutor's voice is currently anchored to glows.
+  const speaking = useShowControl((s) => s.speakingWindowId) === win.id;
   const moveWindowToWorkspace = useWindows((s) => s.moveWindowToWorkspace);
   const dragState = useRef<{
     mode: DragMode;
@@ -200,7 +203,9 @@ export default function Window({ win, children }: Props) {
         ease: win.closing ? "easeIn" : "easeOut",
       }}
       onPointerDown={() => focus(win.id)}
-      className="absolute flex flex-col overflow-hidden rounded-lg border border-edge bg-surface shadow-window"
+      className={`absolute flex flex-col overflow-hidden rounded-lg border bg-surface shadow-window ${
+        speaking ? "border-accent/60 ring-2 ring-accent/40" : "border-edge"
+      }`}
       style={{
         left: win.rect.x,
         top: win.rect.y,

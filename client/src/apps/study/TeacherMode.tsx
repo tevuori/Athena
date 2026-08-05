@@ -5,40 +5,40 @@
 // interactively.
 //
 // Architecture:
-//  - Session CRUD + SSE streaming via services/teacher.ts (mirrors athena.ts)
-//  - Server uses the teacher system prompt + ALL_TOOLS (incl. teacher tools)
-//  - client_action events are dispatched HERE (not in AthenaApp) via a
-//    dedicated teacher dispatcher that handles show_source / show_command /
-//    focus_source / close_source / check_comprehension
+//  - All non-visual session logic lives in useTeacherSession (shared with the
+//    phone surface, MobileTeach): streaming, tool chips, real comprehension
+//    assessment, mastery, lesson plan, exports.
+//  - This file owns the DESKTOP presentation: floating source windows,
+//    speech-synced highlighting, the session settings popover and the agenda.
 //  - Source-history is tracked in local state and sent back to the server on
-//    each turn so Athena can resolve "go back to the first file"
+//    each turn so Athena can resolve "go back to the first file".
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, lazy, Suspense } from "react";
 import {
   Sparkles, Send, Square, Plus, Trash2,
-  ChevronDown, GraduationCap, MessageSquare, BookOpen, Check,
+  ChevronDown, GraduationCap, MessageSquare, Check,
   FileText, File as FileIcon, Link2, ClipboardPaste,
-  Volume2, VolumeX, Mic, MicOff,
-  PanelLeftClose, PanelLeftOpen,
+  Volume2, VolumeX, Mic, MicOff, Pause, Play,
+  PanelLeftClose, PanelLeftOpen, Settings2, X, AlertTriangle,
+  ArrowUp, ArrowDown, Pencil, RotateCcw,
 } from "lucide-react";
-import {
-  teacherApi,
-  streamTeacherTurn,
-  type TeacherSession,
-  type TeacherMessage,
-  type TeacherSourceHistoryEntry,
-  type TeacherSessionState,
-  type TeacherChatHandle,
-} from "../../services/teacher";
-import { studySourcesApi, type StudySource } from "../../services/study-sources";
+import type { StudentLevel, TeachingStyle } from "../../services/teacher";
+import { type StudySource } from "../../services/study-sources";
 import WorkspaceSourceSelector from "./WorkspaceSourceSelector";
 import HighlightableMarkdown from "./HighlightableMarkdown";
 import { ActionButton, ErrorBanner, Loading } from "./ui";
 import { useWindows } from "../../store/windows";
-import { useShowControl } from "../../store/showControl";
+import { useShowControl, type ShowResult } from "../../store/showControl";
+import { useFormFactor } from "../../store/formfactor";
 import { useTeacherTts } from "./useTeacherTts";
+import { useTeacherSession } from "./useTeacherSession";
+import { prepareSpeech, segmentAtOffset, type SpeechSegment } from "./teacherSpeech";
+import { LessonAgenda, ToolChipRow, ComprehensionCard, PaceFeedbackRow, ExportMenu } from "./teachPanels";
+import TeachErrorBoundary from "./TeachErrorBoundary";
 import { isSpeechRecognitionSupported, createTranscriber, type SpeechTranscriber } from "../../services/speech";
-import type { AthenaClientAction, AthenaToolEvent, AthenaWindowState } from "../../services/athena";
+import type { AthenaClientAction, AthenaWindowState } from "../../services/athena";
+
+const MobileTeach = lazy(() => import("../../mobile/MobileTeach"));
 
 const KIND_ICON: Record<string, typeof FileText> = {
   note: FileText,
@@ -52,6 +52,15 @@ const APP_ICONS: Record<string, string> = {
   notes: "StickyNote", editor: "Code", viewer: "Image", browser: "Globe",
 };
 
+/** Why a source could not be shown, in words a student understands. */
+const SHOW_FAILURE_TEXT: Record<string, string> = {
+  "no-match": "the passage wasn't found in the open source",
+  "not-loaded": "the source hadn't finished loading",
+  "blocked-by-cors": "the site refuses to be embedded",
+  "file-not-found": "the file is missing",
+  "unsupported-type": "this file type can't be highlighted",
+};
+
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const m = Math.floor(diff / 60000);
@@ -62,48 +71,46 @@ function timeAgo(iso: string): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-interface ComprehensionCheck {
-  id: string;
-  question: string;
-  expectedConcept?: string;
-  answered: boolean;
-  answer?: string;
-}
-
 interface Props {
   initialSessionId?: string | null;
   language?: "en" | "cs";
 }
 
-export default function TeacherMode({ initialSessionId, language = "en" }: Props) {
-  const [sessions, setSessions] = useState<TeacherSession[]>([]);
-  const [sessionId, setSessionId] = useState<string | null>(initialSessionId ?? null);
-  const [session, setSession] = useState<TeacherSession | null>(null);
-  const [messages, setMessages] = useState<TeacherMessage[]>([]);
-  const [input, setInput] = useState("");
-  const [streaming, setStreaming] = useState(false);
-  const [streamText, setStreamText] = useState("");
-  const [error, setError] = useState("");
-  const [loadingSession, setLoadingSession] = useState(false);
+export default function TeacherMode(props: Props) {
+  // Phones get the single-column, voice-first surface — including for deep
+  // links opened by Athena's tools.
+  const phone = useFormFactor((s) => s.mode) === "phone";
+  if (phone) {
+    return (
+      <Suspense fallback={<Loading label="Loading Teach Me…" />}>
+        <MobileTeach initialSessionId={props.initialSessionId ?? null} language={props.language ?? "en"} />
+      </Suspense>
+    );
+  }
+  return (
+    <TeachErrorBoundary>
+      <DesktopTeacher {...props} />
+    </TeachErrorBoundary>
+  );
+}
 
-  // Source library + selection (for creating a new session)
-  const [library, setLibrary] = useState<StudySource[]>([]);
+function DesktopTeacher({ initialSessionId, language = "en" }: Props) {
+  const [input, setInput] = useState("");
   const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(new Set());
   const [showSourcePanel, setShowSourcePanel] = useState(true);
-  const [studentLevel, setStudentLevel] = useState<"beginner" | "intermediate" | "advanced">("intermediate");
-
-  // Teacher-specific state
-  const [sourceHistory, setSourceHistory] = useState<TeacherSourceHistoryEntry[]>([]);
-  const [comprehensionChecks, setComprehensionChecks] = useState<ComprehensionCheck[]>([]);
-  const [comprehensionLog, setComprehensionLog] = useState<{ concept: string; passed: boolean }[]>([]);
+  const [studentLevel, setStudentLevel] = useState<StudentLevel>("intermediate");
+  const [teachingStyle, setTeachingStyle] = useState<TeachingStyle>("explain");
+  const [withPlan, setWithPlan] = useState(true);
   const [listOpen, setListOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [titleDraft, setTitleDraft] = useState<string | null>(null);
+  const [showIssue, setShowIssue] = useState<string>("");
 
   // Voice: TTS (Athena speaks) + STT (student speaks)
   const [autoSpeak, setAutoSpeak] = useState(false);
   const [listening, setListening] = useState(false);
   const [interimText, setInterimText] = useState("");
-  const tts = useTeacherTts({ language });
   const transcriberRef = useRef<SpeechTranscriber | null>(null);
   const sttSupported = isSpeechRecognitionSupported();
 
@@ -114,106 +121,14 @@ export default function TeacherMode({ initialSessionId, language = "en" }: Props
   const windows = useWindows((s) => s.windows);
   const focusedId = useWindows((s) => s.focusedId);
   const issueShowCommand = useShowControl((s) => s.issueCommand);
+  const showResults = useShowControl((s) => s.results);
+  const setSpeakingWindow = useShowControl((s) => s.setSpeakingWindow);
 
-  const handleRef = useRef<TeacherChatHandle | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const windowsRef = useRef(windows);
   windowsRef.current = windows;
-  const streamTextRef = useRef("");
   const autoSpeakRef = useRef(autoSpeak);
   autoSpeakRef.current = autoSpeak;
-  const ttsRef = useRef(tts);
-  ttsRef.current = tts;
-
-  const selectedSources = [...selectedSourceIds]
-    .map((id) => library.find((s) => s.id === id))
-    .filter((s): s is StudySource => s !== undefined);
-
-  // ----- session + library loading -----
-
-  const refreshLists = useCallback(async () => {
-    const [s, lib] = await Promise.all([
-      teacherApi.list().then((r) => r.sessions).catch(() => [] as TeacherSession[]),
-      studySourcesApi.list().then((r) => r.sources).catch(() => [] as StudySource[]),
-    ]);
-    setSessions(s);
-    setLibrary(lib);
-  }, []);
-
-  useEffect(() => { void refreshLists(); }, [refreshLists]);
-
-  const loadSession = useCallback(async (id: string) => {
-    setLoadingSession(true);
-    setError("");
-    try {
-      const { session: loaded } = await teacherApi.get(id);
-      setSession(loaded);
-      setSessionId(loaded.id);
-      setMessages(loaded.messages ?? []);
-      setSourceHistory(loaded.state?.sourceHistory ?? []);
-      setComprehensionLog(loaded.state?.comprehensionLog ?? []);
-      const need = loaded.sourceIds.filter((sid) => !library.some((s) => s.id === sid));
-      let extra: StudySource[] = [];
-      if (need.length > 0) {
-        const fetched = await Promise.all(need.map((sid) => studySourcesApi.get(sid).catch(() => null)));
-        extra = fetched.filter((x): x is StudySource => x !== null);
-      }
-      setLibrary((prev) => [...prev, ...extra.filter((e) => !prev.some((p) => p.id === e.id))]);
-      setSelectedSourceIds(new Set(loaded.sourceIds));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load session");
-    } finally {
-      setLoadingSession(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [library]);
-
-  useEffect(() => {
-    if (initialSessionId) void loadSession(initialSessionId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialSessionId]);
-
-  const startNewSession = useCallback(async () => {
-    if (selectedSourceIds.size === 0) {
-      setError("Select at least one source to start a Teach Me session.");
-      return;
-    }
-    setError("");
-    setLoadingSession(true);
-    try {
-      const { session: created } = await teacherApi.create({
-        sourceIds: [...selectedSourceIds],
-        studentLevel,
-      });
-      setSession(created);
-      setSessionId(created.id);
-      setMessages([]);
-      setSourceHistory([]);
-      setComprehensionChecks([]);
-      void refreshLists();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to create session");
-    } finally {
-      setLoadingSession(false);
-    }
-  }, [selectedSourceIds, studentLevel, refreshLists]);
-
-  const deleteSession = useCallback(async (id: string) => {
-    try {
-      await teacherApi.delete(id);
-      if (sessionId === id) {
-        setSession(null);
-        setSessionId(null);
-        setMessages([]);
-        setSourceHistory([]);
-      }
-      void refreshLists();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to delete session");
-    }
-  }, [sessionId, refreshLists]);
-
-  // ----- teacher client_action dispatcher -----
 
   /** Build an AthenaWindowState[] snapshot for the server (so tools like
    *  list_open_windows work during a teacher turn). */
@@ -237,51 +152,69 @@ export default function TeacherMode({ initialSessionId, language = "en" }: Props
     return w?.id ?? null;
   }, []);
 
-  /** Dispatch a teacher client_action (show_source, show_command, etc.). */
-  const dispatchTeacherAction = useCallback((action: AthenaClientAction) => {
+  /** Issue a show-control highlight/scroll command from a show_source payload. */
+  const issueShowForHighlight = useCallback((winId: string, highlight: Record<string, unknown> | undefined) => {
+    if (!highlight) {
+      issueShowCommand(winId, "scroll_to");
+      return;
+    }
+    if (typeof highlight.text === "string" && highlight.text) {
+      issueShowCommand(winId, "highlight", { text: highlight.text });
+    } else if (typeof highlight.line === "number") {
+      issueShowCommand(winId, "highlight", {
+        lineStart: highlight.line,
+        lineEnd: typeof highlight.lineEnd === "number" ? highlight.lineEnd : highlight.line,
+      });
+    } else {
+      issueShowCommand(winId, "scroll_to");
+    }
+  }, [issueShowCommand]);
+
+  // ----- source-window client actions (desktop-specific) -----
+
+  const sessionRef = useRef<ReturnType<typeof useTeacherSession> | null>(null);
+
+  const dispatchSourceAction = useCallback((action: AthenaClientAction) => {
     const p = action.payload as Record<string, any>;
-    const act = p.action as string;
+    const act = String(p.action ?? "");
+    const setSourceHistory = sessionRef.current?.setSourceHistory;
     switch (act) {
       case "show_source": {
-        // Open the source app, then issue a show-control command to highlight.
-        const appId = p.appId as string;
+        const appId = String(p.appId ?? "viewer");
         const openPayload = p.openPayload as Record<string, unknown> | undefined;
         const sourceRef = String(p.sourceRef ?? "");
         const existing = findSourceWindow(sourceRef);
-        let winId = existing;
-        if (!winId) {
+        if (!existing) {
           openWindow({
             appId: appId as any,
             title: String(p.title ?? "Source"),
             icon: APP_ICONS[appId] ?? "BookOpen",
             payload: openPayload,
           });
-          // The new window id isn't known synchronously; we'll issue the
-          // show command on next tick by matching the payload.
+          // The new window id isn't known synchronously; issue the show command
+          // on the next tick by matching the payload.
           setTimeout(() => {
             const newWinId = findSourceWindow(sourceRef);
-            if (newWinId) {
-              issueShowForHighlight(newWinId, p.highlight);
-              // Track in source history.
-              setSourceHistory((prev) => {
-                if (prev.some((h) => h.windowId === newWinId)) return prev;
-                return [...prev, {
-                  windowId: newWinId,
-                  index: prev.length + 1,
-                  name: String(p.title ?? "Source"),
-                  kind: String(p.sourceKind ?? ""),
-                  refId: sourceRef,
-                  lastHighlight: p.highlight?.text as string | undefined,
-                }];
-              });
-            }
+            if (!newWinId) return;
+            issueShowForHighlight(newWinId, p.highlight);
+            setSourceHistory?.((prev) => {
+              if (prev.some((h) => h.windowId === newWinId)) return prev;
+              return [...prev, {
+                windowId: newWinId,
+                index: prev.length + 1,
+                name: String(p.title ?? "Source"),
+                kind: String(p.sourceKind ?? ""),
+                refId: sourceRef,
+                lastHighlight: p.highlight?.text as string | undefined,
+              }];
+            });
           }, 200);
         } else {
-          focusWindow(winId);
-          if (windowsRef.current.find((w) => w.id === winId)?.minimized) minimizeWindow(winId);
-          issueShowForHighlight(winId, p.highlight);
-          setSourceHistory((prev) =>
-            prev.map((h) => h.windowId === winId ? { ...h, lastHighlight: p.highlight?.text as string | undefined } : h)
+          focusWindow(existing);
+          if (windowsRef.current.find((w) => w.id === existing)?.minimized) minimizeWindow(existing);
+          issueShowForHighlight(existing, p.highlight);
+          setSourceHistory?.((prev) =>
+            prev.map((h) => (h.windowId === existing ? { ...h, lastHighlight: p.highlight?.text as string | undefined } : h))
           );
         }
         break;
@@ -292,48 +225,31 @@ export default function TeacherMode({ initialSessionId, language = "en" }: Props
         if (kind === "clear_highlight") {
           issueShowCommand(winId, "clear_highlight");
         } else if (kind === "highlight") {
-          issueShowCommand(winId, "highlight", {
-            text: p.text,
-            lineStart: p.lineStart,
-            lineEnd: p.lineEnd,
-          });
+          issueShowCommand(winId, "highlight", { text: p.text, lineStart: p.lineStart, lineEnd: p.lineEnd });
         } else {
-          issueShowCommand(winId, "scroll_to", {
-            text: p.text,
-            line: p.line,
-          });
+          issueShowCommand(winId, "scroll_to", { text: p.text, line: p.line });
         }
         if (kind === "highlight" && p.text) {
-          setSourceHistory((prev) =>
-            prev.map((h) => h.windowId === winId ? { ...h, lastHighlight: p.text as string } : h)
+          setSourceHistory?.((prev) =>
+            prev.map((h) => (h.windowId === winId ? { ...h, lastHighlight: String(p.text) } : h))
           );
         }
         break;
       }
       case "focus_source": {
-        focusWindow(String(p.windowId ?? ""));
-        const w = windowsRef.current.find((x) => x.id === p.windowId);
+        const winId = String(p.windowId ?? "");
+        focusWindow(winId);
+        const w = windowsRef.current.find((x) => x.id === winId);
         if (w?.minimized) minimizeWindow(w.id);
         break;
       }
       case "close_source": {
         closeWindow(String(p.windowId ?? ""));
-        setSourceHistory((prev) => prev.filter((h) => h.windowId !== p.windowId));
+        setSourceHistory?.((prev) => prev.filter((h) => h.windowId !== p.windowId));
         break;
       }
-      case "check_comprehension": {
-        const id = `comp-${Date.now()}`;
-        setComprehensionChecks((prev) => [...prev, {
-          id,
-          question: String(p.question ?? ""),
-          expectedConcept: p.expectedConcept,
-          answered: false,
-        }]);
-        break;
-      }
-      default:
-        // Other client_actions (open_app, etc.) — pass through to a basic
-        // open handler so non-teacher tools still work.
+      default: {
+        // Other client_actions (open_app, etc.) — keep non-teacher tools working.
         if (act === "open_app" && p.appId) {
           openWindow({
             appId: p.appId as any,
@@ -343,81 +259,109 @@ export default function TeacherMode({ initialSessionId, language = "en" }: Props
           });
         }
         break;
+      }
     }
-  }, [openWindow, closeWindow, focusWindow, minimizeWindow, findSourceWindow, issueShowCommand]);
+  }, [openWindow, closeWindow, focusWindow, minimizeWindow, findSourceWindow, issueShowCommand, issueShowForHighlight]);
 
-  /** Issue a show-control highlight/scroll command from a show_source highlight payload. */
-  function issueShowForHighlight(winId: string, highlight: any) {
-    if (!highlight) {
-      issueShowCommand(winId, "scroll_to");
+  const teach = useTeacherSession({
+    language,
+    initialSessionId,
+    dispatchSourceAction,
+    windowSnapshot,
+  });
+  sessionRef.current = teach;
+  const {
+    sessions, session, sessionId, messages, streaming, streamText, error, loadingSession,
+    teachState, sourceHistory, comprehensionChecks, toolChips, planning,
+    exporting, exportResult, setExportResult, exportLesson, generatePlan,
+    loadSession, startNewSession, deleteSession, resetSession, renameSession,
+    setSessionSources, updateTeachState, setPaceFeedback,
+    answerComprehension, send, stop, retry, canRetry, setLibrary, setOnTurnDone,
+    attachedSources, setError,
+  } = teach;
+
+  // ----- speech-synced source highlighting -----
+
+  const segmentsRef = useRef<SpeechSegment[]>([]);
+  const spokenSegRef = useRef<SpeechSegment | null>(null);
+  const sourceHistoryRef = useRef(sourceHistory);
+  sourceHistoryRef.current = sourceHistory;
+
+  const onWordBoundary = useCallback((charStart: number) => {
+    const seg = segmentAtOffset(segmentsRef.current, charStart);
+    if (!seg || seg === spokenSegRef.current) return;
+    const prev = spokenSegRef.current;
+    spokenSegRef.current = seg;
+    const cited = seg.citations
+      .map((n) => sourceHistoryRef.current.find((h) => h.index === n))
+      .find((h) => h !== undefined);
+    if (cited) {
+      setSpeakingWindow(cited.windowId);
+      // Highlight the passage the sentence quotes; without a quote the glow
+      // alone tells the student which source is being talked about.
+      if (seg.quote) issueShowCommand(cited.windowId, "highlight", { text: seg.quote });
       return;
     }
-    if (highlight.text) {
-      issueShowCommand(winId, "highlight", { text: highlight.text });
-    } else if (typeof highlight.line === "number") {
-      issueShowCommand(winId, "highlight", {
-        lineStart: highlight.line,
-        lineEnd: typeof highlight.lineEnd === "number" ? highlight.lineEnd : highlight.line,
-      });
-    } else {
-      issueShowCommand(winId, "scroll_to");
+    setSpeakingWindow(null);
+    // Only clear once, when leaving a source-bound sentence.
+    if (prev && prev.citations.length > 0) {
+      for (const h of sourceHistoryRef.current) issueShowCommand(h.windowId, "clear_highlight");
     }
-  }
+  }, [issueShowCommand, setSpeakingWindow]);
 
-  // ----- streaming a teacher turn -----
+  const tts = useTeacherTts({ language, onWordBoundary });
+  const ttsRef = useRef(tts);
+  ttsRef.current = tts;
 
-  const send = useCallback((text: string) => {
-    if (!sessionId || !text.trim() || streaming) return;
-    setError("");
-    setInput("");
-    setStreaming(true);
-    setStreamText("");
-    streamTextRef.current = "";
-    setComprehensionChecks([]);
-
-    const userMsg: TeacherMessage = { role: "user", content: text, timestamp: new Date().toISOString() };
-    setMessages((prev) => [...prev, userMsg]);
-
-    const state: TeacherSessionState = {
-      studentLevel,
-      sourceHistory,
-      coveredConcepts: [],
-      comprehensionLog,
-    };
-
-    handleRef.current = streamTeacherTurn(
-      sessionId,
-      text,
-      {
-        onContent: (t) => {
-          streamTextRef.current += t;
-          setStreamText((prev) => prev + t);
-        },
-        onTool: (ev: AthenaToolEvent) => { /* could render tool chips */ },
-        onClientAction: (action) => dispatchTeacherAction(action),
-        onError: (msg) => { setError(msg); setStreaming(false); },
-        onDone: () => {
-          setStreaming(false);
-          const finalText = streamTextRef.current;
-          setStreamText("");
-          // Reload session to pick up persisted assistant message.
-          void loadSession(sessionId);
-          // Auto-speak the assistant's response if enabled.
-          // Use refs so we always have the latest autoSpeak + tts values,
-          // even if the send closure was created before a toggle/provider change.
-          if (autoSpeakRef.current && finalText.trim()) {
-            void ttsRef.current.speak(finalText);
-          }
-        },
-      },
-      { windows: windowSnapshot(), sourceHistory, state, language }
-    );
-  }, [sessionId, streaming, studentLevel, sourceHistory, language, dispatchTeacherAction, windowSnapshot, loadSession, comprehensionLog]);
-
-  const stop = useCallback(() => {
-    handleRef.current?.abort();
-    setStreaming(false);
+  /** Speak an assistant message, pre-mapping its sentences to the sources. */
+  const speakMessage = useCallback((text: string, id: string) => {
+    segmentsRef.current = prepareSpeech(text).segments;
+    spokenSegRef.current = null;
+    void ttsRef.current.speak(text, id);
   }, []);
+
+  // Auto-speak finished turns.
+  useEffect(() => {
+    setOnTurnDone((text) => {
+      if (autoSpeakRef.current && text.trim()) speakMessage(text, "latest");
+    });
+    return () => setOnTurnDone(null);
+  }, [setOnTurnDone, speakMessage]);
+
+  // Drop the "currently spoken" glow when playback ends.
+  useEffect(() => {
+    if (!tts.playing) {
+      setSpeakingWindow(null);
+      spokenSegRef.current = null;
+    }
+  }, [tts.playing, setSpeakingWindow]);
+
+  // ----- source-show failures -----
+
+  // A failed highlight is actionable: tell the student, and tell Athena (via
+  // state.sourceIssues) so the next turn quotes the passage inline instead.
+  const seenResultRef = useRef<Record<string, number>>({});
+  useEffect(() => {
+    for (const [winId, res] of Object.entries(showResults as Record<string, ShowResult>)) {
+      if (seenResultRef.current[winId] === res.seq || res.ok) {
+        seenResultRef.current[winId] = res.seq;
+        continue;
+      }
+      seenResultRef.current[winId] = res.seq;
+      const entry = sourceHistoryRef.current.find((h) => h.windowId === winId);
+      const reason = res.reason ?? "no-match";
+      setShowIssue(
+        `Couldn't highlight in ${entry?.name ?? "the source"} — ${SHOW_FAILURE_TEXT[reason] ?? reason}. Athena will quote the passage instead.`
+      );
+      void updateTeachState({
+        sourceIssues: [
+          ...(teachState.sourceIssues ?? []).slice(-4),
+          { name: entry?.name, refId: entry?.refId, reason, at: new Date().toISOString() },
+        ],
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showResults]);
 
   // ----- STT (student voice input) -----
 
@@ -454,39 +398,27 @@ export default function TeacherMode({ initialSessionId, language = "en" }: Props
 
   // Auto-scroll to bottom on new content.
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages, streamText]);
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [messages, streamText, comprehensionChecks]);
 
-  // ----- comprehension check handlers -----
+  // Keep the pre-session selection in sync with the loaded session.
+  useEffect(() => {
+    if (session) setSelectedSourceIds(new Set(session.sourceIds));
+  }, [session]);
 
-  const answerComprehension = useCallback((id: string, answer: string) => {
-    setComprehensionChecks((prev) => prev.map((c) => c.id === id ? { ...c, answered: true, answer } : c));
-    // Log the comprehension check outcome (the teacher will assess quality
-    // in the next turn and can adjust its teaching accordingly).
-    const check = comprehensionChecks.find((c) => c.id === id);
-    if (check?.expectedConcept) {
-      setComprehensionLog((prev) => [...prev, { concept: check.expectedConcept!, passed: true }]);
-    }
-    // Feed the answer back as a user message.
-    if (answer.trim()) send(answer.trim());
-  }, [send, comprehensionChecks]);
-
-  // ----- citation open handler -----
+  // ----- citations -----
 
   const openCitation = useCallback((index: number) => {
     const entry = sourceHistory.find((h) => h.index === index);
     if (!entry) return;
-    // If the source window is already open, just focus it.
     const existing = findSourceWindow(entry.refId);
     if (existing) {
       focusWindow(existing);
       const w = windowsRef.current.find((x) => x.id === existing);
       if (w?.minimized) minimizeWindow(w.id);
+      if (entry.lastHighlight) issueShowCommand(existing, "highlight", { text: entry.lastHighlight });
       return;
     }
-    // Otherwise, open the source in the appropriate app.
     const appId = entry.kind === "note" ? "notes"
       : entry.kind === "url" || entry.kind === "moodle" ? "browser"
       : "viewer";
@@ -500,18 +432,32 @@ export default function TeacherMode({ initialSessionId, language = "en" }: Props
       icon: APP_ICONS[appId] ?? "BookOpen",
       payload: openPayload,
     });
-    // Track in source history (update windowId if re-opened).
     setTimeout(() => {
       const newWinId = findSourceWindow(entry.refId);
       if (newWinId) {
-        setSourceHistory((prev) =>
-          prev.map((h) => h.index === index ? { ...h, windowId: newWinId } : h)
-        );
+        teach.setSourceHistory((prev) => prev.map((h) => (h.index === index ? { ...h, windowId: newWinId } : h)));
       }
     }, 200);
-  }, [sourceHistory, findSourceWindow, focusWindow, minimizeWindow, openWindow]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourceHistory, findSourceWindow, focusWindow, minimizeWindow, openWindow, issueShowCommand]);
 
   const citationMeta = sourceHistory.map((h) => ({ index: h.index, name: h.name, kind: h.kind, refId: h.refId }));
+
+  const startSession = () => {
+    void startNewSession({
+      sourceIds: [...selectedSourceIds],
+      studentLevel,
+      teachingStyle,
+      withPlan,
+    });
+  };
+
+  const newSession = () => {
+    resetSession();
+    setSelectedSourceIds(new Set());
+    setShowSourcePanel(true);
+    setSettingsOpen(false);
+  };
 
   // ----- render -----
 
@@ -528,7 +474,7 @@ export default function TeacherMode({ initialSessionId, language = "en" }: Props
             <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Sessions</span>
             <div className="flex items-center gap-1">
               <button
-                onClick={() => { setSession(null); setSessionId(null); setMessages([]); setSourceHistory([]); setShowSourcePanel(true); }}
+                onClick={newSession}
                 className="flex items-center gap-1 rounded-md border border-edge px-1.5 py-0.5 text-[10px] text-ink-muted hover:bg-surface-2 hover:text-ink"
                 title="New session"
               >
@@ -600,7 +546,7 @@ export default function TeacherMode({ initialSessionId, language = "en" }: Props
             {listOpen && (
               <div className="absolute left-0 top-full z-30 mt-1 max-h-72 w-full overflow-y-auto rounded-lg border border-edge bg-surface py-1 shadow-window">
                 <button
-                  onClick={() => { setListOpen(false); setSession(null); setSessionId(null); setMessages([]); setSourceHistory([]); setShowSourcePanel(true); }}
+                  onClick={() => { setListOpen(false); newSession(); }}
                   className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-accent hover:bg-surface-2"
                 >
                   <Plus size={13} /> New session
@@ -636,16 +582,16 @@ export default function TeacherMode({ initialSessionId, language = "en" }: Props
             {showSourcePanel && (
               <WorkspaceSourceSelector
                 selectedIds={selectedSourceIds}
+                showPreview
                 onToggle={(id) => setSelectedSourceIds((prev) => {
                   const next = new Set(prev);
                   if (next.has(id)) next.delete(id); else next.add(id);
                   return next;
                 })}
-                disabled={false}
                 onSourceAdded={(s) => setLibrary((prev) => [s, ...prev.filter((x) => x.id !== s.id)])}
               />
             )}
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs text-ink-muted">Level:</span>
               {(["beginner", "intermediate", "advanced"] as const).map((lvl) => (
                 <button
@@ -658,14 +604,121 @@ export default function TeacherMode({ initialSessionId, language = "en" }: Props
                   {lvl}
                 </button>
               ))}
-              <ActionButton onClick={() => void startNewSession()} variant="primary">
+              <span className="ml-2 text-xs text-ink-muted">Style:</span>
+              {(["explain", "socratic"] as const).map((st) => (
+                <button
+                  key={st}
+                  onClick={() => setTeachingStyle(st)}
+                  className={`rounded-md px-2 py-1 text-[11px] capitalize transition ${
+                    teachingStyle === st ? "bg-accent/15 text-accent" : "text-ink-muted hover:bg-surface-2 hover:text-ink"
+                  }`}
+                  title={st === "socratic" ? "Athena only asks guiding questions" : "Athena explains, then checks"}
+                >
+                  {st}
+                </button>
+              ))}
+              <label className="flex items-center gap-1 text-[11px] text-ink-muted">
+                <input type="checkbox" checked={withPlan} onChange={(e) => setWithPlan(e.target.checked)} />
+                Plan the lesson
+              </label>
+              <ActionButton onClick={startSession} variant="primary">
                 <Sparkles size={13} /> Start Teaching
               </ActionButton>
             </div>
           </div>
         )}
 
-        {error && <ErrorBanner message={error} />}
+        {/* Session header: title, agenda, settings, export */}
+        {session && (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              {titleDraft === null ? (
+                <>
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">{session.title}</span>
+                  <button
+                    onClick={() => setTitleDraft(session.title)}
+                    className="rounded-md p-1 text-ink-muted hover:bg-surface-2 hover:text-ink"
+                    title="Rename lesson"
+                  >
+                    <Pencil size={12} />
+                  </button>
+                </>
+              ) : (
+                <input
+                  autoFocus
+                  value={titleDraft}
+                  onChange={(e) => setTitleDraft(e.target.value)}
+                  onBlur={() => { void renameSession(titleDraft); setTitleDraft(null); }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") { void renameSession(titleDraft); setTitleDraft(null); }
+                    if (e.key === "Escape") setTitleDraft(null);
+                  }}
+                  className="min-w-0 flex-1 rounded-md border border-edge bg-surface-2 px-2 py-1 text-sm text-ink outline-none focus:border-accent/50"
+                />
+              )}
+              <button
+                onClick={() => setSettingsOpen((v) => !v)}
+                className={`flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] transition ${
+                  settingsOpen ? "border-accent/40 bg-accent/10 text-accent" : "border-edge text-ink-muted hover:bg-surface-2 hover:text-ink"
+                }`}
+              >
+                <Settings2 size={11} /> Lesson settings
+              </button>
+              <ExportMenu
+                onExport={(t) => void exportLesson(t)}
+                exporting={exporting}
+                result={exportResult}
+                onDismissResult={() => setExportResult("")}
+              />
+            </div>
+
+            <LessonAgenda
+              plan={teachState.lessonPlan}
+              covered={teachState.coveredConcepts ?? []}
+              mastery={teachState.mastery ?? {}}
+              followPlan={teachState.followPlan !== false}
+              onToggleFollow={(v) => void updateTeachState({ followPlan: v })}
+              onRegenerate={() => void generatePlan()}
+              planning={planning}
+            />
+
+            {settingsOpen && (
+              <SessionSettings
+                attached={attachedSources}
+                studentLevel={(teachState.studentLevel as StudentLevel) ?? "intermediate"}
+                teachingStyle={(teachState.teachingStyle as TeachingStyle) ?? "explain"}
+                inferredLevel={teachState.inferredLevel}
+                onReorder={(ids) => void setSessionSources(ids)}
+                onLevel={(lvl) => void updateTeachState({ studentLevel: lvl })}
+                onStyle={(st) => void updateTeachState({ teachingStyle: st })}
+                onSourceAdded={(s) => setLibrary((prev) => [s, ...prev.filter((x) => x.id !== s.id)])}
+                onClose={() => setSettingsOpen(false)}
+              />
+            )}
+          </div>
+        )}
+
+        {error && (
+          <div className="flex flex-col gap-1">
+            <ErrorBanner message={error} />
+            {canRetry && (
+              <button
+                onClick={retry}
+                className="flex items-center gap-1 self-start rounded-md border border-edge px-2 py-1 text-[11px] text-ink-muted hover:bg-surface-2 hover:text-ink"
+              >
+                <RotateCcw size={11} /> Retry that turn
+              </button>
+            )}
+          </div>
+        )}
+
+        {showIssue && (
+          <div className="flex items-start gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-amber-300">
+            <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+            <span className="flex-1">{showIssue}</span>
+            <button onClick={() => setShowIssue("")} className="shrink-0 opacity-70 hover:opacity-100"><X size={11} /></button>
+          </div>
+        )}
 
         {/* Messages */}
         <div ref={scrollRef} className="flex flex-1 flex-col gap-3 overflow-y-auto pr-1">
@@ -676,39 +729,60 @@ export default function TeacherMode({ initialSessionId, language = "en" }: Props
               <p className="text-xs">e.g. "Teach me about gradient descent" or "Explain the first chapter"</p>
             </div>
           )}
-          {messages.map((m, i) => (
-            <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-              <div className={`group max-w-[85%] rounded-lg px-3 py-2 text-sm ${
-                m.role === "user"
-                  ? "bg-accent/15 text-ink"
-                  : "bg-surface-2 text-ink"
-              }`}>
-                {m.role === "assistant" ? (
-                  <>
-                    <HighlightableMarkdown
-                      content={m.content}
-                      scope="teacher"
-                      scopeId={sessionId ? `${sessionId}#msg-${i}` : `msg-${i}`}
-                      sourceName={session?.title ? `Teach Me: ${session.title}` : "Teach Me"}
-                      citations={citationMeta}
-                      onOpenCitation={openCitation}
-                    />
-                    {tts.supported && (
-                      <button
-                        onClick={() => void tts.speak(m.content)}
-                        className="mt-1 flex items-center gap-1 text-[10px] text-ink-muted opacity-0 transition hover:text-accent group-hover:opacity-100"
-                        title="Read aloud"
-                      >
-                        <Volume2 size={11} /> Read aloud
-                      </button>
-                    )}
-                  </>
-                ) : (
-                  <p className="whitespace-pre-wrap">{m.content}</p>
-                )}
+          {messages.map((m, i) => {
+            const msgId = `msg-${i}`;
+            const isSpeaking = tts.speakingId === msgId && tts.playing;
+            return (
+              <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                <div className={`group max-w-[85%] rounded-lg px-3 py-2 text-sm ${
+                  m.role === "user" ? "bg-accent/15 text-ink" : "bg-surface-2 text-ink"
+                }`}>
+                  {m.role === "assistant" ? (
+                    <>
+                      <HighlightableMarkdown
+                        content={m.content}
+                        scope="teacher"
+                        scopeId={sessionId ? `${sessionId}#msg-${i}` : msgId}
+                        sourceName={session?.title ? `Teach Me: ${session.title}` : "Teach Me"}
+                        citations={citationMeta}
+                        onOpenCitation={openCitation}
+                      />
+                      {tts.supported && (
+                        <div className={`mt-1 flex items-center gap-1.5 transition-opacity ${isSpeaking ? "" : "opacity-0 group-hover:opacity-100"}`}>
+                          {isSpeaking ? (
+                            <>
+                              <button
+                                onClick={() => (tts.paused ? tts.resume() : tts.pause())}
+                                className="flex items-center gap-1 text-[10px] text-accent hover:opacity-80"
+                              >
+                                {tts.paused ? <Play size={11} /> : <Pause size={11} />} {tts.paused ? "Resume" : "Pause"}
+                              </button>
+                              <button onClick={tts.stop} className="flex items-center gap-1 text-[10px] text-ink-muted hover:text-ink">
+                                <Square size={10} /> Stop
+                              </button>
+                              <span className="h-1 w-20 overflow-hidden rounded-full bg-surface-3">
+                                <span className="block h-full bg-accent transition-all" style={{ width: `${Math.round(tts.progress * 100)}%` }} />
+                              </span>
+                            </>
+                          ) : (
+                            <button
+                              onClick={() => speakMessage(m.content, msgId)}
+                              className="flex items-center gap-1 text-[10px] text-ink-muted hover:text-accent"
+                              title="Read aloud"
+                            >
+                              <Volume2 size={11} /> Read aloud
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <p className="whitespace-pre-wrap">{m.content}</p>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           {streamText && (
             <div className="flex justify-start">
               <div className="max-w-[85%] rounded-lg bg-surface-2 px-3 py-2 text-sm">
@@ -726,18 +800,25 @@ export default function TeacherMode({ initialSessionId, language = "en" }: Props
             </div>
           )}
 
-          {/* Comprehension check chips */}
-          {comprehensionChecks.filter((c) => !c.answered).map((c) => (
-            <ComprehensionChip key={c.id} check={c} onAnswer={(ans) => answerComprehension(c.id, ans)} />
+          <ToolChipRow chips={toolChips} />
+
+          {/* Comprehension checks (graded ones stay visible with their feedback) */}
+          {comprehensionChecks.map((c) => (
+            <ComprehensionCard key={c.id} check={c} onAnswer={(ans) => void answerComprehension(c.id, ans)} />
           ))}
         </div>
 
         {/* Input */}
         <div className="flex flex-col gap-2 border-t border-edge pt-2">
-          {/* Voice controls */}
-          <div className="flex items-center gap-2">
+          {/* Voice + pace controls */}
+          <div className="flex flex-wrap items-center gap-2">
             <button
-              onClick={() => setAutoSpeak((v) => !v)}
+              onClick={() => {
+                setAutoSpeak((v) => {
+                  if (v) tts.stop();
+                  return !v;
+                });
+              }}
               className={`flex items-center gap-1 rounded-md px-2 py-1 text-[11px] transition ${
                 autoSpeak ? "bg-accent/15 text-accent" : "text-ink-muted hover:bg-surface-2 hover:text-ink"
               }`}
@@ -747,19 +828,33 @@ export default function TeacherMode({ initialSessionId, language = "en" }: Props
               Auto-speak ({tts.provider === "server" ? "Voice" : tts.provider === "webspeech" ? "Web Speech" : "off"})
             </button>
             {tts.playing && (
-              <button onClick={tts.stop} className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-ink-muted hover:bg-surface-2 hover:text-ink">
-                <Square size={11} /> Stop voice
-              </button>
+              <>
+                <button
+                  onClick={() => (tts.paused ? tts.resume() : tts.pause())}
+                  className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-ink-muted hover:bg-surface-2 hover:text-ink"
+                >
+                  {tts.paused ? <Play size={11} /> : <Pause size={11} />} {tts.paused ? "Resume" : "Pause"}
+                </button>
+                <button onClick={tts.stop} className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-ink-muted hover:bg-surface-2 hover:text-ink">
+                  <Square size={11} /> Stop voice
+                </button>
+              </>
             )}
+            {session && <PaceFeedbackRow value={teachState.paceFeedback} onChange={setPaceFeedback} />}
           </div>
           <div className="flex items-end gap-2">
             <textarea
               value={listening ? interimText || "Listening…" : input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                setInput(e.target.value);
+                // Typing means the student wants to interject — get out of the way.
+                if (ttsRef.current.playing && !ttsRef.current.paused) ttsRef.current.pause();
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
                   send(input);
+                  setInput("");
                 }
               }}
               placeholder={session ? "Ask Athena to teach you…" : "Select sources and start a session first"}
@@ -785,7 +880,7 @@ export default function TeacherMode({ initialSessionId, language = "en" }: Props
               </button>
             ) : (
               <button
-                onClick={() => send(input)}
+                onClick={() => { send(input); setInput(""); }}
                 disabled={!session || !input.trim()}
                 className="flex items-center gap-1 rounded-lg bg-accent px-3 py-2 text-sm text-white hover:bg-accent/90 disabled:opacity-40"
               >
@@ -808,7 +903,7 @@ export default function TeacherMode({ initialSessionId, language = "en" }: Props
                   className="flex items-center gap-1 rounded-md border border-edge bg-surface-2 px-1.5 py-0.5 text-[10px] text-ink-muted hover:bg-surface-3 hover:text-ink"
                   title={`Focus ${h.name}`}
                 >
-                  <Icon size={10} /> {h.name}
+                  <Icon size={10} /> [{h.index}] {h.name}
                 </button>
               );
             })}
@@ -819,44 +914,139 @@ export default function TeacherMode({ initialSessionId, language = "en" }: Props
   );
 }
 
-// ----- Comprehension check chip -----
+// ----- session settings popover -----
 
-function ComprehensionChip({
-  check,
-  onAnswer,
+function SessionSettings({
+  attached,
+  studentLevel,
+  teachingStyle,
+  inferredLevel,
+  onReorder,
+  onLevel,
+  onStyle,
+  onSourceAdded,
+  onClose,
 }: {
-  check: ComprehensionCheck;
-  onAnswer: (answer: string) => void;
+  attached: StudySource[];
+  studentLevel: StudentLevel;
+  teachingStyle: TeachingStyle;
+  inferredLevel?: string;
+  onReorder: (ids: string[]) => void;
+  onLevel: (lvl: StudentLevel) => void;
+  onStyle: (st: TeachingStyle) => void;
+  onSourceAdded: (s: StudySource) => void;
+  onClose: () => void;
 }) {
-  const [answer, setAnswer] = useState("");
+  const [dragId, setDragId] = useState<string | null>(null);
+  const ids = attached.map((s) => s.id);
+
+  const move = (id: string, delta: number) => {
+    const from = ids.indexOf(id);
+    const to = from + delta;
+    if (from < 0 || to < 0 || to >= ids.length) return;
+    const next = [...ids];
+    next.splice(to, 0, ...next.splice(from, 1));
+    onReorder(next);
+  };
+
+  const dropOn = (targetId: string) => {
+    if (!dragId || dragId === targetId) return;
+    const next = ids.filter((i) => i !== dragId);
+    next.splice(ids.indexOf(targetId), 0, dragId);
+    setDragId(null);
+    onReorder(next);
+  };
+
   return (
-    <div className="flex justify-start">
-      <div className="max-w-[85%] rounded-lg border border-accent/40 bg-accent/10 px-3 py-2.5 text-sm">
-        <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-accent">
-          <BookOpen size={13} /> Comprehension Check
-        </div>
-        <p className="mb-2 text-ink">{check.question}</p>
-        <div className="flex items-end gap-2">
-          <textarea
-            value={answer}
-            onChange={(e) => setAnswer(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                if (answer.trim()) onAnswer(answer.trim());
-              }
-            }}
-            placeholder="Your answer…"
-            rows={1}
-            className="flex-1 resize-none rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink outline-none placeholder:text-ink-muted focus:border-accent/50"
-          />
+    <div className="flex flex-col gap-3 rounded-lg border border-edge bg-surface-2 p-3">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Lesson settings</span>
+        <button onClick={onClose} className="rounded p-0.5 text-ink-muted hover:text-ink"><X size={12} /></button>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <span className="text-[11px] text-ink-muted">
+          Attached sources — drag to set the citation order
+        </span>
+        {attached.length === 0 ? (
+          <p className="text-[11px] text-ink-muted">No sources attached.</p>
+        ) : attached.map((s, i) => {
+          const Icon = KIND_ICON[s.kind] ?? FileText;
+          return (
+            <div
+              key={s.id}
+              draggable
+              onDragStart={() => setDragId(s.id)}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={() => dropOn(s.id)}
+              className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] ${
+                dragId === s.id ? "border-accent/50 bg-accent/10" : "border-edge bg-surface"
+              }`}
+            >
+              <span className="w-4 shrink-0 text-center text-ink-muted">[{i + 1}]</span>
+              <Icon size={11} className="shrink-0 opacity-60" />
+              <span className="flex-1 truncate text-ink">{s.name}</span>
+              <button onClick={() => move(s.id, -1)} disabled={i === 0} className="rounded p-0.5 text-ink-muted hover:text-ink disabled:opacity-30" title="Move up">
+                <ArrowUp size={11} />
+              </button>
+              <button onClick={() => move(s.id, 1)} disabled={i === attached.length - 1} className="rounded p-0.5 text-ink-muted hover:text-ink disabled:opacity-30" title="Move down">
+                <ArrowDown size={11} />
+              </button>
+              <button
+                onClick={() => onReorder(ids.filter((x) => x !== s.id))}
+                className="rounded p-0.5 text-ink-muted hover:text-red-400"
+                title="Remove from lesson"
+              >
+                <Trash2 size={11} />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      <WorkspaceSourceSelector
+        compact
+        showPreview
+        selectedIds={new Set<string>()}
+        attachedIds={new Set(ids)}
+        onToggle={(id) => onReorder([...ids, id])}
+        onSourceAdded={onSourceAdded}
+      />
+
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[11px] text-ink-muted">Level:</span>
+        {(["beginner", "intermediate", "advanced"] as const).map((lvl) => (
           <button
-            onClick={() => answer.trim() && onAnswer(answer.trim())}
-            className="flex items-center gap-1 rounded-md bg-accent px-2 py-1.5 text-xs text-white hover:bg-accent/90"
+            key={lvl}
+            onClick={() => onLevel(lvl)}
+            className={`rounded-md px-2 py-1 text-[11px] capitalize transition ${
+              studentLevel === lvl ? "bg-accent/15 text-accent" : "text-ink-muted hover:bg-surface-3 hover:text-ink"
+            }`}
           >
-            <Check size={12} /> Answer
+            {lvl}
           </button>
-        </div>
+        ))}
+        {inferredLevel && inferredLevel !== studentLevel && (
+          <span className="flex items-center gap-1 text-[10px] text-ink-muted" title="Adapted from your comprehension checks">
+            <Check size={9} /> teaching at {inferredLevel}
+          </span>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[11px] text-ink-muted">Style:</span>
+        {(["explain", "socratic"] as const).map((st) => (
+          <button
+            key={st}
+            onClick={() => onStyle(st)}
+            className={`rounded-md px-2 py-1 text-[11px] capitalize transition ${
+              teachingStyle === st ? "bg-accent/15 text-accent" : "text-ink-muted hover:bg-surface-3 hover:text-ink"
+            }`}
+            title={st === "socratic" ? "Athena only asks guiding questions" : "Athena explains, then checks"}
+          >
+            {st}
+          </button>
+        ))}
       </div>
     </div>
   );
