@@ -53,6 +53,19 @@ interface Props {
   compact?: boolean;
   /** Disabled (e.g. during streaming). */
   disabled?: boolean;
+  /**
+   * Sources already attached to the session: shown as such and not selectable
+   * (used by the Teach Me session settings, where adding is additive).
+   */
+  attachedIds?: Set<string>;
+  /** Show an excerpt + reading-time preview of the last clicked source. */
+  showPreview?: boolean;
+}
+
+/** Rough reading time of a cached source text, in whole minutes (min 1). */
+export function readingTimeMinutes(text: string): number {
+  const words = text.trim().split(/\s+/).filter(Boolean).length;
+  return Math.max(1, Math.round(words / 200));
 }
 
 export default function WorkspaceSourceSelector({
@@ -62,6 +75,8 @@ export default function WorkspaceSourceSelector({
   multi = true,
   compact = false,
   disabled = false,
+  attachedIds,
+  showPreview = false,
 }: Props) {
   const [workspaces, setWorkspaces] = useState<LearningWorkspace[]>([]);
   const [library, setLibrary] = useState<StudySource[]>([]);
@@ -71,6 +86,7 @@ export default function WorkspaceSourceSelector({
   const [addingSource, setAddingSource] = useState(false);
   const [justAdded, setJustAdded] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [previewId, setPreviewId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const [ws, src] = await Promise.all([
@@ -99,7 +115,8 @@ export default function WorkspaceSourceSelector({
   };
 
   const handleToggle = (id: string) => {
-    if (disabled) return;
+    if (disabled || attachedIds?.has(id)) return;
+    if (showPreview) setPreviewId(id);
     if (!multi) {
       // Single-select: clear all others. Parent handles via onToggle.
       // We need a different approach — call onToggle for the new one
@@ -129,12 +146,14 @@ export default function WorkspaceSourceSelector({
 
   const renderSource = (s: StudySource) => {
     const Icon = KIND_ICON[s.kind] ?? FileText;
-    const checked = selectedIds.has(s.id);
+    const attached = attachedIds?.has(s.id) ?? false;
+    const checked = attached || selectedIds.has(s.id);
     return (
       <button
         key={s.id}
         onClick={() => handleToggle(s.id)}
-        disabled={disabled}
+        disabled={disabled || attached}
+        title={attached ? "Already part of this lesson" : s.name}
         className={`flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs transition disabled:opacity-50 ${
           compact ? "" : "ml-4"
         } ${
@@ -148,7 +167,10 @@ export default function WorkspaceSourceSelector({
         </span>
         <Icon size={12} className="shrink-0 opacity-60" />
         <span className="flex-1 truncate">{s.name}</span>
-        <span className="shrink-0 text-[9px] uppercase opacity-50">{s.kind}</span>
+        {showPreview && s.textCache && (
+          <span className="shrink-0 text-[9px] opacity-50">~{readingTimeMinutes(s.textCache)} min</span>
+        )}
+        <span className="shrink-0 text-[9px] uppercase opacity-50">{attached ? "in lesson" : s.kind}</span>
       </button>
     );
   };
@@ -185,6 +207,13 @@ export default function WorkspaceSourceSelector({
       </div>
     );
   };
+
+  const previewSource = previewId ? library.find((s) => s.id === previewId) ?? null : null;
+  // The shortest selected source is the gentlest way into a topic.
+  const selectedSources = library.filter((s) => selectedIds.has(s.id));
+  const suggestedStart = selectedSources.length > 1
+    ? [...selectedSources].sort((a, b) => (a.textCache?.length ?? 0) - (b.textCache?.length ?? 0))[0]
+    : null;
 
   if (loading) {
     return (
@@ -229,6 +258,23 @@ export default function WorkspaceSourceSelector({
               )}
               {unassigned.map(renderSource)}
             </div>
+          )}
+        </div>
+      )}
+
+      {showPreview && previewSource && (
+        <div className="flex flex-col gap-1 rounded-lg border border-edge bg-surface-2 p-2.5">
+          <div className="flex items-center gap-2 text-[11px] font-medium text-ink">
+            <span className="flex-1 truncate">{previewSource.name}</span>
+            {previewSource.textCache && (
+              <span className="shrink-0 text-ink-muted">~{readingTimeMinutes(previewSource.textCache)} min read</span>
+            )}
+          </div>
+          <p className="line-clamp-4 whitespace-pre-wrap text-[11px] leading-relaxed text-ink-muted">
+            {previewSource.textCache?.slice(0, 400) || "No extracted text cached for this source yet."}
+          </p>
+          {suggestedStart && (
+            <p className="text-[10px] text-accent">Suggested starting point: {suggestedStart.name}</p>
           )}
         </div>
       )}

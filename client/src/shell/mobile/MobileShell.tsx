@@ -33,7 +33,11 @@ export default function MobileShell() {
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <section className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden pb-24">
           {tool ? (
-            <MobileToolPage tool={tool} onClose={() => { setTool(null); setRoute("home"); }} />
+            <MobileToolPage
+              tool={tool}
+              onClose={() => { setTool(null); setRoute("home"); }}
+              onOpenTool={(nextTool) => setTool(nextTool)}
+            />
           ) : (
             <>
               {route === "home" && <MobileHome onNavigate={navigate} />}

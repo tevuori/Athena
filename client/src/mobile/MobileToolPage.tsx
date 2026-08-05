@@ -5,6 +5,7 @@ import MobileFlashcards from "./MobileFlashcards";
 import MobileHabits from "./MobileHabits";
 import MobileReminders from "./MobileReminders";
 import MobileStudy from "./MobileStudy";
+import MobileTeach from "./MobileTeach";
 import MobileFocus from "./MobileFocus";
 import MobileFiles from "./MobileFiles";
 import MobileVoice from "./MobileVoice";
@@ -18,12 +19,13 @@ import MobileEditor from "./MobileEditor";
 import MobileMoodle from "./MobileMoodle";
 import { MobileContainer, MobileEmpty, MobileHeader } from "./MobileUi";
 
-const SCREENS: Partial<Record<MobileTool, (props: { onClose: () => void }) => ReactNode>> = {
+const SCREENS: Partial<Record<MobileTool, (props: { onClose: () => void; onOpenTool: (tool: MobileTool) => void }) => ReactNode>> = {
   notes: (props) => <MobileNotes {...props} />,
   flashcards: (props) => <MobileFlashcards {...props} />,
   habits: (props) => <MobileHabits {...props} />,
   reminders: (props) => <MobileReminders {...props} />,
   study: (props) => <MobileStudy {...props} />,
+  teach: (props) => <MobileTeach {...props} />,
   focus: (props) => <MobileFocus {...props} />,
   files: (props) => <MobileFiles {...props} />,
   voice: (props) => <MobileVoice {...props} />,
@@ -37,7 +39,15 @@ const SCREENS: Partial<Record<MobileTool, (props: { onClose: () => void }) => Re
   moodle: (props) => <MobileMoodle {...props} />,
 };
 
-export default function MobileToolPage({ tool, onClose }: { tool: MobileTool; onClose: () => void }) {
+export default function MobileToolPage({
+  tool,
+  onClose,
+  onOpenTool,
+}: {
+  tool: MobileTool;
+  onClose: () => void;
+  onOpenTool: (tool: MobileTool) => void;
+}) {
   const Screen = SCREENS[tool];
   if (!Screen) {
     return (
@@ -47,5 +57,5 @@ export default function MobileToolPage({ tool, onClose }: { tool: MobileTool; on
       </MobileContainer>
     );
   }
-  return <>{Screen({ onClose })}</>;
+  return <>{Screen({ onClose, onOpenTool })}</>;
 }

@@ -39,11 +39,38 @@ export interface ShowCommand {
   selector?: string;
 }
 
+/** Why a show command could not be carried out. */
+export type ShowFailureReason =
+  | "no-match"
+  | "not-loaded"
+  | "blocked-by-cors"
+  | "file-not-found"
+  | "unsupported-type";
+
+/** Outcome of the last show command for a window, reported by the owning app. */
+export interface ShowResult {
+  seq: number;
+  windowId: string;
+  kind: ShowCommandKind;
+  ok: boolean;
+  reason?: ShowFailureReason;
+}
+
 interface ShowControlState {
   /** Pending show command per window id (consumed by the owning app). */
   commands: Record<string, ShowCommand>;
+  /** Last result per window id (reported by the owning app after it acted). */
+  results: Record<string, ShowResult>;
+  /**
+   * Window the teacher's voice is currently anchored to. The window frame
+   * renders a subtle glow so the student's eye follows the narration.
+   */
+  speakingWindowId: string | null;
   /** Issue a command targeting a specific window. */
   issueCommand: (windowId: string, kind: ShowCommandKind, payload?: Partial<Omit<ShowCommand, "seq" | "kind">>) => void;
+  /** Report whether a command succeeded (called by the app that consumed it). */
+  reportResult: (windowId: string, seq: number, kind: ShowCommandKind, ok: boolean, reason?: ShowFailureReason) => void;
+  setSpeakingWindow: (windowId: string | null) => void;
   /** Remove state for a window (on close). */
   removeWindow: (windowId: string) => void;
 }
@@ -52,6 +79,8 @@ let seqCounter = 0;
 
 export const useShowControl = create<ShowControlState>((set) => ({
   commands: {},
+  results: {},
+  speakingWindowId: null,
   issueCommand: (windowId, kind, payload = {}) =>
     set((s) => ({
       commands: {
@@ -59,10 +88,21 @@ export const useShowControl = create<ShowControlState>((set) => ({
         [windowId]: { seq: ++seqCounter, kind, ...payload },
       },
     })),
+  reportResult: (windowId, seq, kind, ok, reason) =>
+    set((s) => ({
+      results: { ...s.results, [windowId]: { seq, windowId, kind, ok, reason } },
+    })),
+  setSpeakingWindow: (windowId) => set({ speakingWindowId: windowId }),
   removeWindow: (windowId) =>
     set((s) => {
       const commands = { ...s.commands };
+      const results = { ...s.results };
       delete commands[windowId];
-      return { commands };
+      delete results[windowId];
+      return {
+        commands,
+        results,
+        speakingWindowId: s.speakingWindowId === windowId ? null : s.speakingWindowId,
+      };
     }),
 }));
