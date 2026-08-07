@@ -9,6 +9,7 @@ export interface User {
   displayName: string;
   avatarColor: string;
   role: UserRole;
+  passwordMustChange?: boolean;
 }
 
 /** User record as returned by the admin /api/users endpoints. */

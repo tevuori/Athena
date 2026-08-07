@@ -8,15 +8,20 @@ const isProduction = process.env.NODE_ENV === "production";
 const INSECURE_SECRETS = new Set([
   "dev-secret-change-me",
   "change-me-to-a-long-random-string",
+  "athena-dev-secret-not-for-production",
+  "athena-dev-secret-change-me",
   "admin",
   "",
 ]);
 
+const MIN_SECRET_LENGTH = 32;
+
 const rawSecret = process.env.JWT_SECRET ?? "";
 
-if (isProduction && INSECURE_SECRETS.has(rawSecret)) {
+if (isProduction && (INSECURE_SECRETS.has(rawSecret) || rawSecret.length < MIN_SECRET_LENGTH)) {
   console.error(
-    "[mavino-server] FATAL: JWT_SECRET is not set or is an insecure placeholder.\n" +
+    `[mavino-server] FATAL: JWT_SECRET is not set, is an insecure placeholder, or is shorter ` +
+      `than ${MIN_SECRET_LENGTH} characters (got ${rawSecret.length}).\n` +
       "Generate one with:  openssl rand -hex 32\n" +
       "Set it in your .env (or environment) before starting in production."
   );

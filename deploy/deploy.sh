@@ -25,26 +25,41 @@ echo "==> Mavino VPS deploy for $DOMAIN"
 if [ ! -f .env ]; then
   echo "==> Generating .env with strong secrets"
   JWT_SECRET="$(openssl rand -hex 32)"
+  ENC_KEY="$(openssl rand -hex 32)"
   SEED_PW="$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20)"
   PG_PW="$(openssl rand -hex 24)"
   cp .env.example .env
   # Replace key values
   sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$JWT_SECRET|" .env
+  sed -i "s|^ENCRYPTION_KEY=.*|ENCRYPTION_KEY=$ENC_KEY|" .env
   sed -i "s|^SEED_PASSWORD=.*|SEED_PASSWORD=$SEED_PW|" .env
   sed -i "s|^CLIENT_ORIGIN=.*|CLIENT_ORIGIN=https://$DOMAIN|" .env
   sed -i "s|^SANDBOX_ENABLED=.*|SANDBOX_ENABLED=false|" .env
   sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$PG_PW|" .env
+  # Write seed credentials to a restricted file instead of stdout.
+  CRED_FILE=".seed-credentials.txt"
+  cat > "$CRED_FILE" <<EOF
+Mavino — Initial Admin Credentials
+===================================
+  Service:   https://$DOMAIN
+  Username:  admin
+  Password:  $SEED_PW
+
+IMPORTANT: You will be FORCED to change this password on first login.
+Delete this file after you have successfully logged in and changed the password.
+===================================
+EOF
+  chmod 600 "$CRED_FILE"
   echo ""
   echo "============================================================"
-  echo "  Generated seed admin credentials (SAVE THESE):"
-  echo "    username: admin"
-  echo "    password: $SEED_PW"
-  echo "  Change the password from Settings → Account after first login."
+  echo "  Seed admin credentials written to: $CRED_FILE (chmod 600)"
+  echo "  Read them with: cat $CRED_FILE"
+  echo "  You will be FORCED to change the password on first login."
+  echo "  Delete the file after first login: rm $CRED_FILE"
   echo "============================================================"
   echo ""
 else
   echo "==> .env already exists — leaving secrets as-is"
-  SEED_PW="(see existing .env SEED_PASSWORD)"
 fi
 
 # --- 2. Build + start Docker stack ---
@@ -86,7 +101,7 @@ sudo certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --register-unsaf
 
 echo ""
 echo "==> Done. https://$DOMAIN should now serve Mavino."
-echo "    Login with admin / $SEED_PW"
+echo "    Login with admin / (see .seed-credentials.txt)"
 echo ""
 echo "==> Setting up daily PostgreSQL backup cron (3am, 14-day retention)"
 CRON_LINE="0 3 * * * $REPO_DIR/deploy/backup.sh >> /var/log/mavino-backup.log 2>&1"

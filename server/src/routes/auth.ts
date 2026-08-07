@@ -39,6 +39,7 @@ function publicUser(u: {
   displayName: string;
   avatarColor: string;
   role: string;
+  passwordMustChange?: boolean;
 }) {
   return {
     id: u.id,
@@ -47,6 +48,7 @@ function publicUser(u: {
     displayName: u.displayName,
     avatarColor: u.avatarColor,
     role: u.role,
+    passwordMustChange: u.passwordMustChange ?? false,
   };
 }
 
@@ -333,7 +335,7 @@ auth.post("/password", authMiddleware, zValidator("json", passwordSchema), async
   }
   await prisma.user.update({
     where: { id: userId },
-    data: { passwordHash: await bcrypt.hash(newPassword, 10) },
+    data: { passwordHash: await bcrypt.hash(newPassword, 10), passwordMustChange: false },
   });
   // Revoke all refresh tokens — force re-login on other devices after a password change.
   await prisma.refreshToken.deleteMany({ where: { userId } });
@@ -510,12 +512,12 @@ auth.post(
       return c.json({ error: "Invalid or expired reset token" }, 400);
     }
 
-    // Set the new password.
+    // Set the new password and clear the must-change flag.
     const passwordHash = await bcrypt.hash(newPassword, 10);
     await prisma.$transaction([
       prisma.user.update({
         where: { id: resetRecord.userId },
-        data: { passwordHash },
+        data: { passwordHash, passwordMustChange: false },
       }),
       prisma.passwordResetToken.update({
         where: { id: resetRecord.id },

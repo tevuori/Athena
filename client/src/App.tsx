@@ -5,6 +5,7 @@ import { installGlobalErrorHandlers } from "./services/errorReporter";
 import BootScreen from "./shell/BootScreen";
 import LoginScreen from "./shell/LoginScreen";
 import ResetPasswordScreen from "./shell/ResetPasswordScreen";
+import ForceChangePasswordScreen from "./shell/ForceChangePasswordScreen";
 import DesktopEnvironment from "./shell/DesktopEnvironment";
 import MobileShell from "./shell/mobile/MobileShell";
 import UpdateDialog from "./shell/UpdateDialog";
@@ -13,7 +14,7 @@ import GlobalErrorBoundary from "./shell/GlobalErrorBoundary";
 type Phase = "boot" | "app";
 
 export default function App() {
-  const { status, refresh } = useAuth();
+  const { status, user, refresh } = useAuth();
   const mode = useFormFactor((s) => s.mode);
   const [phase, setPhase] = useState<Phase>("boot");
 
@@ -48,6 +49,12 @@ export default function App() {
 
   if (status !== "authenticated") {
     return <LoginScreen />;
+  }
+
+  // If the user's password must be changed (seed/temporary password), force
+  // them to set a new one before they can access the desktop.
+  if (user?.passwordMustChange) {
+    return <ForceChangePasswordScreen />;
   }
 
   // Phone form factor → mobile shell; everything else → desktop shell.

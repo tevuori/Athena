@@ -1,13 +1,45 @@
 /**
  * Seed script — creates a default admin user (from env) if none exist,
  * plus demo notes, tasks, and folders so the UI isn't empty on first run.
+ *
+ * SECURITY: In production, if SEED_PASSWORD is unset or "admin", a strong
+ * random password is generated and printed once to stdout. The seeded user
+ * is created with passwordMustChange=true so the user is forced to set their
+ * own password on first login.
  */
 import bcrypt from "bcryptjs";
+import { randomBytes } from "node:crypto";
 import prisma from "./client";
+
+const isProduction = process.env.NODE_ENV === "production";
+
+const INSECURE_SEED_PASSWORDS = new Set(["", "admin", "password", "changeme"]);
+
+function generateRandomPassword(): string {
+  // 18 random bytes → base64url, stripped of ambiguous chars, 20 chars long.
+  return randomBytes(18).toString("base64url").replace(/[/+=]/g, "").slice(0, 20);
+}
 
 async function main() {
   const username = process.env.SEED_USERNAME ?? "admin";
-  const password = process.env.SEED_PASSWORD ?? "admin";
+  const envPassword = process.env.SEED_PASSWORD ?? "";
+
+  // In production, never use the insecure default "admin" — generate a strong one.
+  // In dev, fall back to "admin" for convenience.
+  let password: string;
+  let mustChange: boolean;
+  if (isProduction && INSECURE_SEED_PASSWORDS.has(envPassword)) {
+    password = generateRandomPassword();
+    mustChange = true;
+  } else if (!envPassword) {
+    // Dev with no SEED_PASSWORD set — use "admin" for convenience.
+    password = "admin";
+    mustChange = true;
+  } else {
+    // Explicit SEED_PASSWORD provided — use it, but still force change in prod.
+    password = envPassword;
+    mustChange = isProduction;
+  }
 
   let user = await prisma.user.findUnique({ where: { username } });
   if (!user) {
@@ -18,9 +50,21 @@ async function main() {
         displayName: "",
         avatarColor: "#6366f1",
         role: "ADMIN",
+        passwordMustChange: mustChange,
       },
     });
-    console.log(`Seeded user '${username}' [ADMIN] — remember to change the password from Settings → Account.`);
+    if (mustChange) {
+      console.log(
+        `\n` +
+        `============================================================\n` +
+        `  Seeded admin user '${username}' [ADMIN]\n` +
+        `  Temporary password: ${password}\n` +
+        `  You will be REQUIRED to change this on first login.\n` +
+        `============================================================\n`
+      );
+    } else {
+      console.log(`Seeded user '${username}' [ADMIN] — remember to change the password from Settings → Account.`);
+    }
   } else {
     console.log(`User '${username}' already exists — skipping user seed.`);
   }

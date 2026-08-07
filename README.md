@@ -18,7 +18,9 @@ Mavino is a self-hosted, browser-based "operating system" for students. It recre
 
 It also integrates with the services students actually use: **Spotify** (with a beat-reactive fullscreen "Chill" mode), **Microsoft Calendar** (Graph API sync), and **VUT Studis** (Brno University of Technology SSO — grades, timetable, subject updates).
 
-> Default login after seeding: **`admin` / `admin`**
+> Default login after seeding: **`admin`** with a generated password (printed to
+> console in production, or `admin` in local dev). You'll be forced to change it
+> on first login.
 
 ---
 
@@ -236,7 +238,7 @@ cd server
 ln -sf ../.env .env            # if not already linked
 bunx prisma generate
 bunx prisma migrate dev        # creates SQLite DB + migration
-bun run src/db/seed.ts         # seeds admin/admin + demo data
+bun run src/db/seed.ts         # seeds admin + demo data (random password in prod, forced change)
 cd ..
 
 # Run both server + client (from root)
@@ -245,7 +247,8 @@ bun run dev
 #   client → http://localhost:5173
 ```
 
-Open <http://localhost:5173> → boot screen → login with `admin` / `admin`.
+Open <http://localhost:5173> → boot screen → login with `admin` / `admin` (local
+dev only — you'll be prompted to change it immediately).
 
 ---
 

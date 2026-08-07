@@ -60,10 +60,19 @@ services:
       DATABASE_URL: "postgresql://${POSTGRES_USER:-athena}:${POSTGRES_PASSWORD:-athena}@db:5432/${POSTGRES_DB:-athena}?schema=public"
       REDIS_URL: "redis://redis:6379"
       # JWT_SECRET must be set — generate with: openssl rand -hex 32
-      # The server refuses to start in production without a secure secret.
+      # The server refuses to start in production without a secure secret (>= 32 chars).
       JWT_SECRET: ${JWT_SECRET:-}
+      # ENCRYPTION_KEY is used for AES-256-GCM encryption of stored credentials
+      # (VUT passwords, API keys, OAuth tokens, TOTP secrets). Should be a
+      # separate secret from JWT_SECRET for key separation. Generate with:
+      #   openssl rand -hex 32
+      # If unset, falls back to JWT_SECRET (with a warning) for backward compat.
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
       SEED_USERNAME: ${SEED_USERNAME:-admin}
-      SEED_PASSWORD: ${SEED_PASSWORD:-admin}
+      # SEED_PASSWORD: if unset or "admin" in production, the seed script
+      # generates a strong random password and prints it once. The seeded user
+      # is forced to change it on first login.
+      SEED_PASSWORD: ${SEED_PASSWORD:-}
       # Comma-separated list of allowed CORS origins. For a single-origin public
       # deploy behind the host nginx, set this to the public URL.
       CLIENT_ORIGIN: ${CLIENT_ORIGIN:-}

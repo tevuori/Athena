@@ -15,6 +15,7 @@ build/
 .env.*.local
 server/.env
 client/.env
+.seed-credentials.txt
 
 # Database & uploads (runtime data, not committed)
 server/data/

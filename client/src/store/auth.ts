@@ -119,6 +119,9 @@ export const useAuth = create<AuthState>((set, get) => ({
     await api.post("/api/auth/password", { currentPassword, newPassword });
     // Password change revokes all refresh tokens server-side; clear locally.
     setRefreshToken(null);
+    // Clear the must-change flag in the local user object so the UI proceeds.
+    const cur = get().user;
+    if (cur) set({ user: { ...cur, passwordMustChange: false } });
   },
 
   deleteAccount: async (password) => {

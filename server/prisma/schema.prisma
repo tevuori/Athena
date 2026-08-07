@@ -21,6 +21,9 @@ model User {
   // completes the verification step (scans QR, enters a valid code).
   totpSecret   String   @default("")
   totpEnabled  Boolean  @default(false)
+  // Set to true when the password is a generated/seed default that the user
+  // must change on first login. Cleared by the password-change / reset endpoints.
+  passwordMustChange Boolean @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
