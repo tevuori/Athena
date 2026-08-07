@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { LogIn, Loader2, Server, UserPlus } from "lucide-react";
+import { LogIn, Loader2, Server, UserPlus, ShieldCheck, Mail } from "lucide-react";
 import { useAuth } from "../store/auth";
 import { Capacitor } from "@capacitor/core";
 import { getBaseUrl, setBaseUrl } from "../services/api";
@@ -8,7 +8,7 @@ import { api } from "../services/api";
 import AppLogo from "./AppLogo";
 
 export default function LoginScreen() {
-  const { login, register } = useAuth();
+  const { login, loginWithTotp, register } = useAuth();
   const isNative = Capacitor.isNativePlatform();
   const [serverUrl, setServerUrl] = useState(getBaseUrl());
   const [username, setUsername] = useState("");
@@ -18,12 +18,20 @@ export default function LoginScreen() {
   const [busy, setBusy] = useState(false);
 
   // Registration form state
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const [mode, setMode] = useState<"login" | "register" | "totp" | "forgot">("login");
   const [regUsername, setRegUsername] = useState("");
   const [regPassword, setRegPassword] = useState("");
   const [regDisplayName, setRegDisplayName] = useState("");
   const [registrationOpen, setRegistrationOpen] = useState(false);
   const [registrationChecked, setRegistrationChecked] = useState(false);
+
+  // TOTP challenge state
+  const [totpCode, setTotpCode] = useState("");
+  const [challengeToken, setChallengeToken] = useState<string | null>(null);
+
+  // Forgot password state
+  const [forgotInput, setForgotInput] = useState("");
+  const [forgotSent, setForgotSent] = useState(false);
 
   // Check if self-registration is enabled on mount.
   useEffect(() => {
@@ -73,6 +81,43 @@ export default function LoginScreen() {
     try {
       await login(username, password, rememberMe);
     } catch (err) {
+      const e = err as Error & { totpChallenge?: string };
+      if (e.totpChallenge) {
+        // 2FA required — switch to TOTP input mode.
+        setChallengeToken(e.totpChallenge);
+        setMode("totp");
+        setError(null);
+      } else {
+        setError(e.message);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitTotp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!challengeToken) return;
+    setError(null);
+    setBusy(true);
+    try {
+      await loginWithTotp(challengeToken, totpCode, rememberMe);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitForgot = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forgotInput.trim()) return;
+    setError(null);
+    setBusy(true);
+    try {
+      await api.post("/api/auth/forgot-password", { usernameOrEmail: forgotInput.trim() });
+      setForgotSent(true);
+    } catch (err) {
       setError((err as Error).message);
     } finally {
       setBusy(false);
@@ -105,11 +150,125 @@ export default function LoginScreen() {
           <AppLogo size={56} className="mx-auto mb-3" />
           <h1 className="text-xl font-semibold text-ink">Athena</h1>
           <p className="text-sm text-ink-muted">
-            {mode === "login" ? "Sign in to your Student OS" : "Create your Student OS account"}
+            {mode === "login"
+              ? "Sign in to your Student OS"
+              : mode === "register"
+              ? "Create your Student OS account"
+              : mode === "totp"
+              ? "Enter your verification code"
+              : "Reset your password"}
           </p>
         </div>
 
-        {mode === "login" ? (
+        {mode === "forgot" ? (
+          <form onSubmit={submitForgot} className="space-y-3">
+            {forgotSent ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-center py-2">
+                  <Mail size={28} className="text-accent" />
+                </div>
+                <p className="text-center text-sm text-ink">
+                  If an account with that username or email exists, a reset link has been sent.
+                </p>
+                <p className="text-center text-xs text-ink-muted">
+                  Check your inbox (and spam folder). The link expires in 1 hour.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode("login");
+                    setForgotSent(false);
+                    setForgotInput("");
+                    setError(null);
+                  }}
+                  className="w-full text-center text-[11px] text-ink-muted hover:underline"
+                >
+                  Back to sign in
+                </button>
+              </div>
+            ) : (
+              <>
+                <p className="text-center text-xs text-ink-muted">
+                  Enter your username or email to receive a reset link.
+                </p>
+                <input
+                  value={forgotInput}
+                  onChange={(e) => setForgotInput(e.target.value)}
+                  placeholder="Username or email"
+                  autoFocus
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  className="w-full rounded-lg border border-edge bg-surface-2 px-3 py-2.5 text-sm text-ink outline-none focus:border-accent"
+                />
+                {error && (
+                  <p className="rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-400">{error}</p>
+                )}
+                <button
+                  type="submit"
+                  disabled={busy || !forgotInput.trim()}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent py-2.5 text-sm font-medium text-accent-fg transition hover:opacity-90 disabled:opacity-50"
+                >
+                  {busy ? <Loader2 size={16} className="animate-spin" /> : <Mail size={16} />}
+                  Send reset link
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode("login");
+                    setError(null);
+                  }}
+                  className="w-full text-center text-[11px] text-ink-muted hover:underline"
+                >
+                  Back to sign in
+                </button>
+              </>
+            )}
+          </form>
+        ) : mode === "totp" ? (
+          <form onSubmit={submitTotp} className="space-y-3">
+            <div className="flex items-center justify-center py-2">
+              <ShieldCheck size={28} className="text-accent" />
+            </div>
+            <p className="text-center text-xs text-ink-muted">
+              Enter the 6-digit code from your authenticator app.
+            </p>
+            <input
+              value={totpCode}
+              onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              placeholder="000000"
+              autoFocus
+              inputMode="numeric"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              className="w-full rounded-lg border border-edge bg-surface-2 px-3 py-2.5 text-center text-lg tracking-[0.5em] text-ink outline-none focus:border-accent"
+            />
+            {error && (
+              <p className="rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-400">{error}</p>
+            )}
+            <button
+              type="submit"
+              disabled={busy || totpCode.length !== 6}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent py-2.5 text-sm font-medium text-accent-fg transition hover:opacity-90 disabled:opacity-50"
+            >
+              {busy ? <Loader2 size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
+              Verify
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMode("login");
+                setChallengeToken(null);
+                setTotpCode("");
+                setError(null);
+              }}
+              className="w-full text-center text-[11px] text-ink-muted hover:underline"
+            >
+              Back to sign in
+            </button>
+          </form>
+        ) : mode === "login" ? (
           <form onSubmit={submit} className="space-y-3">
             {isNative && (
               <div className="space-y-1">
@@ -167,6 +326,17 @@ export default function LoginScreen() {
             >
               {busy ? <Loader2 size={16} className="animate-spin" /> : <LogIn size={16} />}
               Sign in
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMode("forgot");
+                setError(null);
+                setForgotSent(false);
+              }}
+              className="w-full text-center text-[11px] text-ink-muted hover:underline"
+            >
+              Forgot password?
             </button>
           </form>
         ) : (

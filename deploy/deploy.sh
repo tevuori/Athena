@@ -26,12 +26,14 @@ if [ ! -f .env ]; then
   echo "==> Generating .env with strong secrets"
   JWT_SECRET="$(openssl rand -hex 32)"
   SEED_PW="$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20)"
+  PG_PW="$(openssl rand -hex 24)"
   cp .env.example .env
   # Replace key values
   sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$JWT_SECRET|" .env
   sed -i "s|^SEED_PASSWORD=.*|SEED_PASSWORD=$SEED_PW|" .env
   sed -i "s|^CLIENT_ORIGIN=.*|CLIENT_ORIGIN=https://$DOMAIN|" .env
   sed -i "s|^SANDBOX_ENABLED=.*|SANDBOX_ENABLED=false|" .env
+  sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$PG_PW|" .env
   echo ""
   echo "============================================================"
   echo "  Generated seed admin credentials (SAVE THESE):"
@@ -50,6 +52,16 @@ echo "==> Building + starting Docker Compose stack"
 docker compose up --build -d
 
 # --- 3. Run migrations + seed inside the server container ---
+echo "==> Waiting for PostgreSQL to be ready..."
+for i in $(seq 1 30); do
+  if docker compose exec -T db pg_isready -U "${POSTGRES_USER:-athena}" -d "${POSTGRES_DB:-athena}" >/dev/null 2>&1; then
+    echo "    PostgreSQL is ready."
+    break
+  fi
+  echo "    Waiting... ($i/30)"
+  sleep 2
+done
+
 echo "==> Running prisma migrate deploy"
 docker compose exec -T server bunx prisma migrate deploy
 echo "==> Running seed (creates admin if none exist)"
@@ -76,7 +88,7 @@ echo ""
 echo "==> Done. https://$DOMAIN should now serve Athena."
 echo "    Login with admin / $SEED_PW"
 echo ""
-echo "==> Setting up daily SQLite backup cron (3am, 14-day retention)"
+echo "==> Setting up daily PostgreSQL backup cron (3am, 14-day retention)"
 CRON_LINE="0 3 * * * $REPO_DIR/deploy/backup.sh >> /var/log/athena-backup.log 2>&1"
 if ! crontab -l 2>/dev/null | grep -q "deploy/backup.sh"; then
   (crontab -l 2>/dev/null; echo "$CRON_LINE") | crontab -

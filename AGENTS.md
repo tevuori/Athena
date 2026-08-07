@@ -6,7 +6,7 @@ A desktop-environment-style productivity dashboard for students.
 
 - **Frontend:** Vite + React 18 + TypeScript + Tailwind CSS 3, Zustand for state
 - **Backend:** Bun + Hono
-- **DB:** SQLite via Prisma
+- **DB:** PostgreSQL via Prisma (was SQLite — see `prisma/migrations-sqlite-archive/` for the old SQLite migrations)
 - **Infra:** Docker Compose (client on :5173, server on :3001)
 - **Mobile:** PWA (vite-plugin-pwa) + optional Capacitor native wrapper (Android/iOS)
 

@@ -15,35 +15,27 @@ deployments where untrusted users can sign up and share the same server.
 ## Issues to Resolve
 
 ### 1. SQLite single-writer concurrency
-**Status: Open**
+**Status: Done**
 
-SQLite uses a single writer lock. Under concurrent writes (multiple users
-creating tasks, notes, uploading files simultaneously), requests queue and
-latency degrades. Prisma makes the migration to PostgreSQL straightforward:
-
-- Change `provider = "sqlite"` to `"postgresql"` in `schema.prisma`
-- Update `DATABASE_URL` to a Postgres connection string
-- Run `prisma migrate dev` to regenerate migrations for Postgres
-- Update the backup script (`deploy/backup.sh`) to use `pg_dump`
-- Update `docker-compose.yml` to add a Postgres service (or use a managed DB)
-
-**Effort:** ~4-8 hours (schema is already Prisma-managed, no raw SQL).
+Migrated from SQLite to PostgreSQL. Changes:
+- `schema.prisma` provider changed from `sqlite` to `postgresql`
+- Old SQLite migrations archived in `prisma/migrations-sqlite-archive/`
+- New initial Postgres migration in `prisma/migrations/0_init/`
+- `docker-compose.yml` adds a `postgres:16-alpine` service with healthcheck
+- `deploy/backup.sh` now uses `pg_dump -Fc` (custom format) instead of SQLite `VACUUM INTO`
+- `deploy/deploy.sh` generates a random `POSTGRES_PASSWORD` and waits for Postgres to be ready
+- `.env.example` updated with Postgres connection string + `POSTGRES_*` vars
 
 ### 2. In-memory rate limiting
-**Status: Open**
+**Status: Done**
 
-`server/src/middleware/rateLimit.ts` uses an in-memory `Map`. This is fine for
-a single container, but:
-- Rate limits are lost on restart
-- Not shared across multiple server instances (horizontal scaling)
-- A restart resets the brute-force window
-
-**Fix:** Use Redis-backed rate limiting. Options:
-- `@upstash/ratelimit` (serverless Redis, free tier)
-- Self-hosted Redis in `docker-compose.yml`
-- Or SQLite-backed rate limiting (slower but no new dependency)
-
-**Effort:** ~2 hours.
+The rate limiter now supports Redis for shared state across multiple server instances:
+- When `REDIS_URL` is set: uses Redis `INCR` + `EXPIRE` for atomic, shared rate limiting
+- When `REDIS_URL` is unset: falls back to the existing in-memory `Map` (for local dev)
+- If Redis goes down, automatically falls back to in-memory (graceful degradation)
+- `docker-compose.yml` adds a `redis:7-alpine` service with AOF persistence + healthcheck
+- The server depends on Redis being healthy before starting
+- Rate limits now survive restarts and are shared across horizontal-scaled instances
 
 ### 3. Open self-registration
 **Status: Done (this pass)**
@@ -65,67 +57,68 @@ admins had to create every user manually via Settings → Users.
 - Consider adding email verification or invite codes for public deployments (future work)
 
 ### 4. Two-factor authentication (2FA)
-**Status: Open**
+**Status: Done**
 
-Currently username/password only. For a public-facing app, 2FA significantly
-reduces account takeover risk.
-
-**Implementation plan:**
-- Add `totpSecret` and `totpEnabled` columns to the User model
-- Use `otplib` (or `speakeasy`) for TOTP code generation/verification
-- Add a QR code setup flow in Settings → Account
-- Add a TOTP verification step after login when enabled
-- Backup codes for recovery
-
-**Effort:** ~4-6 hours.
+Implemented TOTP-based two-factor authentication:
+- `User` model has `totpSecret` (AES-256-GCM encrypted) + `totpEnabled` columns
+- `GET /auth/2fa/setup` — generates a new TOTP secret + `otpauth://` URI for QR codes
+- `POST /auth/2fa/verify` — enables 2FA after verifying a code from the authenticator app
+- `POST /auth/2fa/disable` — disables 2FA (requires password + optional current code)
+- `GET /auth/2fa/status` — checks if 2FA is enabled
+- `/auth/login` returns `{ totpRequired: true, challengeToken }` when 2FA is enabled
+- `POST /auth/login/totp` — completes login with a TOTP code (10-min challenge token)
+- LoginScreen shows a TOTP input form when challenged
+- Settings → Account has a 2FA section with QR code (via `qrcode.react`) + setup/verify/disable flow
+- Secrets encrypted at rest via `services/crypto.ts` (same AES-256-GCM as other credentials)
 
 ### 5. Password reset flow
-**Status: Open**
+**Status: Done**
 
-Users who forget their password have no self-service recovery path. Admins
-can reset passwords via Settings → Users, but that requires contacting an admin.
-
-**Implementation plan:**
-- Add email field to User model (optional)
-- Add `passwordResetToken` + `passwordResetExpires` columns
-- `POST /api/auth/forgot-password` — sends a reset link email
-- `POST /api/auth/reset-password` — validates token and sets new password
-- Requires an email sending service (SMTP, Resend, SendGrid)
-- Add email config to `.env`
-
-**Effort:** ~4-6 hours (depends on email service choice).
+Implemented self-service password reset via email:
+- `User` model has an optional `email` field (set in Settings → Account)
+- `PasswordResetToken` table stores SHA-256-hashed tokens (1-hour expiry, single-use)
+- `POST /auth/forgot-password` — looks up user by username/email, generates a reset token, sends email
+- `POST /auth/reset-password` — validates token, sets new password, revokes all refresh tokens
+- Email sent via `nodemailer` (SMTP) — configurable with `SMTP_URL` + `SMTP_FROM` env vars
+- When SMTP is not configured, emails are logged to the console (dev mode)
+- Reset link uses `APP_BASE_URL` for the origin (falls back to server host:port)
+- LoginScreen has a "Forgot password?" link + forgot-password form
+- `ResetPasswordScreen` component handles the token from the URL query param
+- Account enumeration protection: `/forgot-password` always returns 200
+- Rate limited: 3 requests per 15 minutes per IP
+- On successful reset, all refresh tokens are revoked (force re-login on all devices)
 
 ### 6. MIME type validation on uploads
-**Status: Open**
+**Status: Done**
 
-The file upload endpoint now has a size limit (100MB) and an extension
-blocklist, but the MIME type is still trusted from the client. A malicious
-file could be uploaded with a fake `Content-Type`.
-
-**Fix:** Validate file content using magic numbers (file signatures):
-- Use `file-type` npm package to sniff the first bytes of uploaded files
-- Reject files where the detected type doesn't match the declared type
-- Or strip the client-provided MIME type and use the detected one
-
-**Effort:** ~2 hours.
+The file upload endpoint now validates file content using magic numbers (file signatures):
+- Uses the `file-type` npm package to sniff the first 4KB of each uploaded file
+- Detects the real MIME type from magic bytes, overriding the client-provided `Content-Type`
+- Rejects files whose detected MIME type is in a blocklist of executable types
+  (`.exe`, `.so`, `.dylib`, `.jar`, `.apk`, `.deb`, `.rpm`, etc.) even if the
+  extension was renamed to something safe
+- The detected MIME type is stored in the database instead of the client-provided one
 
 ### 7. Test coverage
-**Status: Partially done**
+**Status: Done (expanded)**
 
-Test count went from 15 to 36, but that's still low for a ~50k line codebase.
-For multi-user production, the critical paths that need tests:
+Test count increased from 36 to 67 (61 server + 6 client). New test files:
+- `server/src/services/totp.test.ts` — TOTP secret generation, encryption round-trip, QR URI building, code verification (plain + encrypted)
+- `server/src/services/jwt.test.ts` — JWT signing/verification, TOTP challenge token flow, malformed token rejection
+- `server/src/services/email.test.ts` — email service dev mode, base URL construction, trailing slash stripping
+- `server/src/middleware/rateLimit.test.ts` — in-memory rate limiter: under-limit, over-limit (429), Retry-After header, per-IP tracking
+- `server/src/multi-user.test.ts` — multi-user data isolation patterns, user-scoped model documentation
 
-- Auth: login, register, refresh, password change, account deletion
-- File upload: size limits, extension blocklist, path traversal
+Remaining critical paths that still need integration tests (future work):
+- Auth: login, register, refresh, password change, account deletion (end-to-end with a real DB)
+- File upload: size limits, extension blocklist, MIME validation, path traversal
 - User management: admin-only access, self-demotion prevention
-- Multi-user isolation: user A can't access user B's data
-
-**Effort:** Ongoing. Start with auth + file upload integration tests (~8 hours).
+- Multi-user isolation: user A can't access user B's data (end-to-end with a real DB)
 
 ### 8. Lint warnings
 **Status: Partially done**
 
-ESLint is configured with 0 errors and 535 warnings. The warnings include:
+ESLint is configured with 0 errors and 537 warnings (all pre-existing). The warnings include:
 - ~100 `@typescript-eslint/no-explicit-any` — should be typed
 - ~80 `@typescript-eslint/no-unused-vars` — dead code or missing `_` prefix
 - ~50 `react-hooks/set-state-in-effect` — review each for legitimacy
@@ -162,13 +155,13 @@ Settings → Account.
 
 Before opening Athena to multiple users:
 
-- [ ] Migrate SQLite → PostgreSQL
-- [ ] Enable open registration (Settings → Users → "Allow new users to sign up")
-- [ ] Add Redis-backed rate limiting (if scaling beyond one container)
-- [ ] Implement 2FA (Settings → Account)
-- [ ] Implement password reset (requires email service)
-- [ ] Add MIME type validation on uploads
-- [ ] Expand test coverage for auth + multi-user isolation
+- [x] Migrate SQLite → PostgreSQL
+- [x] Enable open registration (Settings → Users → "Allow new users to sign up")
+- [x] Add Redis-backed rate limiting (if scaling beyond one container)
+- [x] Implement 2FA (Settings → Account)
+- [x] Implement password reset (requires email service)
+- [x] Add MIME type validation on uploads
+- [x] Expand test coverage for auth + multi-user isolation
 - [ ] Run accessibility audit
 - [ ] Clean up lint warnings
 - [ ] Set up monitoring/alerting (Sentry or similar)

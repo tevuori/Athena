@@ -8,10 +8,11 @@ interface AuthState {
   token: string | null;
   status: "loading" | "authenticated" | "unauthenticated";
   login: (username: string, password: string, rememberMe?: boolean) => Promise<void>;
+  loginWithTotp: (challengeToken: string, totpCode: string, rememberMe?: boolean) => Promise<void>;
   register: (username: string, password: string, displayName?: string) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
-  updateProfile: (patch: { displayName?: string; avatarColor?: string }) => Promise<void>;
+  updateProfile: (patch: { displayName?: string; avatarColor?: string; email?: string }) => Promise<void>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   deleteAccount: (password: string) => Promise<void>;
 }
@@ -23,9 +24,27 @@ export const useAuth = create<AuthState>((set, get) => ({
 
   login: async (username, password, rememberMe = true) => {
     const fingerprint = rememberMe ? await getFingerprint() : "";
+    const data = await api.post<
+      | { token: string; refreshToken: string | null; user: User }
+      | { totpRequired: true; challengeToken: string; user: User }
+    >("/api/auth/login", { username, password, rememberMe, deviceFingerprint: fingerprint });
+    // If 2FA is required, throw a special error so the LoginScreen can show
+    // the TOTP input. The challenge token is attached to the error.
+    if ("totpRequired" in data) {
+      const err = new Error("2FA required") as Error & { totpChallenge?: string };
+      err.totpChallenge = data.challengeToken;
+      throw err;
+    }
+    setToken(data.token);
+    setRefreshToken(data.refreshToken);
+    set({ token: data.token, user: data.user, status: "authenticated" });
+  },
+
+  loginWithTotp: async (challengeToken, totpCode, rememberMe = true) => {
+    const fingerprint = rememberMe ? await getFingerprint() : "";
     const data = await api.post<{ token: string; refreshToken: string | null; user: User }>(
-      "/api/auth/login",
-      { username, password, rememberMe, deviceFingerprint: fingerprint }
+      "/api/auth/login/totp",
+      { challengeToken, totpCode, rememberMe, deviceFingerprint: fingerprint }
     );
     setToken(data.token);
     setRefreshToken(data.refreshToken);

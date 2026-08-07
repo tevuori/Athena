@@ -3,6 +3,7 @@ import { User, Loader2, KeyRound, ShieldCheck, MonitorSmartphone, Trash2 } from 
 import { useAuth } from "../../../store/auth";
 import { authApi, type AuthDevice } from "../../../services/auth";
 import { SectionHeader, Card, Field, SaveButton, MsgBox, inputClass } from "../ui";
+import TwoFactorSection from "./TwoFactorSection";
 
 const AVATAR_PRESETS = [
   "#6366f1", "#8b5cf6", "#ec4899", "#ef4444",
@@ -15,6 +16,7 @@ export default function AccountSection() {
 
   const [displayName, setDisplayName] = useState(user?.displayName ?? "");
   const [avatarColor, setAvatarColor] = useState(user?.avatarColor ?? "#6366f1");
+  const [email, setEmail] = useState(user?.email ?? "");
   const [profileBusy, setProfileBusy] = useState(false);
   const [profileMsg, setProfileMsg] = useState<string | null>(null);
   const [profileErr, setProfileErr] = useState(false);
@@ -72,7 +74,7 @@ export default function AccountSection() {
     setProfileErr(false);
     setProfileMsg(null);
     try {
-      await updateProfile({ displayName: displayName.trim(), avatarColor });
+      await updateProfile({ displayName: displayName.trim(), avatarColor, email: email.trim() });
       setProfileMsg("Profile updated.");
     } catch (e) {
       setProfileErr(true);
@@ -162,7 +164,21 @@ export default function AccountSection() {
           </Field>
         </div>
 
-        <div className="flex items-center gap-2">
+        <Field label="Email (for password reset)">
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className={inputClass}
+            placeholder="you@example.com"
+            autoComplete="email"
+          />
+          <p className="mt-1 text-[11px] text-ink-muted">
+            Used only to send password reset links. Leave empty if you don't need self-service reset.
+          </p>
+        </Field>
+
+        <div className="mt-3 flex items-center gap-2">
           <SaveButton busy={profileBusy} onClick={saveProfile} disabled={!displayName.trim()}>
             Save profile
           </SaveButton>
@@ -214,6 +230,8 @@ export default function AccountSection() {
         </div>
         <MsgBox msg={pwMsg} error={pwErr} />
       </Card>
+
+      <TwoFactorSection />
 
       <Card>
         <div className="mb-3 flex items-center justify-between">

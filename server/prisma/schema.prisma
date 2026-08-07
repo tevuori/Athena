@@ -3,18 +3,24 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
 model User {
   id           String   @id @default(cuid())
   username     String   @unique
+  email        String   @default("") // optional — used for password reset
   passwordHash String
   displayName  String   @default("")
   avatarColor  String   @default("#6366f1")
   role         String   @default("USER") // "USER" | "ADMIN"
   athenaInstructions String @default("") // custom instructions injected into Athena system prompt
+  // 2FA (TOTP) — totpSecret stores the base32-encoded secret (encrypted at
+  // rest via services/crypto.ts). totpEnabled is false until the user
+  // completes the verification step (scans QR, enters a valid code).
+  totpSecret   String   @default("")
+  totpEnabled  Boolean  @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -61,6 +67,26 @@ model User {
   mapyCredentials   MapyCredentials?
   trips             Trip[]
   hikingTours       HikingTour[]
+  passwordResetTokens PasswordResetToken[]
+}
+
+// ===== Password reset tokens =====
+// Self-service password reset: a user requests a reset link by email, a
+// token is generated and stored (SHA-256 hashed, like refresh tokens), and
+// emailed. The user clicks the link, enters a new password, and the token
+// is consumed. Tokens expire after 1 hour and are single-use.
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique // SHA-256 of the raw token
+  expiresAt DateTime
+  usedAt    DateTime? // null until consumed
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 // ===== Study Hub: persistent user highlights & annotations =====

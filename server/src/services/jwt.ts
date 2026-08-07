@@ -44,17 +44,25 @@ const REFRESH_TTL_DAYS = 90;
 export interface JwtPayload {
   sub: string; // user id
   username: string;
+  totpChallenge?: boolean;
 }
 
-export async function signToken(payload: JwtPayload): Promise<string> {
-  return new SignJWT({ username: payload.username })
+/**
+ * Sign a JWT. Accepts an optional expiry override (e.g. "10m" for short-lived
+ * challenge tokens) and extra payload fields.
+ */
+export async function signToken(payload: JwtPayload, expiresIn?: string): Promise<string> {
+  const jwtBuilder = new SignJWT({
+    username: payload.username,
+    ...(payload.totpChallenge ? { totpChallenge: true } : {}),
+  })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(payload.sub)
     .setIssuer(ISSUER)
     .setAudience(AUDIENCE)
     .setIssuedAt()
-    .setExpirationTime(ACCESS_EXPIRY)
-    .sign(secret);
+    .setExpirationTime(expiresIn ?? ACCESS_EXPIRY);
+  return jwtBuilder.sign(secret);
 }
 
 export async function verifyToken(token: string): Promise<JwtPayload | null> {
@@ -66,7 +74,11 @@ export async function verifyToken(token: string): Promise<JwtPayload | null> {
     if (typeof payload.sub !== "string" || typeof payload.username !== "string") {
       return null;
     }
-    return { sub: payload.sub, username: payload.username as string };
+    return {
+      sub: payload.sub,
+      username: payload.username as string,
+      totpChallenge: payload.totpChallenge === true,
+    };
   } catch {
     return null;
   }

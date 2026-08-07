@@ -4,6 +4,7 @@ import { useFormFactor, initFormFactorListeners } from "./store/formfactor";
 import { installGlobalErrorHandlers } from "./services/errorReporter";
 import BootScreen from "./shell/BootScreen";
 import LoginScreen from "./shell/LoginScreen";
+import ResetPasswordScreen from "./shell/ResetPasswordScreen";
 import DesktopEnvironment from "./shell/DesktopEnvironment";
 import MobileShell from "./shell/mobile/MobileShell";
 import UpdateDialog from "./shell/UpdateDialog";
@@ -28,6 +29,13 @@ export default function App() {
 
   if (phase === "boot") {
     return <BootScreen onDone={() => setPhase("app")} />;
+  }
+
+  // Password reset flow — when the URL has a `token` query param (from a
+  // reset email), show the reset screen instead of the login screen.
+  const resetToken = new URLSearchParams(window.location.search).get("token");
+  if (resetToken && status !== "authenticated") {
+    return <ResetPasswordScreen token={resetToken} />;
   }
 
   if (status === "loading") {

@@ -1,4 +1,40 @@
 services:
+  db:
+    image: postgres:16-alpine
+    container_name: athena-db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-athena}
+      POSTGRES_USER: ${POSTGRES_USER:-athena}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-athena}
+    volumes:
+      - athena-pgdata:/var/lib/postgresql/data
+    expose:
+      - "5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-athena} -d ${POSTGRES_DB:-athena}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: athena-redis
+    expose:
+      - "6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    # Persist Redis data so rate limits survive restarts.
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - athena-redis:/data
+
   server:
     build:
       context: ./server
@@ -6,11 +42,17 @@ services:
     container_name: athena-server
     expose:
       - "3000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       NODE_ENV: production
       SERVER_PORT: 3000
       SERVER_HOST: 0.0.0.0
-      DATABASE_URL: "file:/app/data/athena.db"
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-athena}:${POSTGRES_PASSWORD:-athena}@db:5432/${POSTGRES_DB:-athena}?schema=public"
+      REDIS_URL: "redis://redis:6379"
       # JWT_SECRET must be set — generate with: openssl rand -hex 32
       # The server refuses to start in production without a secure secret.
       JWT_SECRET: ${JWT_SECRET:-}
@@ -33,7 +75,6 @@ services:
       # mounts when spawning sandbox containers via the socket.
       SANDBOX_HOST_TMP: /tmp/athena-sandbox
     volumes:
-      - athena-data:/app/data
       - athena-uploads:/app/uploads
       # Docker socket for the Athena code execution sandbox (run_code tool).
       # Safe when combined with the gVisor (runsc) runtime — sandbox containers
@@ -72,5 +113,6 @@ services:
       start_period: 5s
 
 volumes:
-  athena-data:
+  athena-pgdata:
+  athena-redis:
   athena-uploads:

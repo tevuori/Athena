@@ -347,6 +347,51 @@ const BLOCKED_UPLOAD_EXT = new Set([
   "apk", "deb", "rpm", "dmg", "pkg",
 ]);
 
+/**
+ * MIME types detected by `file-type` that are considered dangerous and should
+ * be blocked even if the extension isn't in the blocklist. This catches files
+ * that have been renamed to a safe extension but are actually executables.
+ */
+const BLOCKED_MIME_TYPES = new Set([
+  "application/x-msdownload", // .exe
+  "application/x-msdos-program", // .exe/.com
+  "application/x-executable", // Linux ELF
+  "application/x-sharedlib", // .so
+  "application/x-mach-binary", // macOS Mach-O
+  "application/java-archive", // .jar
+  "application/vnd.android.package-archive", // .apk
+  "application/x-debian-package", // .deb
+  "application/x-rpm", // .rpm
+  "application/x-java-applet", // .class
+]);
+
+/**
+ * Sniff the actual file type from its magic bytes and compare against the
+ * declared MIME type. Returns the detected MIME type (to override the
+ * client-provided one) or null if the file type couldn't be determined.
+ *
+ * If the detected MIME is in the blocklist, the upload is rejected regardless
+ * of the extension.
+ */
+async function detectAndValidateMime(buf: ArrayBuffer, declaredMime: string): Promise<{ mime: string; blocked: boolean }> {
+  // file-type needs a Uint8Array — only sniff the first 4KB for efficiency.
+  const header = new Uint8Array(buf.slice(0, 4096));
+  const { fileTypeFromBuffer } = await import("file-type");
+  const detected = await fileTypeFromBuffer(header);
+
+  if (!detected) {
+    // Can't detect — text files, empty files, etc. Trust the client type.
+    return { mime: declaredMime || "application/octet-stream", blocked: false };
+  }
+
+  const detectedMime = detected.mime;
+  const blocked = BLOCKED_MIME_TYPES.has(detectedMime);
+
+  // Use the detected MIME type instead of the client-provided one — the
+  // client can lie, but magic bytes can't (for files file-type recognizes).
+  return { mime: detectedMime, blocked };
+}
+
 /** POST /files/upload  multipart: file + optional folderId */
 files.post("/upload", async (c) => {
   const { userId } = c.get("auth");
@@ -369,17 +414,28 @@ files.post("/upload", async (c) => {
       415
     );
   }
+  const buf = await file.arrayBuffer();
+
+  // Magic number validation — detect the real file type from its content
+  // and reject executables regardless of the file extension.
+  const { mime: detectedMime, blocked: mimeBlocked } = await detectAndValidateMime(buf, file.type);
+  if (mimeBlocked) {
+    return c.json(
+      { error: `File content does not match a safe type (detected: ${detectedMime}). Upload rejected.` },
+      415
+    );
+  }
+
   const safeName = path.basename(file.name).replace(/[^\w.\- ]+/g, "_");
   const storageKey = `${userId}/${Date.now()}-${safeName}`;
   const absPath = path.join(UPLOAD_DIR, storageKey);
   await mkdir(path.dirname(absPath), { recursive: true });
-  const buf = await file.arrayBuffer();
   await writeFile(absPath, Buffer.from(buf));
 
   const record = await prisma.vFile.create({
     data: {
       name: file.name,
-      mimeType: file.type || "application/octet-stream",
+      mimeType: detectedMime,
       size: file.size,
       storageKey,
       folderId: folderId || null,

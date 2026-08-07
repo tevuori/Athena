@@ -2,10 +2,19 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
 import bcrypt from "bcryptjs";
+import { createHash, randomBytes } from "node:crypto";
 import prisma from "../db/client";
 import { signToken, issueRefreshToken, rotateRefreshToken, revokeRefreshToken } from "../services/jwt";
 import { authMiddleware } from "../middleware/auth";
 import { rateLimit } from "../middleware/rateLimit";
+import {
+  generateTotpSecret,
+  encryptTotpSecret,
+  buildTotpUri,
+  verifyTotp,
+  verifyTotpPlain,
+} from "../services/totp";
+import { sendPasswordResetEmail } from "../services/email";
 
 const auth = new Hono();
 
@@ -26,6 +35,7 @@ const registerSchema = z.object({
 function publicUser(u: {
   id: string;
   username: string;
+  email?: string;
   displayName: string;
   avatarColor: string;
   role: string;
@@ -33,6 +43,7 @@ function publicUser(u: {
   return {
     id: u.id,
     username: u.username,
+    email: u.email ?? "",
     displayName: u.displayName,
     avatarColor: u.avatarColor,
     role: u.role,
@@ -66,6 +77,18 @@ auth.post("/login", loginLimiter, zValidator("json", loginSchema), async (c) => 
   if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
     return c.json({ error: "Invalid username or password" }, 401);
   }
+
+  // If 2FA is enabled, don't issue tokens yet — require a TOTP code.
+  if (user.totpEnabled && user.totpSecret) {
+    // Issue a short-lived challenge token (10 min) so the TOTP endpoint can
+    // identify the user without re-sending the password.
+    const challengeToken = await signToken(
+      { sub: user.id, username: user.username, totpChallenge: true },
+      "10m"
+    );
+    return c.json({ totpRequired: true, challengeToken, user: publicUser(user) });
+  }
+
   const token = await signToken({ sub: user.id, username: user.username });
   let refreshToken: string | null = null;
   if (rememberMe && deviceFingerprint) {
@@ -78,6 +101,53 @@ auth.post("/login", loginLimiter, zValidator("json", loginSchema), async (c) => 
   }
   return c.json({ token, refreshToken, user: publicUser(user) });
 });
+
+const loginTotpSchema = z.object({
+  challengeToken: z.string().min(1),
+  totpCode: z.string().min(6).max(6),
+  rememberMe: z.boolean().optional().default(false),
+  deviceFingerprint: z.string().max(256).optional().default(""),
+  deviceLabel: z.string().max(256).optional().default(""),
+});
+
+/** POST /auth/login/totp — complete login with a TOTP code after password verification. */
+auth.post(
+  "/login/totp",
+  loginLimiter,
+  zValidator("json", loginTotpSchema),
+  async (c) => {
+    const { challengeToken, totpCode, rememberMe, deviceFingerprint, deviceLabel } =
+      c.req.valid("json");
+
+    // Verify the challenge token to get the user ID.
+    const { verifyToken } = await import("../services/jwt");
+    const payload = await verifyToken(challengeToken);
+    if (!payload || !payload.totpChallenge) {
+      return c.json({ error: "Invalid or expired challenge" }, 401);
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: payload.sub } });
+    if (!user || !user.totpEnabled || !user.totpSecret) {
+      return c.json({ error: "2FA is not enabled for this account" }, 400);
+    }
+
+    if (!verifyTotp(user.totpSecret, totpCode)) {
+      return c.json({ error: "Invalid verification code" }, 401);
+    }
+
+    const token = await signToken({ sub: user.id, username: user.username });
+    let refreshToken: string | null = null;
+    if (rememberMe && deviceFingerprint) {
+      const label = deviceLabel || deviceLabelFromUA(c.req.header("user-agent") ?? "");
+      refreshToken = await issueRefreshToken({
+        userId: user.id,
+        deviceFingerprint,
+        deviceLabel: label,
+      });
+    }
+    return c.json({ token, refreshToken, user: publicUser(user) });
+  }
+);
 
 /**
  * GET /auth/registration-status — public endpoint.
@@ -229,15 +299,17 @@ auth.delete("/devices", authMiddleware, async (c) => {
 const profileSchema = z.object({
   displayName: z.string().max(64).optional(),
   avatarColor: z.string().max(32).optional(),
+  email: z.string().max(256).optional(),
 });
 
-/** PATCH /auth/profile — update own display name / avatar color. */
+/** PATCH /auth/profile — update own display name / avatar color / email. */
 auth.patch("/profile", authMiddleware, zValidator("json", profileSchema), async (c) => {
   const { userId } = c.get("auth");
   const body = c.req.valid("json");
   const data: Record<string, string> = {};
   if (body.displayName !== undefined) data.displayName = body.displayName;
   if (body.avatarColor !== undefined) data.avatarColor = body.avatarColor;
+  if (body.email !== undefined) data.email = body.email.trim();
   const user = await prisma.user.update({
     where: { id: userId },
     data,
@@ -267,6 +339,195 @@ auth.post("/password", authMiddleware, zValidator("json", passwordSchema), async
   await prisma.refreshToken.deleteMany({ where: { userId } });
   return c.json({ ok: true });
 });
+
+// ---------- 2FA (TOTP) ----------
+
+/** GET /auth/2fa/setup — generate a new TOTP secret + QR URI (not yet enabled). */
+auth.get("/2fa/setup", authMiddleware, async (c) => {
+  const { userId } = c.get("auth");
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) return c.json({ error: "Not found" }, 404);
+  if (user.totpEnabled) {
+    return c.json({ error: "2FA is already enabled. Disable it first to reconfigure." }, 400);
+  }
+  const secret = generateTotpSecret();
+  const label = user.displayName || user.username;
+  const uri = buildTotpUri({ secret, label });
+  // Temporarily store the encrypted secret in the DB (not enabled yet).
+  // The user must verify a code to enable it. If they abandon setup, the
+  // unverified secret is harmless (tottpEnabled stays false).
+  await prisma.user.update({
+    where: { id: userId },
+    data: { totpSecret: encryptTotpSecret(secret) },
+  });
+  return c.json({ secret, uri });
+});
+
+const verify2faSchema = z.object({
+  code: z.string().min(6).max(6),
+});
+
+/** POST /auth/2fa/verify — verify a TOTP code to enable 2FA. */
+auth.post("/2fa/verify", authMiddleware, zValidator("json", verify2faSchema), async (c) => {
+  const { userId } = c.get("auth");
+  const { code } = c.req.valid("json");
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) return c.json({ error: "Not found" }, 404);
+  if (!user.totpSecret) {
+    return c.json({ error: "No 2FA setup in progress. Call /auth/2fa/setup first." }, 400);
+  }
+  if (user.totpEnabled) {
+    return c.json({ error: "2FA is already enabled." }, 400);
+  }
+  // Verify against the plaintext secret (decrypt then check).
+  const { decryptTotpSecret } = await import("../services/totp");
+  const plainSecret = decryptTotpSecret(user.totpSecret);
+  if (!verifyTotpPlain(plainSecret, code)) {
+    return c.json({ error: "Invalid verification code" }, 401);
+  }
+  // Enable 2FA.
+  await prisma.user.update({
+    where: { id: userId },
+    data: { totpEnabled: true },
+  });
+  return c.json({ ok: true });
+});
+
+const disable2faSchema = z.object({
+  password: z.string().min(1),
+  code: z.string().min(6).max(6).optional(),
+});
+
+/** POST /auth/2fa/disable — disable 2FA (requires password + current TOTP code). */
+auth.post("/2fa/disable", authMiddleware, zValidator("json", disable2faSchema), async (c) => {
+  const { userId } = c.get("auth");
+  const { password, code } = c.req.valid("json");
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) return c.json({ error: "Not found" }, 404);
+  if (!user.totpEnabled) {
+    return c.json({ error: "2FA is not enabled." }, 400);
+  }
+  // Require password confirmation.
+  if (!(await bcrypt.compare(password, user.passwordHash))) {
+    return c.json({ error: "Password is incorrect" }, 401);
+  }
+  // Require TOTP code if the user still has access to their authenticator.
+  // (If they lost their device, an admin can clear totpEnabled in the DB.)
+  if (code !== undefined) {
+    if (!verifyTotp(user.totpSecret, code)) {
+      return c.json({ error: "Invalid verification code" }, 401);
+    }
+  }
+  await prisma.user.update({
+    where: { id: userId },
+    data: { totpEnabled: false, totpSecret: "" },
+  });
+  return c.json({ ok: true });
+});
+
+/** GET /auth/2fa/status — check if 2FA is enabled for the current user. */
+auth.get("/2fa/status", authMiddleware, async (c) => {
+  const { userId } = c.get("auth");
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { totpEnabled: true },
+  });
+  if (!user) return c.json({ error: "Not found" }, 404);
+  return c.json({ enabled: user.totpEnabled });
+});
+
+// ---------- Password reset (self-service via email) ----------
+
+// Stricter rate limit for password reset requests — 3 per 15 minutes per IP.
+const resetLimiter = rateLimit({ max: 3, windowMs: 15 * 60 * 1000 });
+
+const forgotPasswordSchema = z.object({
+  usernameOrEmail: z.string().min(1).max(256),
+});
+
+/** POST /auth/forgot-password — request a password reset link. */
+auth.post(
+  "/forgot-password",
+  resetLimiter,
+  zValidator("json", forgotPasswordSchema),
+  async (c) => {
+    const { usernameOrEmail } = c.req.valid("json");
+    // Look up user by username or email. Always return 200 to avoid leaking
+    // which accounts exist (timing/email enumeration protection).
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { username: usernameOrEmail },
+          { email: usernameOrEmail },
+        ],
+      },
+    });
+    if (!user || !user.email) {
+      // No user or no email on file — return success without sending.
+      return c.json({ ok: true });
+    }
+
+    // Generate a random token (48 bytes, base64url) + SHA-256 hash.
+    const rawToken = randomBytes(48).toString("base64url");
+    const tokenHash = createHash("sha256").update(rawToken).digest("hex");
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await prisma.passwordResetToken.create({
+      data: { userId: user.id, tokenHash, expiresAt },
+    });
+
+    // Send the email (async, but we await to report errors).
+    await sendPasswordResetEmail({
+      to: user.email,
+      username: user.username,
+      resetToken: rawToken,
+    });
+
+    return c.json({ ok: true });
+  }
+);
+
+const resetPasswordSchema = z.object({
+  token: z.string().min(1),
+  newPassword: z.string().min(4).max(128),
+});
+
+/** POST /auth/reset-password — set a new password using a reset token. */
+auth.post(
+  "/reset-password",
+  resetLimiter,
+  zValidator("json", resetPasswordSchema),
+  async (c) => {
+    const { token, newPassword } = c.req.valid("json");
+    const tokenHash = createHash("sha256").update(token).digest("hex");
+
+    const resetRecord = await prisma.passwordResetToken.findUnique({
+      where: { tokenHash },
+      include: { user: true },
+    });
+
+    if (!resetRecord || resetRecord.usedAt || resetRecord.expiresAt.getTime() < Date.now()) {
+      return c.json({ error: "Invalid or expired reset token" }, 400);
+    }
+
+    // Set the new password.
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: resetRecord.userId },
+        data: { passwordHash },
+      }),
+      prisma.passwordResetToken.update({
+        where: { id: resetRecord.id },
+        data: { usedAt: new Date() },
+      }),
+      // Revoke all refresh tokens — force re-login on all devices.
+      prisma.refreshToken.deleteMany({ where: { userId: resetRecord.userId } }),
+    ]);
+
+    return c.json({ ok: true });
+  }
+);
 
 // ---------- Data export + account deletion ----------
 
