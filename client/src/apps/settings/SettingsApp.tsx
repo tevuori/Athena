@@ -15,6 +15,7 @@ import {
   Info,
   BarChart3,
   Clock,
+  Shield,
 } from "lucide-react";
 import { useAuth } from "../../store/auth";
 import type { WindowInstance } from "../../store/windows";
@@ -33,6 +34,7 @@ import AnalyticsSection from "./sections/AnalyticsSection";
 import DataStorageSection from "./sections/DataStorageSection";
 import AboutSection from "./sections/AboutSection";
 import DateTimeSection from "./sections/DateTimeSection";
+import LegalSection from "./sections/LegalSection";
 
 interface SectionDef {
   id: string;
@@ -55,6 +57,7 @@ const SECTIONS: SectionDef[] = [
   { id: "users", label: "Users", icon: <UsersIcon size={15} />, adminOnly: true },
   { id: "analytics", label: "Analytics", icon: <BarChart3 size={15} />, adminOnly: true },
   { id: "data", label: "Data & Storage", icon: <Database size={15} /> },
+  { id: "legal", label: "Legal", icon: <Shield size={15} /> },
   { id: "about", label: "About", icon: <Info size={15} /> },
 ];
 
@@ -81,6 +84,7 @@ export default function SettingsApp({ win }: { win: WindowInstance }) {
     if (active === "users" && isAdmin) return <UsersSection />;
     if (active === "analytics" && isAdmin) return <AnalyticsSection />;
     if (active === "data") return <DataStorageSection />;
+    if (active === "legal") return <LegalSection />;
     if (active === "about") return <AboutSection />;
     return null;
   };

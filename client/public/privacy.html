@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Privacy Policy — Mavino</title>
+<meta name="robots" content="index,follow" />
+<style>
+  :root {
+    --bg: #0b0d12;
+    --surface: #14171f;
+    --surface-2: #1b1f29;
+    --edge: #2a2f3c;
+    --ink: #e6e8ee;
+    --ink-muted: #9aa3b2;
+    --accent: #6366f1;
+    --red: #ef4444;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.7 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 48px 20px 96px; }
+  h1 { font-size: 28px; margin: 0 0 4px; letter-spacing: -0.02em; }
+  h2 { font-size: 19px; margin: 40px 0 10px; padding-top: 8px; border-top: 1px solid var(--edge); }
+  h3 { font-size: 15px; margin: 24px 0 6px; color: var(--ink); }
+  p, li { color: var(--ink-muted); }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .meta { color: var(--ink-muted); font-size: 13px; margin-bottom: 8px; }
+  .badge { display: inline-block; background: var(--surface-2); border: 1px solid var(--edge); border-radius: 999px; padding: 2px 10px; font-size: 12px; color: var(--ink-muted); margin-bottom: 24px; }
+  ul { padding-left: 20px; }
+  li { margin: 4px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--edge); vertical-align: top; }
+  th { color: var(--ink); font-weight: 600; }
+  td { color: var(--ink-muted); }
+  .toc { background: var(--surface); border: 1px solid var(--edge); border-radius: 10px; padding: 16px 20px; margin: 24px 0 8px; }
+  .toc ol { margin: 0; padding-left: 20px; }
+  .toc a { color: var(--ink-muted); }
+  .callout { background: var(--surface); border: 1px solid var(--edge); border-left: 3px solid var(--accent); border-radius: 8px; padding: 12px 16px; margin: 16px 0; }
+  .callout strong { color: var(--ink); }
+  .danger { border-left-color: var(--red); }
+  code { background: var(--surface-2); border-radius: 4px; padding: 1px 5px; font-size: 13px; }
+  hr { border: none; border-top: 1px solid var(--edge); margin: 32px 0; }
+  .footer { margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--edge); font-size: 12px; color: var(--ink-muted); }
+  @media (max-width: 600px) { .wrap { padding: 28px 16px 64px; } h1 { font-size: 24px; } table { font-size: 12px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <span class="badge">Hosted service · athena.tevuori.eu</span>
+  <h1>Privacy Policy</h1>
+  <p class="meta">Mavino — Student OS · Last updated: 7 August 2026</p>
+
+  <div class="callout">
+    <strong>Data Controller:</strong> Jakub Horák, <a href="mailto:me@tevuori.eu">me@tevuori.eu</a><br/>
+    This policy applies to the hosted Mavino service operated by Jakub Horák at
+    <a href="https://athena.tevuori.eu">athena.tevuori.eu</a>. If you use a self-hosted Mavino
+    instance, your data is controlled by the operator of that instance — see
+    <a href="#self-hosted">Section 12</a>.
+  </div>
+
+  <div class="toc">
+    <strong style="color:var(--ink)">Contents</strong>
+    <ol>
+      <li><a href="#who">Who we are</a></li>
+      <li><a href="#what">What data we collect and why</a></li>
+      <li><a href="#legal-basis">Legal basis for processing</a></li>
+      <li><a href="#third-parties">Where your data is sent (third parties)</a></li>
+      <li><a href="#storage">How and where data is stored</a></li>
+      <li><a href="#retention">How long we keep your data</a></li>
+      <li><a href="#security">Security measures</a></li>
+      <li><a href="#rights">Your GDPR rights</a></li>
+      <li><a href="#delete">How to delete your account</a></li>
+      <li><a href="#transfers">International data transfers</a></li>
+      <li><a href="#children">Children's data</a></li>
+      <li><a href="#self-hosted">Self-hosted instances</a></li>
+      <li><a href="#changes">Changes to this policy</a></li>
+      <li><a href="#contact">Contact</a></li>
+    </ol>
+  </div>
+
+  <h2 id="who">1. Who we are</h2>
+  <p>
+    Mavino is a personal productivity platform for students. The hosted service at
+    <a href="https://athena.tevuori.eu">athena.tevuori.eu</a> is operated by <strong>Jakub Horák</strong>
+    (the "Controller", "we", "us"), acting as the data controller for the purposes of the General Data
+    Protection Regulation (Regulation (EU) 2016/679, "GDPR") and the Czech Act on the Processing of
+    Personal Data (Act No. 110/2019 Coll., "ZOOÚ").
+  </p>
+  <p>
+    Mavino is <a href="https://github.com/">open-source software</a> licensed under the AGPL-3.0.
+    This policy covers only the instance we operate. The software itself processes no data without an
+    operator running it.
+  </p>
+
+  <h2 id="what">2. What data we collect and why</h2>
+  <p>Mavino is a data-rich productivity tool. The data we process falls into the categories below.</p>
+
+  <h3>2.1 Account &amp; authentication data</h3>
+  <ul>
+    <li><strong>Username, display name, email</strong> (optional) — to identify you and send password-reset emails.</li>
+    <li><strong>Password</strong> — stored only as a bcrypt hash (salt rounds 10). We never store or see your plaintext password.</li>
+    <li><strong>Two-factor (TOTP) secret</strong> — encrypted at rest (AES-256-GCM) and used only to verify your 2FA codes.</li>
+    <li><strong>Refresh tokens &amp; device labels</strong> — SHA-256 hashes of refresh tokens plus a device label derived from your browser's User-Agent, so you can review and revoke active sessions.</li>
+  </ul>
+
+  <h3>2.2 Academic data</h3>
+  <ul>
+    <li><strong>Grades &amp; assignments</strong> — course names, codes, scores, weights, and categories (synced from VUT or entered manually).</li>
+    <li><strong>Timetable</strong> — class times and locations (synced from VUT or entered manually).</li>
+    <li><strong>Calendar events</strong> — titles, descriptions, times, and locations from manual entry, tasks, VUT, assignments, ICS imports, Moodle, or Microsoft Graph.</li>
+  </ul>
+
+  <h3>2.3 Notes, tasks &amp; study content</h3>
+  <ul>
+    <li><strong>Notes</strong> — full markdown content (including LaTeX), titles, tags, and folder structure.</li>
+    <li><strong>Tasks</strong> — titles, descriptions, due dates, priorities, statuses, and recurrence rules.</li>
+    <li><strong>Flashcards</strong> — front/back content and spaced-repetition review history (SM-2 algorithm state).</li>
+    <li><strong>Study Hub data</strong> — chat conversations with the AI assistant, source texts extracted from your notes/files/pastes/Moodle/web URLs, study sessions, highlights, and teacher-mode sessions.</li>
+    <li><strong>AI memories</strong> — facts and preferences the assistant remembers about you (you can view and delete these in the app).</li>
+  </ul>
+
+  <h3>2.4 Files &amp; media</h3>
+  <ul>
+    <li><strong>Uploaded files</strong> — documents, images, PDFs, and other files you upload, stored on the server's disk.</li>
+    <li><strong>Voice recordings</strong> — audio you record in the Voice app (webm/ogg/mp4/wav) is <strong>persisted on the server</strong> and linked to a transcribed note. See <a href="#voice">Section 4.3</a> for where audio is sent for transcription.</li>
+    <li><strong>Lecture videos</strong> — video files you submit for the lecture-to-notes pipeline are processed and then the temporary working files are deleted.</li>
+    <li><strong>Moodle materials</strong> — virtual file references (not the file bytes) for materials synced from Moodle; the bytes are streamed on-demand from Moodle.</li>
+  </ul>
+
+  <h3>2.5 Third-party credentials you provide</h3>
+  <p>To enable integrations, you may store credentials that Mavino uses on your behalf. All are <strong>encrypted at rest with AES-256-GCM</strong>:</p>
+  <ul>
+    <li><strong>VUT username &amp; password</strong> — for VUT SSO login, grades/timetable sync, and Moodle ride-along authentication.</li>
+    <li><strong>LLM provider API key</strong> (and optional fallback) — for the AI assistant. Provider may be OpenAI, Anthropic, OpenRouter, DeepSeek, Groq, Mistral, Google, xAI, Meta, Cerebras, or a local Ollama instance.</li>
+    <li><strong>ElevenLabs API key</strong> — for text-to-speech.</li>
+    <li><strong>Microsoft Graph OAuth credentials</strong> (client ID, client secret, refresh token, tenant ID) — for Outlook calendar sync.</li>
+    <li><strong>Spotify OAuth credentials</strong> (client ID, client secret, refresh token) — for music playback control.</li>
+    <li><strong>Mapy.cz API key</strong> — for maps and route planning.</li>
+    <li><strong>Ntfy server URL &amp; token</strong> — for push notifications.</li>
+  </ul>
+
+  <h3>2.6 Other personal data</h3>
+  <ul>
+    <li><strong>Habits &amp; habit logs</strong> — habit names and daily completion values.</li>
+    <li><strong>Trips &amp; hiking tours</strong> — planned routes, waypoints, POIs, and AI-narrated summaries.</li>
+    <li><strong>Whiteboards, workspaces, reminders, focus sessions</strong> — your productivity content and layouts.</li>
+    <li><strong>Settings &amp; preferences</strong> — theme, accent, notification preferences, AI instructions, etc.</li>
+    <li><strong>Anonymous usage statistics</strong> — aggregate per-feature daily hit counts with <strong>no user ID attached</strong>, used only for the admin dashboard.</li>
+  </ul>
+
+  <h2 id="legal-basis">3. Legal basis for processing</h2>
+  <table>
+    <tr><th>Processing</th><th>Legal basis (GDPR Art. 6)</th></tr>
+    <tr><td>Account creation, authentication, and providing the service you requested</td><td>Art. 6(1)(b) — performance of a contract</td></tr>
+    <tr><td>Syncing grades, timetable, calendar, and files from integrations you connect</td><td>Art. 6(1)(b) — performance of a contract</td></tr>
+    <tr><td>Sending your content to LLM, TTS, and transcription providers to generate AI responses</td><td>Art. 6(1)(b) — performance of a contract (you request these features)</td></tr>
+    <tr><td>Storing credentials to act on your behalf with third-party services</td><td>Art. 6(1)(b) — performance of a contract</td></tr>
+    <tr><td>Password-reset emails</td><td>Art. 6(1)(b) — performance of a contract</td></tr>
+    <tr><td>Anonymous aggregate usage statistics</td><td>Art. 6(1)(f) — legitimate interest (improving the service); no individuals are identifiable</td></tr>
+    <tr><td>Daily encrypted backups for disaster recovery</td><td>Art. 6(1)(f) — legitimate interest (service security and continuity)</td></tr>
+  </table>
+
+  <h2 id="third-parties">4. Where your data is sent (third parties)</h2>
+  <p>
+    Mavino integrates with several third-party services. Below is a complete list of where your data
+    is transmitted, what is sent, and why. <strong>You control most of these integrations</strong> —
+    they only activate when you connect them in Settings → Integrations or Settings → Mavino Assistant.
+  </p>
+
+  <h3>4.1 LLM providers (AI assistant, Study Hub, lecture notes, voice cleanup)</h3>
+  <p>
+    When you use the Mavino assistant, Study Hub, lecture-to-notes, or voice-note cleanup, your data is
+    sent to the <strong>LLM provider you configured</strong> (or a server-wide fallback). Providers
+    include OpenAI, Anthropic, OpenRouter, DeepSeek, Groq, Mistral, Google, xAI, Meta, Cerebras, or a
+    self-hosted Ollama instance.
+  </p>
+  <p><strong>What is sent:</strong></p>
+  <ul>
+    <li>Your chat conversation history (messages, including any files/notes you attach).</li>
+    <li>Source content for Study Hub — extracted text from your notes, uploaded files, pasted text, Moodle resources, and fetched web pages.</li>
+    <li>Context about your calendar, tasks, habits, due flashcards, and AI memories (so the assistant can give relevant answers).</li>
+    <li>Your custom AI instructions.</li>
+    <li>Raw voice transcripts (for the cleanup pass) and lecture video transcripts / slide OCR text.</li>
+  </ul>
+  <p><strong>Purpose:</strong> to generate AI responses, summaries, flashcards, podcasts, quizzes, and cleaned transcripts.</p>
+  <div class="callout">
+    <strong>Important:</strong> Each LLM provider has its own privacy policy and may retain or train on
+    your inputs depending on their terms and your account type. <strong>Check your provider's policy.</strong>
+    If you use a self-hosted Ollama instance, your data does not leave that instance.
+  </div>
+
+  <h3>4.2 ElevenLabs (text-to-speech)</h3>
+  <p>
+    When you use Teach Me mode or play a generated podcast, the text to be spoken is sent to
+    ElevenLabs' API (<code>api.elevenlabs.io</code>) along with your configured voice ID and model ID.
+    A fallback to Microsoft Edge TTS (no data leaves the server) is available.
+  </p>
+
+  <h3 id="voice">4.3 Voice &amp; lecture transcription (Whisper-compatible)</h3>
+  <p>
+    When you record a voice note or submit a lecture video, the <strong>audio file bytes</strong> are
+    sent to an OpenAI-compatible Whisper transcription endpoint (configured by the operator or your
+    LLM credentials). The audio is transmitted for transcription; the resulting text is stored as a
+    note. The audio file itself is also stored on the Mavino server (see <a href="#storage">Section 5</a>).
+  </p>
+
+  <h3>4.4 Microsoft Graph (Outlook calendar)</h3>
+  <p>
+    If you connect Microsoft Calendar, Mavino uses your OAuth credentials to read and write calendar
+    events (subjects, bodies, times, locations) via the Microsoft Graph API
+    (<code>graph.microsoft.com</code>). Your refresh token is exchanged at Microsoft's token endpoint.
+  </p>
+
+  <h3>4.5 VUT SSO &amp; Moodle (Brno University of Technology)</h3>
+  <p>
+    If you connect the VUT integration, Mavino logs in to VUT (<code>vut.cz</code> / <code>id.vut.cz</code>)
+    using your stored VUT username and password, then fetches your grades, timetable, and updates.
+    The VUT session is reused to authenticate to Moodle (<code>moodle.vut.cz</code>) via OIDC
+    ride-along — no separate Moodle credentials are stored. Session cookies are held in memory only
+    (25-minute TTL) and are never persisted to disk.
+  </p>
+
+  <h3>4.6 Mapy.cz (maps &amp; route planning)</h3>
+  <p>
+    If you use the Maps app, your geocoding queries, routing requests (start/end/waypoints), and POI
+    searches are sent to the mapy.com REST API (<code>api.mapy.com</code>) using your stored API key.
+    Tile images are loaded directly by your browser with the API key as a query parameter.
+  </p>
+
+  <h3>4.7 Spotify (music playback)</h3>
+  <p>
+    If you connect Spotify, Mavino uses your OAuth credentials to control playback and fetch track
+    metadata via the Spotify Web API. Track names/artists are also sent to LRCLIB
+    (<code>lrclib.net</code>) to fetch synced lyrics.
+  </p>
+
+  <h3>4.8 Web search (Tavily / Brave / DuckDuckGo)</h3>
+  <p>
+    When the AI assistant or Study Hub performs a web search, your search query (and an optional
+    region code) is sent to Tavily, Brave, or DuckDuckGo. No other personal data is included.
+  </p>
+
+  <h3>4.9 URL fetching &amp; in-app browser</h3>
+  <p>
+    When you ask the assistant to read a web page or use the in-app Browser app, Mavino fetches the
+    URL you provide. The request includes a User-Agent header and, for the Browser app, a per-user
+    in-memory cookie jar (24-hour TTL, not persisted). Server-side SSRF protection blocks private
+    network ranges.
+  </p>
+
+  <h3>4.10 Ntfy (push notifications)</h3>
+  <p>
+    If you configure Ntfy, notification messages (title, body, tags, priority) are sent to your
+    configured Ntfy server (default <code>ntfy.sh</code>) along with an optional bearer token.
+  </p>
+
+  <h3>4.11 SMTP (transactional email)</h3>
+  <p>
+    When you request a password reset, an email containing a reset link is sent to your email address
+    via the operator's configured SMTP server. No marketing emails are sent.
+  </p>
+
+  <h3>4.12 Summary table</h3>
+  <table>
+    <tr><th>Recipient</th><th>Data sent</th><th>Purpose</th><th>Activated by</th></tr>
+    <tr><td>LLM provider (your choice)</td><td>Chat history, note/file content, transcripts, context</td><td>AI features</td><td>Using AI features</td></tr>
+    <tr><td>ElevenLabs</td><td>Text to synthesize, voice ID</td><td>Text-to-speech</td><td>Teach Me / podcasts</td></tr>
+    <tr><td>Whisper transcription endpoint</td><td>Audio file bytes</td><td>Voice/lecture transcription</td><td>Recording voice / submitting video</td></tr>
+    <tr><td>Microsoft Graph</td><td>Calendar events, OAuth tokens</td><td>Calendar sync</td><td>Connecting MS Calendar</td></tr>
+    <tr><td>VUT / Moodle</td><td>VUT username &amp; password, session cookies, academic data</td><td>Grades, timetable, course sync</td><td>Connecting VUT</td></tr>
+    <tr><td>Mapy.cz</td><td>Geocoding/routing/POI queries, API key</td><td>Maps &amp; trip planning</td><td>Using Maps app</td></tr>
+    <tr><td>Spotify / LRCLIB</td><td>OAuth tokens, track metadata</td><td>Music playback &amp; lyrics</td><td>Connecting Spotify</td></tr>
+    <tr><td>Tavily / Brave / DuckDuckGo</td><td>Search queries</td><td>Web search</td><td>AI web search</td></tr>
+    <tr><td>Arbitrary web URLs</td><td>URL fetch requests</td><td>Reading pages / in-app browser</td><td>Requesting a URL</td></tr>
+    <tr><td>Ntfy server</td><td>Notification messages, token</td><td>Push notifications</td><td>Configuring Ntfy</td></tr>
+    <tr><td>SMTP server</td><td>Email address, reset link</td><td>Password reset</td><td>Requesting reset</td></tr>
+  </table>
+
+  <h2 id="storage">5. How and where data is stored</h2>
+  <ul>
+    <li><strong>Database:</strong> PostgreSQL 16, running on the hosted server (EU / Czech Republic VPS). All structured data (account, notes, tasks, grades, calendar, chat history, etc.) is stored here.</li>
+    <li><strong>File storage:</strong> Uploaded files and voice recordings are stored on the server's disk (Docker volume).</li>
+    <li><strong>Cache / rate limiting:</strong> Redis 7 is used for rate-limiting and ephemeral caching. No personal data is persisted in Redis beyond short-lived session cookies (VUT/Moodle: 25 min; in-app browser: 24 h).</li>
+    <li><strong>Backups:</strong> Daily encrypted backups are retained for 14 days (see <a href="#retention">Section 6</a>).</li>
+    <li><strong>Encryption at rest:</strong> All third-party credentials and TOTP secrets are encrypted with AES-256-GCM before being written to the database. Passwords are bcrypt-hashed (salt rounds 10).</li>
+    <li><strong>In transit:</strong> All traffic to and from <code>athena.tevuori.eu</code> is encrypted with TLS (terminated by nginx / Let's Encrypt).</li>
+  </ul>
+
+  <h2 id="retention">6. How long we keep your data</h2>
+  <ul>
+    <li><strong>Account &amp; content:</strong> We keep your data for as long as your account is active. When you delete your account (see <a href="#delete">Section 9</a>), all your data is permanently removed via cascade delete.</li>
+    <li><strong>Voice recordings &amp; uploaded files:</strong> Retained until you delete them or delete your account. Lecture-pipeline temporary working files are deleted after processing completes.</li>
+    <li><strong>Backups:</strong> Daily backups are retained for <strong>14 days</strong>, then automatically deleted. After you delete your account, your data may persist in a backup for up to 14 days before being permanently gone.</li>
+    <li><strong>Refresh tokens:</strong> Rotated on each use and expire automatically; revocable per-device at any time.</li>
+    <li><strong>Password-reset tokens:</strong> Expire after 1 hour.</li>
+    <li><strong>Session cookies (VUT/Moodle/browser):</strong> In-memory only, 25 min (VUT/Moodle) or 24 h (browser) TTL, never persisted.</li>
+    <li><strong>Anonymous usage stats:</strong> Aggregate daily counts, no user ID, retained indefinitely.</li>
+  </ul>
+
+  <h2 id="security">7. Security measures</h2>
+  <ul>
+    <li><strong>Encryption at rest</strong> for all credentials and TOTP secrets (AES-256-GCM).</li>
+    <li><strong>Bcrypt password hashing</strong> (salt rounds 10) — plaintext passwords are never stored or logged.</li>
+    <li><strong>TLS</strong> for all network traffic.</li>
+    <li><strong>JWT-based authentication</strong> with short-lived access tokens and rotated, revocable refresh tokens.</li>
+    <li><strong>Optional two-factor authentication</strong> (TOTP) for your account.</li>
+    <li><strong>SSRF protection</strong> on URL-fetching features to prevent access to private networks.</li>
+    <li><strong>Redis-based rate limiting</strong> to prevent abuse.</li>
+    <li><strong>Per-user data isolation</strong> — every database query is scoped to the authenticated user; there is no cross-user access.</li>
+    <li><strong>Encrypted daily backups</strong> with 14-day retention.</li>
+  </ul>
+  <p>
+    No method of transmission or storage is 100% secure. If a breach occurs that is likely to result
+    in a risk to your rights and freedoms, we will notify the relevant supervisory authority and you
+    within 72 hours, as required by GDPR Art. 33–34.
+  </p>
+
+  <h2 id="rights">8. Your GDPR rights</h2>
+  <p>Under the GDPR and Czech Act No. 110/2019 Coll., you have the following rights:</p>
+  <ul>
+    <li><strong>Right of access</strong> (Art. 15) — request a copy of your data via <em>Settings → Data &amp; Storage → Export</em> or by emailing us.</li>
+    <li><strong>Right to rectification</strong> (Art. 16) — correct inaccurate data in-app or by emailing us.</li>
+    <li><strong>Right to erasure</strong> ("right to be forgotten", Art. 17) — delete your account as described in <a href="#delete">Section 9</a>.</li>
+    <li><strong>Right to restriction</strong> (Art. 18) — request that we limit processing of your data.</li>
+    <li><strong>Right to data portability</strong> (Art. 20) — export your data in JSON format via <em>Settings → Data &amp; Storage → Export</em>.</li>
+    <li><strong>Right to object</strong> (Art. 21) — object to processing based on legitimate interest (e.g. anonymous analytics).</li>
+    <li><strong>Right to withdraw consent</strong> (Art. 7(3)) — disconnect any integration in Settings → Integrations at any time; the associated credentials are deleted.</li>
+    <li><strong>Right to lodge a complaint</strong> (Art. 77) — with the Czech Data Protection Authority (<a href="https://www.uoou.cz">ÚOOÚ</a>) or your local supervisory authority.</li>
+  </ul>
+  <p>To exercise any of these rights, email <a href="mailto:me@tevuori.eu">me@tevuori.eu</a>. We respond within one month (extendable by two months for complex requests, per Art. 12(3)).</p>
+
+  <h2 id="delete">9. How to delete your account</h2>
+  <div class="callout danger">
+    <strong>Account deletion is self-service, immediate, and irreversible.</strong>
+  </div>
+  <ol>
+    <li>Open <strong>Settings → Data &amp; Storage</strong>.</li>
+    <li>In the <strong>Danger zone</strong> card, enter your password.</li>
+    <li>Click <strong>Delete account</strong> and confirm the two warning dialogs.</li>
+  </ol>
+  <p>
+    This calls <code>DELETE /auth/account</code> with your password. On confirmation, the server
+    <strong>permanently deletes</strong> your user record and cascades the deletion to <em>all</em>
+    associated data: notes, tasks, courses, grades, calendar events, files, voice recordings,
+    flashcards, chat history, AI memories, study sessions, habits, trips, whiteboards, reminders,
+    focus sessions, and all stored third-party credentials. The deletion is final and cannot be undone.
+  </p>
+  <p>
+    The only trace that may remain is in the <strong>daily backups</strong>, which are retained for up
+    to 14 days and then automatically overwritten. If you need accelerated removal from backups,
+    email <a href="mailto:me@tevuori.eu">me@tevuori.eu</a>.
+  </p>
+  <p>
+    Prefer to export first? Use <strong>Settings → Data &amp; Storage → Export</strong> to download a
+    JSON backup of all your data <em>before</em> deleting.
+  </p>
+  <p>
+    You can also <strong>disconnect individual integrations</strong> without deleting your account:
+    Settings → Integrations removes the stored credentials for any service you no longer want
+    connected.
+  </p>
+
+  <h2 id="transfers">10. International data transfers</h2>
+  <p>
+    The Mavino server is hosted in the <strong>European Union</strong> (Czech Republic). However,
+    several third-party providers you may connect are based outside the EU/EEA:
+  </p>
+  <ul>
+    <li><strong>OpenAI</strong> (USA) — SCCs + EU-US Data Privacy Framework.</li>
+    <li><strong>Anthropic</strong> (USA) — SCCs.</li>
+    <li><strong>Google</strong> (USA) — SCCs + EU-US DPF.</li>
+    <li><strong>Microsoft</strong> (USA) — SCCs + EU-US DPF.</li>
+    <li><strong>xAI, Meta, Cerebras</strong> (USA) — SCCs.</li>
+    <li><strong>ElevenLabs</strong> (USA/UK) — SCCs.</li>
+    <li><strong>Spotify</strong> (Sweden/EU) — no transfer issue.</li>
+    <li><strong>Mapy.cz</strong> (Czech Republic/EU) — no transfer issue.</li>
+    <li><strong>VUT / Moodle</strong> (Czech Republic/EU) — no transfer issue.</li>
+    <li><strong>Tavily, Brave, DuckDuckGo, LRCLIB, ntfy.sh</strong> (USA) — SCCs.</li>
+    <li><strong>Ollama (self-hosted)</strong> — no transfer if hosted in the EU.</li>
+  </ul>
+  <p>
+    Where a provider is located outside the EU/EEA, transfers rely on Standard Contractual Clauses
+    (SCCs) and, where applicable, the EU-US Data Privacy Framework. You should review each provider's
+    own privacy policy, as they act as independent controllers or processors of the data you send
+    them. You can avoid non-EU transfers entirely by using a self-hosted Ollama LLM and not connecting
+    US-based integrations.
+  </p>
+
+  <h2 id="children">11. Children's data</h2>
+  <p>
+    Mavino is intended for university students and adults. The service is not directed at children
+    under 16 (the age of digital consent in Czechia). We do not knowingly process the data of children
+    under 16. If you believe a child has provided us with personal data, email
+    <a href="mailto:me@tevuori.eu">me@tevuori.eu</a> and we will delete it.
+  </p>
+
+  <h2 id="self-hosted">12. Self-hosted instances</h2>
+  <p>
+    Mavino is open-source and can be self-hosted. If you access Mavino on a domain other than
+    <code>athena.tevuori.eu</code>, <strong>the operator of that instance is the data controller</strong>,
+    not Jakub Horák. This privacy policy does not apply to self-hosted instances. Self-hosters are
+    responsible for publishing their own privacy policy, configuring encryption, managing backups, and
+    complying with their applicable data-protection obligations.
+  </p>
+
+  <h2 id="changes">13. Changes to this policy</h2>
+  <p>
+    We may update this policy to reflect changes in the service or the law. We will update the "Last
+    updated" date above and, for material changes, notify you in-app. Continued use after changes take
+    effect constitutes acceptance of the updated policy.
+  </p>
+
+  <h2 id="contact">14. Contact</h2>
+  <p>
+    <strong>Data Controller:</strong> Jakub Horák<br/>
+    <strong>Email:</strong> <a href="mailto:me@tevuori.eu">me@tevuori.eu</a><br/>
+    <strong>Service:</strong> <a href="https://athena.tevuori.eu">athena.tevuori.eu</a><br/>
+    <strong>Supervisory authority:</strong> <a href="https://www.uoou.cz">Úřad pro ochranu osobních údajů (ÚOOÚ)</a>, Czech Republic
+  </p>
+  <p>
+    For any privacy request, complaint, or question, contact us at
+    <a href="mailto:me@tevuori.eu">me@tevuori.eu</a>. We aim to respond within one month.
+  </p>
+
+  <div class="footer">
+    Mavino — Student OS · Open-source under AGPL-3.0 · Hosted in the EU (Czech Republic)
+  </div>
+</div>
+</body>
+</html>
