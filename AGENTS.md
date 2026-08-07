@@ -595,3 +595,48 @@ Apps are classified into three availability tiers (defined in `client/src/apps/r
 **Admin UI:** Settings → **Apps** (admin) = global per-app kill switch (Settings always on). Settings → **Users** → edit user = per-user VUT/Moodle grant toggle. Settings → **Beta Apps** (all users) = the beta toggle + a read-only VUT-access status pill.
 
 **Locked states:** the VUT and Moodle apps render a "not enabled" screen when `vutGranted` is false (defense-in-depth if a window is open when the grant is revoked). The Integrations cards for VUT/Moodle show a locked notice instead of the login form when not granted.
+
+## Error monitoring + LLM global key + tier-based rate limits
+
+### Error logging (admin monitoring)
+
+Errors from both client and server are persisted to the `ErrorLog` table so admins can monitor outages from Settings → **Error Logs** before users report them.
+
+- **`ErrorLog` model** (`prisma/schema.prisma`): `timestamp`, `level` (error/warn/fatal), `source` ("client"|"server"), `message`, `stack`, `url`, `userAgent`, `userId` (nullable, SetNull on delete), `resolved` (boolean).
+- **Client errors**: `routes/client-errors.ts` persists each batch to the DB via `services/error-log.ts` (in addition to console logging for `docker logs`).
+- **Server errors**: `index.ts` `app.onError` + `process.on("unhandledRejection")` both call `logError()` to persist unhandled 500s and stray promise rejections.
+- **Admin route** (`routes/admin-errors.ts`, mounted at `/api/admin/errors`): `GET /` (paginated list with source/resolved filters), `GET /stats` (summary counts: total, unresolved, client/server, last 24h), `PUT /:id/resolve`, `PUT /resolve-all`, `DELETE /:id`, `DELETE /resolved` (cleanup).
+- **Admin UI**: `sections/ErrorLogSection.tsx` — stat cards, filterable list (unresolved/all/client/server), expandable stack traces, resolve/delete actions.
+
+### Global LLM key + mode switch
+
+The admin can choose between two LLM key modes in Settings → **LLM Config** (admin-only):
+
+- **Per-user mode** (default): each user configures their own API key in Settings → Mavino Assistant. This is the original behavior.
+- **Global mode**: a single admin-configured key is used for all LLM requests. Users don't need to set up their own key — Mavino AI works out of the box.
+
+**Storage**: all global LLM config is in the `Setting` table (userId = null): `llm.mode` ("per-user"|"global"), `llm.global.key` (AES-256-GCM encrypted), `llm.global.provider`, `llm.global.baseUrl`, `llm.global.modelId`.
+
+**Server**: `services/llm-config.ts` manages the global config. `services/athena/llm.ts` `getUserConfig()` checks the mode first — in global mode it returns the global key (ignoring per-user `AiCredential`); in per-user mode it uses the user's own key. `acquireLlmModel()` applies tier-based rate limits in global mode, or per-user rate limit config in per-user mode.
+
+**Admin route** (`routes/admin-llm.ts`, mounted at `/api/admin/llm`): `GET /` (config, never returns the key), `PUT /mode`, `PUT /key`, `DELETE /key`, `GET /rate-limits`, `PUT /rate-limits`.
+
+**Client UI**: `sections/LlmAdminSection.tsx` — mode switch (per-user vs global), global key input, tier rate limit config. In `AthenaSection.tsx`, the per-user key/rate-limit/fallback cards are hidden when global mode is active (replaced with an info banner).
+
+### User tiers + rate limits
+
+Three user tiers control AI rate limits when global key mode is active:
+
+- **ADMIN** — unlimited (rpd=0, rpm=0). No restrictions.
+- **PAID** — higher limits (default: 500 rpd, 30 rpm). Admin-configurable.
+- **FREE** — lower limits (default: 50 rpd, 10 rpm). Admin-configurable.
+
+**Role migration**: `User.role` changed from `"USER"|"ADMIN"` to `"FREE"|"PAID"|"ADMIN"`. Migration `2_error_logs_and_user_roles` renames existing "USER" → "FREE" and updates the default. Open-registration users get "FREE"; bootstrap user gets "ADMIN".
+
+**Rate limit storage**: `Setting` table (userId = null): `ratelimit.paid.rpd`, `ratelimit.paid.rpm`, `ratelimit.free.rpd`, `ratelimit.free.rpm`. Admin tier is always unlimited (hardcoded, not configurable). Setting rpd or rpm to 0 means unlimited.
+
+**Rate limiting**: `services/athena/llm.ts` `acquireLlmModel()` calls `getRateLimitsForUser(userId)` which looks up the user's role → tier → limits. The existing in-memory `llmRateLimiter` (sliding window) enforces the limits. In per-user mode, the user's own rate limit config applies instead.
+
+**User-facing UI**: `AthenaSection.tsx` shows a **TierInfoCard** at the top with the user's tier, current mode (global/per-user), and rate limits + today's usage. In per-user mode, the existing rate limit + fallback cards are shown. In global mode, they're hidden (managed by admin).
+
+**Admin user management**: `UsersSection.tsx` role dropdown now has three options: Free (limited AI), Paid (higher AI limits), Administrator. The user list shows PAID/FREE badges next to each user.

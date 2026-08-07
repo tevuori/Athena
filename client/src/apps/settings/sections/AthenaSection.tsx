@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
-import { Sparkles, Trash2, Loader2, Check, Gauge, Shield, Volume2 } from "lucide-react";
-import { aiApi, type AiKeyStatus } from "../../../services/ai";
+import { Sparkles, Trash2, Loader2, Check, Gauge, Shield, Volume2, Crown, Zap, Globe } from "lucide-react";
+import { aiApi, type AiKeyStatus, type RateTier } from "../../../services/ai";
 import { getAthenaInstructions, setAthenaInstructions } from "../../../services/athena";
 import { ttsApi, type TtsConfig } from "../../../services/tts";
 import { SectionHeader, Card, Field, StatusPill, SaveButton, MsgBox, inputClass } from "../ui";
@@ -13,12 +13,82 @@ export default function AthenaSection() {
         title="Mavino Assistant"
         description="Connect an LLM provider and customize how Mavino responds."
       />
+      <TierInfoCard />
       <LlmConfigCard />
       <RateLimitCard />
       <FallbackCard />
       <TtsConfigCard />
       <InstructionsCard />
     </section>
+  );
+}
+
+// ===== Tier info card (shows the user's tier + rate limits) =====
+
+function TierInfoCard() {
+  const [status, setStatus] = useState<AiKeyStatus | null>(null);
+
+  const refresh = useCallback(async () => {
+    try { setStatus(await aiApi.getKeyStatus()); } catch { /* ignore */ }
+  }, []);
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  if (!status) return null;
+
+  const tierLabel: Record<RateTier, string> = {
+    admin: "Admin",
+    paid: "Paid",
+    free: "Free",
+  };
+  const tierIcon: Record<RateTier, typeof Crown> = {
+    admin: Crown,
+    paid: Zap,
+    free: Globe,
+  };
+  const TierIcon = tierIcon[status.tier];
+  const limits = status.tierRateLimits;
+  const isGlobal = status.llmMode === "global";
+
+  return (
+    <Card className="mb-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${
+            status.tier === "admin" ? "bg-amber-500/15 text-amber-500"
+            : status.tier === "paid" ? "bg-indigo-500/15 text-indigo-400"
+            : "bg-surface-3 text-ink-muted"
+          }`}>
+            <TierIcon size={16} />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-ink">{tierLabel[status.tier]} tier</p>
+            <p className="text-xs text-ink-muted">
+              {isGlobal ? "Global key mode — no personal key needed" : "Per-user key mode"}
+            </p>
+          </div>
+        </div>
+        <StatusPill on={status.configured} onLabel="AI ready" offLabel="Not configured" />
+      </div>
+      {isGlobal && (
+        <div className="mt-3 flex gap-4 rounded-lg border border-edge bg-surface-2 px-3 py-2 text-xs text-ink-muted">
+          <span>
+            Rate limits:{" "}
+            <strong className="text-ink">
+              {limits.rpd === 0 ? "Unlimited" : `${limits.rpd}/day`}
+            </strong>
+            {" · "}
+            <strong className="text-ink">
+              {limits.rpm === 0 ? "Unlimited" : `${limits.rpm}/min`}
+            </strong>
+          </span>
+          {status.tier !== "admin" && limits.rpd > 0 && (
+            <span>
+              Today: <strong className="text-ink">{status.rateLimitUsage.dayCount}</strong> / {limits.rpd}
+            </span>
+          )}
+        </div>
+      )}
+    </Card>
   );
 }
 
@@ -231,6 +301,29 @@ function LlmConfigCard() {
   };
 
   const hasKey = status?.hasKey ?? false;
+  const isGlobal = status?.llmMode === "global";
+
+  // In global mode, per-user keys are ignored — show an info banner instead.
+  if (isGlobal) {
+    return (
+      <Card className="mb-4">
+        <div className="mb-3 flex items-center gap-2 text-sm">
+          <Globe size={16} className="text-accent" />
+          <span className="font-medium text-ink">Global key mode active</span>
+        </div>
+        <p className="text-xs text-ink-muted">
+          The administrator has configured a global LLM key. You don't need to set up your own API key —
+          Mavino AI is ready to use. Your rate limits depend on your account tier (shown above).
+        </p>
+        {hasKey && (
+          <p className="mt-2 text-xs text-ink-muted">
+            You have a personal key stored, but it is ignored in global mode. Switch to per-user mode
+            (admin setting) to use it.
+          </p>
+        )}
+      </Card>
+    );
+  }
 
   return (
     <Card className="mb-4">
@@ -349,6 +442,10 @@ function RateLimitCard() {
 
   const hasKey = status?.hasKey ?? false;
   const usage = status?.rateLimitUsage;
+  const isGlobal = status?.llmMode === "global";
+
+  // In global mode, per-user rate limits are managed by the admin via tier config.
+  if (isGlobal) return null;
 
   return (
     <Card className="mb-4">
@@ -461,6 +558,10 @@ function FallbackCard() {
 
   const hasKey = status?.hasKey ?? false;
   const hasFallback = status?.hasFallback ?? false;
+  const isGlobal = status?.llmMode === "global";
+
+  // In global mode, fallback is not used (the global key is the only key).
+  if (isGlobal) return null;
 
   return (
     <Card className="mb-4">

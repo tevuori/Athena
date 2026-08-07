@@ -20,6 +20,7 @@ import {
 import prisma from "../../db/client";
 import { decryptSecret } from "../crypto";
 import { llmRateLimiter } from "./rate-limiter";
+import { getGlobalLlmConfig, getGlobalLlmSecrets, getRateLimitsForUser } from "../llm-config";
 
 export interface LlmUserConfig {
   /** multi-llm-ts engine id: "openai" | "deepseek" | "anthropic" | "openrouter" | "ollama" | ... */
@@ -78,9 +79,51 @@ function decryptSafe(enc: string): string | null {
   }
 }
 
-/** Resolve the user's LLM config: per-user (DB) wins, server fallback otherwise.
- * Returns apiKey="" if neither is configured — callers should check isLlmConfiguredFor(). */
+/** Resolve the user's LLM config.
+ *
+ * Priority (when global mode is "global"):
+ *   1. Global LLM key (admin-configured) — per-user keys are ignored.
+ *   2. Server-wide env vars (OPENAI_API_KEY, etc.) — fallback if no global key.
+ *
+ * Priority (when global mode is "per-user"):
+ *   1. Per-user AiCredential (encrypted in DB).
+ *   2. Server-wide env vars.
+ *   3. No config — LLM unavailable.
+ *
+ * Returns apiKey="" if nothing is configured — callers should check isLlmConfiguredFor().
+ */
 export async function getUserConfig(userId: string): Promise<LlmUserConfig> {
+  const globalConfig = await getGlobalLlmConfig();
+
+  // Global mode: use the admin-configured global key, ignore per-user keys.
+  if (globalConfig.mode === "global") {
+    const secrets = await getGlobalLlmSecrets();
+    if (secrets) {
+      return {
+        provider: secrets.provider,
+        apiKey: secrets.apiKey,
+        baseURL: secrets.baseUrl,
+        modelId: secrets.modelId,
+      };
+    }
+    // No global key set — fall through to env vars.
+    if (SERVER_KEY) {
+      return {
+        provider: SERVER_PROVIDER,
+        apiKey: SERVER_KEY,
+        baseURL: SERVER_BASE_URL || undefined,
+        modelId: SERVER_MODEL || "gpt-4o-mini",
+      };
+    }
+    return {
+      provider: SERVER_PROVIDER,
+      apiKey: "",
+      baseURL: undefined,
+      modelId: "",
+    };
+  }
+
+  // Per-user mode: use the user's own key.
   const cred = await prisma.aiCredential.findUnique({ where: { userId } });
   if (cred) {
     const apiKey = decryptSafe(cred.apiKeyEnc);
@@ -162,16 +205,58 @@ export async function getFallbackConfig(userId: string): Promise<FallbackLlmConf
 /**
  * Acquire an LLM model for a request, respecting rate limits.
  *
- * - If rate limiting is disabled (or no AiCredential), returns the primary model.
- * - If rate limiting is enabled and the primary model would exceed limits:
- *   - If a fallback is configured, returns the fallback model.
- *   - If no fallback, throws an LlmError(429, ...).
- * - Records the request in the rate limiter after a successful check.
+ * In global mode:
+ *   - Tier-based rate limits apply (admin = unlimited, paid = higher, free = lower).
+ *   - Per-user rate limit config is ignored.
+ *   - No fallback (the global key is the only key).
+ *
+ * In per-user mode:
+ *   - The user's own rate limit config applies (if enabled).
+ *   - Fallback to the user's fallback LLM if configured.
  *
  * Use this instead of `getUserConfig + buildModel` for all LLM requests.
  */
 export async function acquireLlmModel(userId: string): Promise<AcquiredModel> {
   const cfg = await getUserConfig(userId);
+  const globalConfig = await getGlobalLlmConfig();
+
+  // Global mode: tier-based rate limits.
+  if (globalConfig.mode === "global") {
+    const { tier, limits } = await getRateLimitsForUser(userId);
+
+    // Admin tier = unlimited (rpd=0, rpm=0 means no limit).
+    if (limits.rpd === 0 && limits.rpm === 0) {
+      return {
+        model: buildModel(cfg),
+        usingFallback: false,
+        rateLimit: {
+          allowed: true,
+          dayCount: llmRateLimiter.stats(userId).dayCount,
+          minuteCount: llmRateLimiter.stats(userId).minuteCount,
+          dayLimit: 0,
+          minuteLimit: 0,
+        },
+      };
+    }
+
+    const status = llmRateLimiter.check(userId, limits.rpd, limits.rpm);
+    if (status.allowed) {
+      llmRateLimiter.record(userId);
+      return {
+        model: buildModel(cfg),
+        usingFallback: false,
+        rateLimit: status,
+      };
+    }
+
+    // Rate-limited — no fallback in global mode.
+    throw new LlmError(
+      429,
+      `Rate limit reached (${tier} tier): ${status.dayCount}/${status.dayLimit} requests today, ${status.minuteCount}/${status.minuteLimit} per minute. Try again later.`
+    );
+  }
+
+  // Per-user mode: use the user's own rate limit config.
   const rateLimitCfg = await getRateLimitConfig(userId);
 
   // No rate limiting — just return the primary model.

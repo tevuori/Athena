@@ -199,8 +199,8 @@ auth.post("/register", rateLimit({ max: 5, windowMs: 60_000 }), zValidator("json
     return c.json({ error: "Username already taken" }, 409);
   }
   const passwordHash = await bcrypt.hash(password, 10);
-  // Bootstrap user is ADMIN; open-registration users are USER.
-  const role = isBootstrap ? "ADMIN" : "USER";
+  // Bootstrap user is ADMIN; open-registration users are FREE.
+  const role = isBootstrap ? "ADMIN" : "FREE";
   const user = await prisma.user.create({
     data: { username, passwordHash, displayName, role },
   });

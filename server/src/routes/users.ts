@@ -80,7 +80,7 @@ const createSchema = z.object({
   password: z.string().min(4).max(128),
   displayName: z.string().max(64).optional().default(""),
   avatarColor: z.string().max(32).optional(),
-  role: z.enum(["USER", "ADMIN"]).optional().default("USER"),
+  role: z.enum(["FREE", "PAID", "ADMIN"]).optional().default("FREE"),
 });
 
 /** POST /api/users — create a new user (admin). */
@@ -111,7 +111,7 @@ users.post("/", zValidator("json", createSchema), async (c) => {
 const updateSchema = z.object({
   displayName: z.string().max(64).optional(),
   avatarColor: z.string().max(32).optional(),
-  role: z.enum(["USER", "ADMIN"]).optional(),
+  role: z.enum(["FREE", "PAID", "ADMIN"]).optional(),
 });
 
 /** PATCH /api/users/:id — update profile / role (admin). */
@@ -121,7 +121,7 @@ users.patch("/:id", zValidator("json", updateSchema), async (c) => {
   const body = c.req.valid("json");
 
   // Prevent self-demotion to avoid locking yourself out of admin.
-  if (targetId === userId && body.role === "USER") {
+  if (targetId === userId && body.role !== "ADMIN") {
     return c.json({ error: "You cannot demote yourself. Ask another admin." }, 400);
   }
 

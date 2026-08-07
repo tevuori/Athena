@@ -42,7 +42,10 @@ import studyLectures from "./routes/study-lectures";
 import settings from "./routes/settings";
 import features from "./routes/features";
 import clientErrors from "./routes/client-errors";
+import adminErrors from "./routes/admin-errors";
+import adminLlm from "./routes/admin-llm";
 import { analyticsMiddleware, startAnalyticsFlusher } from "./services/analytics";
+import { logError } from "./services/error-log";
 import { startScheduler } from "./services/ntfy/scheduler";
 import { startAllSubscribers } from "./services/ntfy/subscriber";
 import { startProactiveScheduler } from "./services/ntfy/proactive-scheduler";
@@ -54,12 +57,29 @@ const app = new Hono();
 // warning but the error context is lost. With it, we get a clean log entry.
 process.on("unhandledRejection", (reason) => {
   console.error("[mavino-server] Unhandled promise rejection:", reason);
+  void logError({
+    source: "server",
+    level: "error",
+    message: reason instanceof Error ? reason.message : String(reason),
+    stack: reason instanceof Error ? reason.stack ?? undefined : undefined,
+  });
 });
 
 // Global error handler — returns JSON (not Hono's default plain-text "Internal
 // Server Error") so the client's JSON.parse never fails on unhandled errors.
+// Also persists the error to the ErrorLog table for admin monitoring.
 app.onError((err, c) => {
   console.error("[mavino-server] Unhandled error:", err);
+  const userId = c.get("auth")?.userId;
+  void logError({
+    source: "server",
+    level: "error",
+    message: err instanceof Error ? err.message : "Internal server error",
+    stack: err instanceof Error ? err.stack ?? undefined : undefined,
+    url: c.req.url,
+    userAgent: c.req.header("user-agent") ?? undefined,
+    userId,
+  });
   const message =
     err instanceof Error ? err.message : "Internal server error";
   return c.json({ error: message }, 500);
@@ -175,6 +195,8 @@ app.route("/api/settings", settings);
 app.route("/api/features", features);
 app.route("/api/mapy", mapy);
 app.route("/api/client-errors", clientErrors);
+app.route("/api/admin/errors", adminErrors);
+app.route("/api/admin/llm", adminLlm);
 
 // Start ntfy background workers (cron scheduler + per-user inbox subscribers).
 startScheduler();

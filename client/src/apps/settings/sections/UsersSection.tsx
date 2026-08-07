@@ -192,6 +192,12 @@ function UserRow({
           {u.role === "ADMIN" && (
             <ShieldCheck size={13} className="shrink-0 text-accent" />
           )}
+          {u.role === "PAID" && (
+            <span className="rounded bg-indigo-500/15 px-1.5 py-0.5 text-[10px] font-medium text-indigo-400">PAID</span>
+          )}
+          {u.role === "FREE" && (
+            <span className="rounded bg-surface-3 px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">FREE</span>
+          )}
           {isMe && <span className="text-[10px] uppercase text-ink-muted">(you)</span>}
         </p>
         <p className="truncate text-xs text-ink-muted">
@@ -263,7 +269,7 @@ function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreate
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [avatarColor, setAvatarColor] = useState(AVATAR_PRESETS[0]);
-  const [role, setRole] = useState<UserRole>("USER");
+  const [role, setRole] = useState<UserRole>("FREE");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -321,7 +327,8 @@ function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreate
         </Field>
         <Field label="Role">
           <select value={role} onChange={(e) => setRole(e.target.value as UserRole)} className={inputClass}>
-            <option value="USER">User</option>
+            <option value="FREE">Free (limited AI)</option>
+            <option value="PAID">Paid (higher AI limits)</option>
             <option value="ADMIN">Administrator</option>
           </select>
         </Field>
@@ -439,7 +446,8 @@ function EditUserModal({
             disabled={isSelf}
             className={inputClass}
           >
-            <option value="USER">User</option>
+            <option value="FREE">Free (limited AI)</option>
+            <option value="PAID">Paid (higher AI limits)</option>
             <option value="ADMIN">Administrator</option>
           </select>
         </Field>

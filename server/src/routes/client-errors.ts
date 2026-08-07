@@ -1,15 +1,15 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
-import { authMiddleware, optionalAuth } from "../middleware/auth";
+import { optionalAuth } from "../middleware/auth";
+import { logClientErrors } from "../services/error-log";
 
 /**
  * Client error reporting endpoint.
  *
  * Receives error reports from the browser (React error boundary catches,
- * window.onerror, unhandledrejection) and logs them server-side with
- * context. This is a lightweight self-hosted alternative to Sentry —
- * errors appear in `docker logs athena-server`.
+ * window.onerror, unhandledrejection) and persists them to the ErrorLog table
+ * so admins can monitor outages from Settings → Error Logs.
  */
 
 const errorReportSchema = z.object({
@@ -40,6 +40,10 @@ clientErrors.post("/", zValidator("json", batchSchema), async (c) => {
   const { errors } = c.req.valid("json");
   const authUserId = c.get("auth")?.userId;
 
+  // Persist to DB (also logs to console for docker logs tail).
+  await logClientErrors(errors, authUserId);
+
+  // Still log to console for immediate visibility in docker logs.
   for (const err of errors) {
     const userId = err.userId ?? authUserId ?? "anonymous";
     console.error(

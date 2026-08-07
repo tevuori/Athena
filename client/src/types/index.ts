@@ -1,6 +1,6 @@
 // ===== Shared domain types (mirror server models) =====
 
-export type UserRole = "USER" | "ADMIN";
+export type UserRole = "FREE" | "PAID" | "ADMIN";
 
 export interface User {
   id: string;

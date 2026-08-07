@@ -14,7 +14,7 @@ model User {
   passwordHash String
   displayName  String   @default("")
   avatarColor  String   @default("#6366f1")
-  role         String   @default("USER") // "USER" | "ADMIN"
+  role         String   @default("FREE") // "ADMIN" | "PAID" | "FREE"
   athenaInstructions String @default("") // custom instructions injected into Athena system prompt
   // 2FA (TOTP) — totpSecret stores the base32-encoded secret (encrypted at
   // rest via services/crypto.ts). totpEnabled is false until the user
@@ -71,6 +71,7 @@ model User {
   trips             Trip[]
   hikingTours       HikingTour[]
   passwordResetTokens PasswordResetToken[]
+  errorLogs          ErrorLog[]
 }
 
 // ===== Password reset tokens =====
@@ -1046,4 +1047,25 @@ model HikingTour {
   updatedAt     DateTime @updatedAt
 
   @@index([userId])
+}
+
+// ===== Error logs (admin monitoring) =====
+
+model ErrorLog {
+  id        String   @id @default(cuid())
+  timestamp DateTime @default(now())
+  level     String   @default("error") // "error" | "warn" | "fatal"
+  source    String   @default("server") // "client" | "server"
+  message   String
+  stack     String?  @db.Text
+  url       String?
+  userAgent String?
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  resolved  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([timestamp])
+  @@index([resolved])
+  @@index([source])
 }

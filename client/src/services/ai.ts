@@ -1,5 +1,13 @@
 import { api } from "./api";
 
+export type LlmMode = "per-user" | "global";
+export type RateTier = "admin" | "paid" | "free";
+
+export interface TierRateLimits {
+  rpd: number; // 0 = unlimited
+  rpm: number; // 0 = unlimited
+}
+
 export interface AiKeyStatus {
   hasKey: boolean;
   provider: string;
@@ -14,6 +22,12 @@ export interface AiKeyStatus {
   fallbackBaseUrl: string;
   fallbackModelId: string;
   rateLimitUsage: { dayCount: number; minuteCount: number };
+  // Global mode info
+  llmMode: LlmMode;
+  globalKeySet: boolean;
+  // User's tier + applicable rate limits
+  tier: RateTier;
+  tierRateLimits: TierRateLimits;
 }
 
 export const aiApi = {

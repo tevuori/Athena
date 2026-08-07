@@ -18,6 +18,7 @@ import {
   Clock,
   Shield,
   LayoutGrid,
+  AlertTriangle,
 } from "lucide-react";
 import { useAuth } from "../../store/auth";
 import type { WindowInstance } from "../../store/windows";
@@ -34,6 +35,8 @@ import ProactiveAlertsSection from "./sections/ProactiveAlertsSection";
 import UsersSection from "./sections/UsersSection";
 import BetaSection from "./sections/BetaSection";
 import AppsSection from "./sections/AppsSection";
+import LlmAdminSection from "./sections/LlmAdminSection";
+import ErrorLogSection from "./sections/ErrorLogSection";
 import AnalyticsSection from "./sections/AnalyticsSection";
 import DataStorageSection from "./sections/DataStorageSection";
 import AboutSection from "./sections/AboutSection";
@@ -61,6 +64,8 @@ const SECTIONS: SectionDef[] = [
   { id: "beta", label: "Beta Apps", icon: <FlaskConical size={15} /> },
   { id: "users", label: "Users", icon: <UsersIcon size={15} />, adminOnly: true },
   { id: "apps", label: "Apps", icon: <LayoutGrid size={15} />, adminOnly: true },
+  { id: "llm-admin", label: "LLM Config", icon: <Sparkles size={15} />, adminOnly: true },
+  { id: "error-logs", label: "Error Logs", icon: <AlertTriangle size={15} />, adminOnly: true },
   { id: "analytics", label: "Analytics", icon: <BarChart3 size={15} />, adminOnly: true },
   { id: "data", label: "Data & Storage", icon: <Database size={15} /> },
   { id: "legal", label: "Legal", icon: <Shield size={15} /> },
@@ -90,6 +95,8 @@ export default function SettingsApp({ win }: { win: WindowInstance }) {
     if (active === "beta") return <BetaSection />;
     if (active === "users" && isAdmin) return <UsersSection />;
     if (active === "apps" && isAdmin) return <AppsSection />;
+    if (active === "llm-admin" && isAdmin) return <LlmAdminSection />;
+    if (active === "error-logs" && isAdmin) return <ErrorLogSection />;
     if (active === "analytics" && isAdmin) return <AnalyticsSection />;
     if (active === "data") return <DataStorageSection />;
     if (active === "legal") return <LegalSection />;

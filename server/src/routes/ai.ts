@@ -6,6 +6,7 @@ import { authMiddleware } from "../middleware/auth";
 import { encryptSecret, decryptSecret } from "../services/crypto";
 import { isLlmConfiguredFor } from "../services/athena/llm";
 import { llmRateLimiter } from "../services/athena/rate-limiter";
+import { getGlobalLlmConfig, getRateLimitsForUser, getTierRateLimits } from "../services/llm-config";
 
 const ai = new Hono();
 ai.use("*", authMiddleware);
@@ -45,6 +46,8 @@ ai.get("/key", async (c) => {
   const { userId } = c.get("auth");
   const cred = await prisma.aiCredential.findUnique({ where: { userId } });
   const stats = llmRateLimiter.stats(userId);
+  const globalConfig = await getGlobalLlmConfig();
+  const { tier, limits } = await getRateLimitsForUser(userId);
   return c.json({
     hasKey: Boolean(cred),
     provider: cred?.provider ?? "openai",
@@ -59,6 +62,12 @@ ai.get("/key", async (c) => {
     fallbackBaseUrl: cred?.fallbackBaseUrl ?? "",
     fallbackModelId: cred?.fallbackModelId ?? "",
     rateLimitUsage: stats,
+    // Global mode info
+    llmMode: globalConfig.mode,
+    globalKeySet: globalConfig.hasKey,
+    // User's tier + applicable rate limits
+    tier,
+    tierRateLimits: limits,
   });
 });
 
