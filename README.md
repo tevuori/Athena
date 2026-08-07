@@ -343,6 +343,6 @@ Athena/
 
 Copyright (C) Athena Student OS contributors.
 
-This program is free software: you can redistribute it and/or modify it under the terms of the **GNU General Public License v3** as published by the Free Software Foundation. See [LICENSE](LICENSE) for the full text.
+This program is free software: you can redistribute it and/or modify it under the terms of the **GNU Affero General Public License v3** as published by the Free Software Foundation. See [LICENSE](LICENSE) for the full text.
 
 This program is distributed in the hope that it will be useful, but **without any warranty**; without even the implied warranty of merchantability or fitness for a particular purpose.
