@@ -80,23 +80,57 @@ auth.post("/login", loginLimiter, zValidator("json", loginSchema), async (c) => 
 });
 
 /**
- * POST /auth/register — bootstrap-only.
- * Allowed only when zero users exist (first admin setup). Once any user exists,
- * self-registration is closed; admins create users via /api/users.
+ * GET /auth/registration-status — public endpoint.
+ * Returns whether self-registration is open (for the login screen to show/hide
+ * the "Create account" form). Bootstrap mode (zero users) always returns true.
+ */
+auth.get("/registration-status", async (c) => {
+  const userCount = await prisma.user.count();
+  if (userCount === 0) {
+    // Bootstrap mode — first admin can always register.
+    return c.json({ enabled: true, bootstrap: true });
+  }
+  // Check the global registration.enabled setting (userId = null for global).
+  // Use findFirst because Prisma's SQLite compound unique doesn't support null
+  // in findUnique where clauses.
+  const setting = await prisma.setting.findFirst({
+    where: { userId: null, key: "registration.enabled" },
+  });
+  const enabled = setting?.value === "true";
+  return c.json({ enabled, bootstrap: false });
+});
+
+/**
+ * POST /auth/register — self-registration.
+ * Allowed in two cases:
+ *   1. Bootstrap mode (zero users exist) → creates the first ADMIN.
+ *   2. Open registration (admin enabled the setting) → creates a USER.
+ * Otherwise returns 403.
  */
 auth.post("/register", rateLimit({ max: 5, windowMs: 60_000 }), zValidator("json", registerSchema), async (c) => {
   const userCount = await prisma.user.count();
-  if (userCount > 0) {
-    return c.json({ error: "Registration is closed. Ask an administrator for an account." }, 403);
+  const isBootstrap = userCount === 0;
+
+  // If not bootstrap, check if open registration is enabled.
+  if (!isBootstrap) {
+    const setting = await prisma.setting.findFirst({
+      where: { userId: null, key: "registration.enabled" },
+    });
+    if (setting?.value !== "true") {
+      return c.json({ error: "Registration is closed. Ask an administrator for an account." }, 403);
+    }
   }
+
   const { username, password, displayName } = c.req.valid("json");
   const existing = await prisma.user.findUnique({ where: { username } });
   if (existing) {
     return c.json({ error: "Username already taken" }, 409);
   }
   const passwordHash = await bcrypt.hash(password, 10);
+  // Bootstrap user is ADMIN; open-registration users are USER.
+  const role = isBootstrap ? "ADMIN" : "USER";
   const user = await prisma.user.create({
-    data: { username, passwordHash, displayName, role: "ADMIN" },
+    data: { username, passwordHash, displayName, role },
   });
   const token = await signToken({ sub: user.id, username: user.username });
   return c.json({ token, refreshToken: null, user: publicUser(user) });

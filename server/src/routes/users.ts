@@ -43,6 +43,38 @@ users.get("/", async (c) => {
   return c.json(list.map(publicUser));
 });
 
+/** GET /api/users/registration — get the open-registration setting (admin). */
+users.get("/registration", async (c) => {
+  // Use findFirst because Prisma's SQLite compound unique doesn't support null
+  // in findUnique where clauses.
+  const setting = await prisma.setting.findFirst({
+    where: { userId: null, key: "registration.enabled" },
+  });
+  return c.json({ enabled: setting?.value === "true" });
+});
+
+/** PUT /api/users/registration — toggle open self-registration (admin). */
+users.put("/registration", zValidator("json", z.object({ enabled: z.boolean() })), async (c) => {
+  const { enabled } = c.req.valid("json");
+  const value = enabled ? "true" : "false";
+  // Manual upsert — Prisma's SQLite compound unique doesn't support null in
+  // upsert where clauses.
+  const existing = await prisma.setting.findFirst({
+    where: { userId: null, key: "registration.enabled" },
+  });
+  if (existing) {
+    await prisma.setting.update({
+      where: { id: existing.id },
+      data: { value },
+    });
+  } else {
+    await prisma.setting.create({
+      data: { userId: null, key: "registration.enabled", value },
+    });
+  }
+  return c.json({ enabled });
+});
+
 const createSchema = z.object({
   username: z.string().min(2).max(32),
   password: z.string().min(4).max(128),

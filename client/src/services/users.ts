@@ -17,4 +17,7 @@ export const usersApi = {
   resetPassword: (id: string, password: string) =>
     api.post(`/api/users/${id}/reset-password`, { password }),
   remove: (id: string) => api.delete(`/api/users/${id}`),
+  getRegistration: () => api.get<{ enabled: boolean }>("/api/users/registration"),
+  setRegistration: (enabled: boolean) =>
+    api.put<{ enabled: boolean }>("/api/users/registration", { enabled }),
 };

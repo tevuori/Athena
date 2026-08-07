@@ -1,13 +1,14 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { LogIn, Loader2, Server } from "lucide-react";
+import { LogIn, Loader2, Server, UserPlus } from "lucide-react";
 import { useAuth } from "../store/auth";
 import { Capacitor } from "@capacitor/core";
 import { getBaseUrl, setBaseUrl } from "../services/api";
+import { api } from "../services/api";
 import AppLogo from "./AppLogo";
 
 export default function LoginScreen() {
-  const { login } = useAuth();
+  const { login, register } = useAuth();
   const isNative = Capacitor.isNativePlatform();
   const [serverUrl, setServerUrl] = useState(getBaseUrl());
   const [username, setUsername] = useState("");
@@ -15,6 +16,37 @@ export default function LoginScreen() {
   const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Registration form state
+  const [mode, setMode] = useState<"login" | "register">("login");
+  const [regUsername, setRegUsername] = useState("");
+  const [regPassword, setRegPassword] = useState("");
+  const [regDisplayName, setRegDisplayName] = useState("");
+  const [registrationOpen, setRegistrationOpen] = useState(false);
+  const [registrationChecked, setRegistrationChecked] = useState(false);
+
+  // Check if self-registration is enabled on mount.
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<{ enabled: boolean; bootstrap: boolean }>("/api/auth/registration-status")
+      .then((data) => {
+        if (cancelled) return;
+        setRegistrationOpen(data.enabled);
+        // In bootstrap mode (zero users), default to the register form so the
+        // first admin can set up their account without clicking through.
+        if (data.bootstrap) setMode("register");
+      })
+      .catch(() => {
+        /* server unreachable — stay on login */
+      })
+      .finally(() => {
+        if (!cancelled) setRegistrationChecked(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,6 +79,19 @@ export default function LoginScreen() {
     }
   };
 
+  const submitRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setBusy(true);
+    try {
+      await register(regUsername, regPassword, regDisplayName.trim() || undefined);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[15000] flex items-center justify-center">
       <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-xl" />
@@ -59,72 +104,151 @@ export default function LoginScreen() {
         <div className="mb-6 text-center">
           <AppLogo size={56} className="mx-auto mb-3" />
           <h1 className="text-xl font-semibold text-ink">Athena</h1>
-          <p className="text-sm text-ink-muted">Sign in to your Student OS</p>
+          <p className="text-sm text-ink-muted">
+            {mode === "login" ? "Sign in to your Student OS" : "Create your Student OS account"}
+          </p>
         </div>
 
-        <form onSubmit={submit} className="space-y-3">
-          {isNative && (
-            <div className="space-y-1">
-              <label className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-ink-muted">
-                <Server size={11} /> Server address
-              </label>
-              <input
-                value={serverUrl}
-                onChange={(e) => setServerUrl(e.target.value)}
-                placeholder="http://192.168.1.100:3001"
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                className="w-full rounded-lg border border-edge bg-surface-2 px-3 py-2.5 text-sm text-ink outline-none focus:border-accent"
-              />
-              <p className="text-[11px] text-ink-muted">
-                The address of your Athena server (including port).
-              </p>
-            </div>
-          )}
+        {mode === "login" ? (
+          <form onSubmit={submit} className="space-y-3">
+            {isNative && (
+              <div className="space-y-1">
+                <label className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-ink-muted">
+                  <Server size={11} /> Server address
+                </label>
+                <input
+                  value={serverUrl}
+                  onChange={(e) => setServerUrl(e.target.value)}
+                  placeholder="http://192.168.1.100:3001"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  className="w-full rounded-lg border border-edge bg-surface-2 px-3 py-2.5 text-sm text-ink outline-none focus:border-accent"
+                />
+                <p className="text-[11px] text-ink-muted">
+                  The address of your Athena server (including port).
+                </p>
+              </div>
+            )}
 
-          <input
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            placeholder="Username"
-            autoFocus={!isNative}
-            className="w-full rounded-lg border border-edge bg-surface-2 px-3 py-2.5 text-sm text-ink outline-none focus:border-accent"
-          />
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Password"
-            className="w-full rounded-lg border border-edge bg-surface-2 px-3 py-2.5 text-sm text-ink outline-none focus:border-accent"
-          />
-
-          <label className="flex cursor-pointer items-center gap-2 pt-1 text-xs text-ink-muted select-none">
             <input
-              type="checkbox"
-              checked={rememberMe}
-              onChange={(e) => setRememberMe(e.target.checked)}
-              className="h-3.5 w-3.5 rounded border-edge accent-[var(--accent)]"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="Username"
+              autoFocus={!isNative}
+              className="w-full rounded-lg border border-edge bg-surface-2 px-3 py-2.5 text-sm text-ink outline-none focus:border-accent"
             />
-            Remember this device (stay signed in for 90 days)
-          </label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Password"
+              className="w-full rounded-lg border border-edge bg-surface-2 px-3 py-2.5 text-sm text-ink outline-none focus:border-accent"
+            />
 
-          {error && (
-            <p className="rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-400">{error}</p>
-          )}
+            <label className="flex cursor-pointer items-center gap-2 pt-1 text-xs text-ink-muted select-none">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="h-3.5 w-3.5 rounded border-edge accent-[var(--accent)]"
+              />
+              Remember this device (stay signed in for 90 days)
+            </label>
 
-          <button
-            type="submit"
-            disabled={busy}
-            className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent py-2.5 text-sm font-medium text-accent-fg transition hover:opacity-90 disabled:opacity-50"
-          >
-            {busy ? <Loader2 size={16} className="animate-spin" /> : <LogIn size={16} />}
-            Sign in
-          </button>
-        </form>
+            {error && (
+              <p className="rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-400">{error}</p>
+            )}
 
-        <p className="mt-4 text-center text-[11px] text-ink-muted">
-          Don't have an account? Ask your administrator.
-        </p>
+            <button
+              type="submit"
+              disabled={busy}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent py-2.5 text-sm font-medium text-accent-fg transition hover:opacity-90 disabled:opacity-50"
+            >
+              {busy ? <Loader2 size={16} className="animate-spin" /> : <LogIn size={16} />}
+              Sign in
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={submitRegister} className="space-y-3">
+            <input
+              value={regUsername}
+              onChange={(e) => setRegUsername(e.target.value)}
+              placeholder="Username (2-32 characters)"
+              autoFocus={!isNative}
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              className="w-full rounded-lg border border-edge bg-surface-2 px-3 py-2.5 text-sm text-ink outline-none focus:border-accent"
+            />
+            <input
+              type="password"
+              value={regPassword}
+              onChange={(e) => setRegPassword(e.target.value)}
+              placeholder="Password (min 4 characters)"
+              className="w-full rounded-lg border border-edge bg-surface-2 px-3 py-2.5 text-sm text-ink outline-none focus:border-accent"
+            />
+            <input
+              value={regDisplayName}
+              onChange={(e) => setRegDisplayName(e.target.value)}
+              placeholder="Display name (optional)"
+              className="w-full rounded-lg border border-edge bg-surface-2 px-3 py-2.5 text-sm text-ink outline-none focus:border-accent"
+            />
+
+            {error && (
+              <p className="rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-400">{error}</p>
+            )}
+
+            <button
+              type="submit"
+              disabled={busy || !regUsername.trim() || !regPassword}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent py-2.5 text-sm font-medium text-accent-fg transition hover:opacity-90 disabled:opacity-50"
+            >
+              {busy ? <Loader2 size={16} className="animate-spin" /> : <UserPlus size={16} />}
+              Create account
+            </button>
+          </form>
+        )}
+
+        {/* Toggle between login and register */}
+        {registrationChecked && registrationOpen && (
+          <p className="mt-4 text-center text-[11px] text-ink-muted">
+            {mode === "login" ? (
+              <>
+                Don't have an account?{" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode("register");
+                    setError(null);
+                  }}
+                  className="font-medium text-accent hover:underline"
+                >
+                  Create one
+                </button>
+              </>
+            ) : (
+              <>
+                Already have an account?{" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode("login");
+                    setError(null);
+                  }}
+                  className="font-medium text-accent hover:underline"
+                >
+                  Sign in
+                </button>
+              </>
+            )}
+          </p>
+        )}
+        {registrationChecked && !registrationOpen && mode === "login" && (
+          <p className="mt-4 text-center text-[11px] text-ink-muted">
+            Don't have an account? Ask your administrator.
+          </p>
+        )}
       </motion.div>
     </div>
   );

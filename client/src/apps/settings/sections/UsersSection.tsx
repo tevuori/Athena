@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Users as UsersIcon, Plus, Trash2, KeyRound, X, Loader2, ShieldCheck, User as UserIcon } from "lucide-react";
+import { Users as UsersIcon, Plus, Trash2, KeyRound, X, Loader2, ShieldCheck, User as UserIcon, UserPlus } from "lucide-react";
 import { usersApi } from "../../../services/users";
 import { useAuth } from "../../../store/auth";
 import type { AdminUser, UserRole } from "../../../types";
@@ -18,6 +18,8 @@ export default function UsersSection() {
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState<AdminUser | null>(null);
   const [resetting, setResetting] = useState<AdminUser | null>(null);
+  const [regEnabled, setRegEnabled] = useState(false);
+  const [regLoading, setRegLoading] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -30,9 +32,31 @@ export default function UsersSection() {
     }
   }, []);
 
+  const refreshReg = useCallback(async () => {
+    try {
+      const data = await usersApi.getRegistration();
+      setRegEnabled(data.enabled);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+    void refreshReg();
+  }, [refresh, refreshReg]);
+
+  const toggleReg = async () => {
+    setRegLoading(true);
+    try {
+      const data = await usersApi.setRegistration(!regEnabled);
+      setRegEnabled(data.enabled);
+    } catch {
+      /* ignore */
+    } finally {
+      setRegLoading(false);
+    }
+  };
 
   return (
     <section id="users" className="mb-8">
@@ -41,6 +65,37 @@ export default function UsersSection() {
         title="User Management"
         description="Create, edit, and remove user accounts. Administrators only."
       />
+
+      {/* Open registration toggle */}
+      <Card className="mb-3 flex items-center justify-between p-4">
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-accent">
+            <UserPlus size={16} />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-ink">Allow new users to sign up</p>
+            <p className="mt-0.5 text-xs text-ink-muted">
+              When enabled, the login screen shows a "Create account" form. New users
+              get the USER role (not admin). Disabled by default.
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={toggleReg}
+          disabled={regLoading}
+          className={`relative h-6 w-11 shrink-0 rounded-full transition ${
+            regEnabled ? "bg-accent" : "bg-surface-3"
+          } disabled:opacity-50`}
+          role="switch"
+          aria-checked={regEnabled}
+        >
+          <span
+            className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${
+              regEnabled ? "left-[22px]" : "left-0.5"
+            }`}
+          />
+        </button>
+      </Card>
 
       <div className="mb-3 flex items-center justify-between">
         <span className="text-xs text-ink-muted">{users.length} user(s)</span>
