@@ -1,4 +1,4 @@
-package ai.athena.app;
+package ai.mavino.app;
 
 import android.content.Intent;
 import android.net.Uri;
@@ -22,7 +22,7 @@ import java.security.MessageDigest;
  * Local Capacitor plugin that downloads an APK from a URL and launches the
  * Android system package installer to perform an in-app self-update.
  *
- * The APK is streamed to <external-files-dir>/updates/athena.apk and shared
+ * The APK is streamed to <external-files-dir>/updates/mavino.apk and shared
  * with the installer via a FileProvider (authority "${applicationId}.fileprovider",
  * configured in AndroidManifest.xml + res/xml/file_paths.xml).
  *
@@ -33,7 +33,7 @@ import java.security.MessageDigest;
 public class ApkUpdaterPlugin extends Plugin {
 
     private static final String UPDATES_DIR = "updates";
-    private static final String APK_NAME = "athena.apk";
+    private static final String APK_NAME = "mavino.apk";
 
     @PluginMethod
     public void downloadAndInstall(PluginCall call) {

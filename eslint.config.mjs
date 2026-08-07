@@ -1,5 +1,5 @@
 // @ts-check
-// ESLint flat config — pragmatic baseline for the Athena monorepo.
+// ESLint flat config — pragmatic baseline for the Mavino monorepo.
 // Catches real bugs (unused vars, hooks violations, undefined refs) without
 // being overly strict. Prettier handles formatting separately.
 import js from "@eslint/js";

@@ -12,7 +12,7 @@ export default function AppearanceSection() {
   const { theme, setTheme, accent, setAccent } = useSettings();
   return (
     <section id="appearance" className="mb-8">
-      <SectionHeader icon={<Palette size={18} />} title="Appearance" description="Customize how Athena looks." />
+      <SectionHeader icon={<Palette size={18} />} title="Appearance" description="Customize how Mavino looks." />
       <div className="mb-5">
         <label className="mb-2 block text-sm font-medium text-ink">Theme</label>
         <div className="flex gap-2">

@@ -18,7 +18,7 @@ export interface FetchedPage {
 }
 
 const USER_AGENT =
-  "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0 Athena/1.0 (+https://github.com/athena/student-os)";
+  "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0 Mavino/1.0 (+https://github.com/mavino/student-os)";
 
 const FETCH_TIMEOUT_MS = 15_000;
 const MAX_REDIRECTS = 5;

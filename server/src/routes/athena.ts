@@ -337,7 +337,7 @@ athena.post("/chat", zValidator("json", chatSchema, (result, c) => {
         }
         await stream.writeSSE({ event: "done", data: "{}" });
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "Athena request failed";
+        const msg = e instanceof Error ? e.message : "Mavino request failed";
         const status = e instanceof LlmError ? e.status : 500;
         console.error("[athena] chat error:", msg);
         if (e instanceof Error) {

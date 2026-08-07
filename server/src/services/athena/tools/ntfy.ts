@@ -14,7 +14,7 @@ export const ntfyTools: ToolDef[] = [
   {
     name: "send_notification",
     description:
-      "Send a push notification to the user's phone/desktop via ntfy. Use to deliver reminders, summaries, or any message the user should see immediately even when the Athena web app is closed. Requires ntfy to be configured.",
+      "Send a push notification to the user's phone/desktop via ntfy. Use to deliver reminders, summaries, or any message the user should see immediately even when the Mavino web app is closed. Requires ntfy to be configured.",
     parameters: [
       { name: "title", type: "string", description: "Notification title" },
       { name: "body", type: "string", description: "Notification body text", required: true },
@@ -93,7 +93,7 @@ export const ntfyTools: ToolDef[] = [
   {
     name: "create_cron_job",
     description:
-      "Create a scheduled ntfy cron job. Two types: 'notification' sends a fixed message on a schedule (e.g. a daily reminder); 'athena' runs a prompt through you (Athena) on a schedule and sends your generated reply via ntfy (e.g. a daily 8am summary of today's schedule). The cron expression is 5-field standard cron (min hour day-of-month month day-of-week), e.g. '0 8 * * *' = daily at 08:00, '*/30 * * * *' = every 30 minutes.",
+      "Create a scheduled ntfy cron job. Two types: 'notification' sends a fixed message on a schedule (e.g. a daily reminder); 'athena' runs a prompt through you (Mavino) on a schedule and sends your generated reply via ntfy (e.g. a daily 8am summary of today's schedule). The cron expression is 5-field standard cron (min hour day-of-month month day-of-week), e.g. '0 8 * * *' = daily at 08:00, '*/30 * * * *' = every 30 minutes.",
     destructive: true,
     parameters: [
       { name: "name", type: "string", description: "Human-readable job name", required: true },

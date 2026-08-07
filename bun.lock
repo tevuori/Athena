@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "athena-student-os",
+      "name": "mavino-student-os",
       "dependencies": {
         "@capacitor/android": "^8.4.2",
         "@capacitor/app": "^8.1.1",

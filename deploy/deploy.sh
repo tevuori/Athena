@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Athena — VPS deployment script.
+# Mavino — VPS deployment script.
 # Run ON the VPS (tevuori@vps.tevuori.eu) from the repo root after cloning.
 #
 # What it does:
@@ -19,7 +19,7 @@ DOMAIN="athena.tevuori.eu"
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_DIR"
 
-echo "==> Athena VPS deploy for $DOMAIN"
+echo "==> Mavino VPS deploy for $DOMAIN"
 
 # --- 1. .env with strong secrets ---
 if [ ! -f .env ]; then
@@ -85,11 +85,11 @@ sudo certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --register-unsaf
   echo "!! certbot failed — run manually: sudo certbot --nginx -d $DOMAIN"
 
 echo ""
-echo "==> Done. https://$DOMAIN should now serve Athena."
+echo "==> Done. https://$DOMAIN should now serve Mavino."
 echo "    Login with admin / $SEED_PW"
 echo ""
 echo "==> Setting up daily PostgreSQL backup cron (3am, 14-day retention)"
-CRON_LINE="0 3 * * * $REPO_DIR/deploy/backup.sh >> /var/log/athena-backup.log 2>&1"
+CRON_LINE="0 3 * * * $REPO_DIR/deploy/backup.sh >> /var/log/mavino-backup.log 2>&1"
 if ! crontab -l 2>/dev/null | grep -q "deploy/backup.sh"; then
   (crontab -l 2>/dev/null; echo "$CRON_LINE") | crontab -
   echo "    Added cron entry: $CRON_LINE"

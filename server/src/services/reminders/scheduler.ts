@@ -42,15 +42,15 @@ async function fireReminder(reminder: {
   }
 
   let body = "";
-  const title = reminder.title || "Athena reminder";
+  const title = reminder.title || "Mavino reminder";
 
   if (reminder.type === "athena") {
     try {
       body =
         (await runAthenaTurn(reminder.userId, reminder.prompt || reminder.title || "Remind the user." )) ??
-        "[Athena is not configured with an AI provider — cannot generate a contextual reminder.]";
+        "[Mavino is not configured with an AI provider — cannot generate a contextual reminder.]";
     } catch (e) {
-      body = `[Athena reminder error: ${e instanceof Error ? e.message : "unknown"}]`;
+      body = `[Mavino reminder error: ${e instanceof Error ? e.message : "unknown"}]`;
     }
   } else {
     body = reminder.message || reminder.title || "Reminder";

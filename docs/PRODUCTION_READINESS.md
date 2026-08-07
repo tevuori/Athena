@@ -1,10 +1,10 @@
-# Athena — Production Readiness Audit
+# Mavino — Production Readiness Audit
 
 Assessment date: 2026-08-07
 
 ## Verdict
 
-Athena is **feature-complete and functionally working**, but **not yet production-ready**.
+Mavino is **feature-complete and functionally working**, but **not yet production-ready**.
 Typecheck and build both pass cleanly, all 23 apps are implemented with proper
 loading/error/empty states, and external-service dependencies degrade gracefully.
 However, there are critical security defaults, zero CI quality gates, near-zero test
@@ -19,7 +19,7 @@ production product yet.
 
 - **Build & types clean** — `bun run typecheck` and `bun run build` pass with zero errors.
 - **23 apps all implemented** — Notes, Tasks, Files, Editor, Viewer, Pomodoro, Flashcards,
-  Grades, VUT, Settings, Athena, Study Hub, Today, Calendar, Habits, Whiteboard, Ntfy,
+  Grades, VUT, Settings, Mavino, Study Hub, Today, Calendar, Habits, Whiteboard, Ntfy,
   Voice, Browser, Reminders, Analytics, Moodle, Maps. Each has loading/error/empty states.
 - **Solid auth foundation** — JWT with 15-min access / 90-day refresh tokens, refresh
   rotation, device fingerprint binding, rate limiting on login/register, bootstrap-only

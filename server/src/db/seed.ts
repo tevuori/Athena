@@ -32,9 +32,9 @@ async function main() {
   await prisma.note.createMany({
     data: [
       {
-        title: "Welcome to Athena",
+        title: "Welcome to Mavino",
         content:
-          "# Welcome to Athena\n\nThis is your **Student OS**. Open apps from the **Start menu** or desktop icons.\n\n- Drag windows by their title bar\n- Resize from edges/corners\n- Press **Alt+Tab** to switch windows\n- Right-click the desktop for options\n\nTry the **Music Player** and link your Spotify!",
+          "# Welcome to Mavino\n\nThis is your **Student OS**. Open apps from the **Start menu** or desktop icons.\n\n- Drag windows by their title bar\n- Resize from edges/corners\n- Press **Alt+Tab** to switch windows\n- Right-click the desktop for options\n\nTry the **Music Player** and link your Spotify!",
         tags: "welcome,guide",
         userId: user.id,
         pinned: true,

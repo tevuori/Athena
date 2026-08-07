@@ -372,7 +372,7 @@ export default function MobileAthena() {
           <Sparkles size={20} />
         </div>
         <div className="min-w-0 flex-1">
-          <h1 className="text-xl font-bold text-white">Athena</h1>
+          <h1 className="text-xl font-bold text-white">Mavino</h1>
           <p className="truncate text-xs text-slate-400">
             {streaming ? "working…" : activeConvTitle && activeConvTitle !== "New Chat" ? activeConvTitle : "Your study copilot"}
           </p>
@@ -489,7 +489,7 @@ export default function MobileAthena() {
             }
           }}
           rows={1}
-          placeholder={attachment ? "Ask about the attached file…" : "Ask Athena anything…"}
+          placeholder={attachment ? "Ask about the attached file…" : "Ask Mavino anything…"}
           className="max-h-28 min-h-10 flex-1 resize-none bg-transparent px-2 py-2 text-sm text-white outline-none placeholder:text-slate-500"
         />
         {streaming ? (

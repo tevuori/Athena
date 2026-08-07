@@ -38,7 +38,7 @@ interface SendOpts {
  * Send an email. When SMTP_URL is not configured, logs to console instead.
  */
 export async function sendEmail(opts: SendOpts): Promise<boolean> {
-  const from = process.env.SMTP_FROM ?? "Athena <noreply@athena.local>";
+  const from = process.env.SMTP_FROM ?? "Mavino <noreply@mavino.local>";
   const t = await getTransporter();
   if (!t) {
     console.log(`[email] (no SMTP configured — would send)`);
@@ -87,20 +87,20 @@ export async function sendPasswordResetEmail(opts: {
 }): Promise<boolean> {
   const baseUrl = getAppBaseUrl();
   const resetUrl = `${baseUrl}/reset-password?token=${opts.resetToken}`;
-  const subject = "Athena — Password reset";
+  const subject = "Mavino — Password reset";
   const text = `Hello ${opts.username},
 
-You requested a password reset for your Athena account. Click the link below to set a new password:
+You requested a password reset for your Mavino account. Click the link below to set a new password:
 
 ${resetUrl}
 
 This link expires in 1 hour. If you didn't request this, you can safely ignore this email.
 
-— Athena Student OS`;
+— Mavino Student OS`;
   const html = `<p>Hello ${opts.username},</p>
-<p>You requested a password reset for your Athena account. Click the link below to set a new password:</p>
+<p>You requested a password reset for your Mavino account. Click the link below to set a new password:</p>
 <p><a href="${resetUrl}">${resetUrl}</a></p>
 <p>This link expires in 1 hour. If you didn't request this, you can safely ignore this email.</p>
-<p>— Athena Student OS</p>`;
+<p>— Mavino Student OS</p>`;
   return sendEmail({ to: opts.to, subject, text, html });
 }

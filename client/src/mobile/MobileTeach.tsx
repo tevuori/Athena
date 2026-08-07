@@ -472,7 +472,7 @@ export default function MobileTeach({ initialSessionId = null, language = "en", 
       {/* transcript */}
       <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto pb-3">
         {messages.length === 0 && !streaming && (
-          <MobileEmpty text="Ask a question, or tap the mic to speak. Athena will teach from your sources." />
+          <MobileEmpty text="Ask a question, or tap the mic to speak. Mavino will teach from your sources." />
         )}
         {messages.map((m, i) => (
           <div key={i} className={m.role === "user" ? "flex justify-end" : ""}>
@@ -563,7 +563,7 @@ export default function MobileTeach({ initialSessionId = null, language = "en", 
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
           }}
-          placeholder="Ask Athena…"
+          placeholder="Ask Mavino…"
           rows={1}
           className="flex-1"
         />

@@ -317,7 +317,7 @@ function NewReminderForm({ onCreated, onCancel }: { onCreated: () => void; onCan
         <MobileTextarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
-          placeholder="The prompt Athena will run when the reminder fires"
+          placeholder="The prompt Mavino will run when the reminder fires"
           rows={4}
           className="mb-3"
         />

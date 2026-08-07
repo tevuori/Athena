@@ -23,7 +23,7 @@ export default function ProactiveAlertsSection() {
       <SectionHeader
         icon={<BellRing size={18} />}
         title="Proactive Alerts"
-        description="Let Athena check your workspace once a day and push a concise briefing to your phone — upcoming exams, due tasks, unreviewed flashcards, and habit streaks."
+        description="Let Mavino check your workspace once a day and push a concise briefing to your phone — upcoming exams, due tasks, unreviewed flashcards, and habit streaks."
       />
       <ProactiveAlertsCard />
     </section>
@@ -192,18 +192,18 @@ function ProactiveAlertsCard() {
           <StatusPill on={ntfyReady} onLabel="Ntfy ready" offLabel="Ntfy not configured" />
           <StatusPill
             on={athenaReady}
-            onLabel={aiStatus?.hasKey ? "Athena LLM ready" : "Server LLM fallback"}
-            offLabel="No Athena LLM"
+            onLabel={aiStatus?.hasKey ? "Mavino LLM ready" : "Server LLM fallback"}
+            offLabel="No Mavino LLM"
           />
           {!athenaReady && (
             <span className="text-xs text-ink-muted">
-              (configure an AI provider in the Athena Assistant section)
+              (configure an AI provider in the Mavino Assistant section)
             </span>
           )}
         </div>
         <ToggleRow
           label="Enable daily proactive briefing"
-          description={`Athena will check your workspace once a day at ${pad(hour)}:${pad(minute)} (your timezone — set in Date & Time) and push a concise briefing to your phone via ntfy.`}
+          description={`Mavino will check your workspace once a day at ${pad(hour)}:${pad(minute)} (your timezone — set in Date & Time) and push a concise briefing to your phone via ntfy.`}
           on={enabled}
           onClick={toggleEnabled}
         />

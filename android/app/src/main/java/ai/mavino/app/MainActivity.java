@@ -1,4 +1,4 @@
-package ai.athena.app;
+package ai.mavino.app;
 
 import android.os.Bundle;
 

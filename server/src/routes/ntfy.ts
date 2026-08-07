@@ -80,8 +80,8 @@ ntfy.post("/test", async (c) => {
   try {
     await publish(cfg, {
       topic: cfg.notifyTopic,
-      title: "Athena test",
-      body: "Ntfy is working! This is a test notification from Athena.",
+      title: "Mavino test",
+      body: "Ntfy is working! This is a test notification from Mavino.",
       priority: cfg.defaultPriority,
       tags: "white_check_mark",
     });
@@ -278,13 +278,13 @@ ntfy.post("/cron/:id/run", async (c) => {
   if (!cfg) return c.json({ error: "Ntfy is not configured." }, 400);
 
   let body = "";
-  const title = job.title || "Athena";
+  const title = job.title || "Mavino";
   if (job.type === "athena") {
     const { runAthenaTurn } = await import("../services/ntfy/athena-turn");
     try {
-      body = (await runAthenaTurn(userId, job.prompt || job.name)) ?? "[Athena not configured.]";
+      body = (await runAthenaTurn(userId, job.prompt || job.name)) ?? "[Mavino not configured.]";
     } catch (e) {
-      body = `[Athena error: ${e instanceof Error ? e.message : "unknown"}]`;
+      body = `[Mavino error: ${e instanceof Error ? e.message : "unknown"}]`;
     }
   } else {
     body = job.message || job.name;

@@ -281,7 +281,7 @@ calendar.get("/ics/export", async (c) => {
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//Athena Student OS//Calendar//EN",
+    "PRODID:-//Mavino Student OS//Calendar//EN",
     "CALSCALE:GREGORIAN",
   ];
   const now = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");

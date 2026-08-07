@@ -407,7 +407,7 @@ export default function TourPlanner({ resolvePlace, onDrawTour, onClearMap }: Pr
           <textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            placeholder="Optional notes for Athena (fitness, season, gear, constraints…)"
+            placeholder="Optional notes for Mavino (fitness, season, gear, constraints…)"
             rows={2}
             className="w-full rounded-md border border-edge bg-surface px-2 py-1.5 text-xs text-ink outline-none focus:border-accent"
           />

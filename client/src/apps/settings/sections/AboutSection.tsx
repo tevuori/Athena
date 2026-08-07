@@ -97,7 +97,7 @@ export default function AboutSection() {
       <Card className="mb-3">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm font-medium text-ink">Athena — Student OS</p>
+            <p className="text-sm font-medium text-ink">Mavino — Student OS</p>
             <p className="text-xs text-ink-muted">Client v{appVersion}</p>
           </div>
           <Heart size={16} className="text-accent" />
@@ -110,7 +110,7 @@ export default function AboutSection() {
             <Server size={14} /> Server address
           </h4>
           <p className="mb-3 text-xs text-ink-muted">
-            The backend Athena server to connect to (including port). Change this if your
+            The backend Mavino server to connect to (including port). Change this if your
             server moves. Reload the app after changing.
           </p>
           <div className="flex gap-2">
@@ -186,7 +186,7 @@ export default function AboutSection() {
       <Card className="mb-3">
         <h4 className="mb-1 text-sm font-semibold text-ink">Onboarding tour</h4>
         <p className="mb-3 text-xs text-ink-muted">
-          New to Athena? Replay the guided tour to learn about all the apps and features.
+          New to Mavino? Replay the guided tour to learn about all the apps and features.
         </p>
         <button
           onClick={() => setHasOnboarded(false)}

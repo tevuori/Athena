@@ -49,16 +49,16 @@ describe("totp service", () => {
   describe("buildTotpUri", () => {
     it("builds a valid otpauth:// URI", () => {
       const secret = "JBSWY3DPEHPK3PXP";
-      const uri = buildTotpUri({ secret, label: "alice", issuer: "Athena" });
+      const uri = buildTotpUri({ secret, label: "alice", issuer: "Mavino" });
       expect(uri).toContain("otpauth://totp/");
-      expect(uri).toContain("Athena");
+      expect(uri).toContain("Mavino");
       expect(uri).toContain("alice");
       expect(uri).toContain(`secret=${secret}`);
     });
 
     it("uses default issuer when not specified", () => {
       const uri = buildTotpUri({ secret: "JBSWY3DPEHPK3PXP", label: "bob" });
-      expect(uri).toContain("Athena");
+      expect(uri).toContain("Mavino");
     });
   });
 

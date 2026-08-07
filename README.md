@@ -1,6 +1,6 @@
 <div align="center">
 
-# Athena — Student OS
+# Mavino — Student OS
 
 **A desktop-environment-style productivity dashboard for students.**
 
@@ -14,7 +14,7 @@ Vite + React 18 · TypeScript · Tailwind CSS 3 · Bun + Hono · Prisma + SQLite
 
 ## Overview
 
-Athena is a self-hosted, browser-based "operating system" for students. It recreates the feel of a real desktop environment — draggable/resizable windows, a taskbar, start menu, system tray, command palette, and an animated wallpaper — and fills it with a suite of apps built around the academic workflow: notes, tasks, files, a code editor, flashcards, a grade tracker, calendar, habits, a Pomodoro timer, an AI study hub, voice notes with Whisper transcription, and an AI assistant ("Athena").
+Mavino is a self-hosted, browser-based "operating system" for students. It recreates the feel of a real desktop environment — draggable/resizable windows, a taskbar, start menu, system tray, command palette, and an animated wallpaper — and fills it with a suite of apps built around the academic workflow: notes, tasks, files, a code editor, flashcards, a grade tracker, calendar, habits, a Pomodoro timer, an AI study hub, voice notes with Whisper transcription, and an AI assistant ("Mavino").
 
 It also integrates with the services students actually use: **Spotify** (with a beat-reactive fullscreen "Chill" mode), **Microsoft Calendar** (Graph API sync), and **VUT Studis** (Brno University of Technology SSO — grades, timetable, subject updates).
 
@@ -30,11 +30,11 @@ The default environment: animated canvas wallpaper (aurora waves), the compact S
 
 ![Desktop with aurora background and Spotify playing](docs/screenshots/desktop-aurora-spotify.png)
 
-### 2. Athena assistant
+### 2. Mavino assistant
 
-The Athena AI assistant snapped to the right half of the screen, running alongside the desktop. Streaming chat with tool-call chips, powered by the multi-llm-ts backend.
+The Mavino AI assistant snapped to the right half of the screen, running alongside the desktop. Streaming chat with tool-call chips, powered by the multi-llm-ts backend.
 
-![Athena assistant open on the right side](docs/screenshots/athena-assistant.png)
+![Mavino assistant open on the right side](docs/screenshots/mavino-assistant.png)
 
 ### 3. Chill mode — fullscreen Spotify
 
@@ -44,7 +44,7 @@ The immersive fullscreen music experience: beat-reactive animated canvas backgro
 
 ### 4. Study Hub
 
-The AI Study Hub: source-grounded Q&A, interactive Teach Me tutoring, podcasts, flashcards, summaries, quizzes, study guides, syllabus→tasks, and learning workspaces — all built on the Athena LLM infrastructure.
+The AI Study Hub: source-grounded Q&A, interactive Teach Me tutoring, podcasts, flashcards, summaries, quizzes, study guides, syllabus→tasks, and learning workspaces — all built on the Mavino LLM infrastructure.
 
 ![Study Hub](docs/screenshots/study-hub.png)
 
@@ -64,7 +64,7 @@ Two windows snapped side-by-side: the File Manager (virtual FS, tree sidebar, gr
 - **Draggable / resizable windows** with 8 resize handles and open/close/minimize animations
 - **Grid snapping** — drag to edges (halves), corners (quadrants), or top (maximize), with a live snap-preview overlay
   - Hold **Shift** while resizing to snap to a 20px grid
-  - Keyboard shortcuts (Win/Cmd): `Win+←/→` halves, `Win+↑` maximize, `Win+Shift+↑` toggle maximize, `Win+Shift+←/→` top quadrants, `Win+Shift+↓` minimize, `Win+↓` restore, `Win+W` close, `Win+Y` toggle Athena quick panel
+  - Keyboard shortcuts (Win/Cmd): `Win+←/→` halves, `Win+↑` maximize, `Win+Shift+↑` toggle maximize, `Win+Shift+←/→` top quadrants, `Win+Shift+↓` minimize, `Win+↓` restore, `Win+W` close, `Win+Y` toggle Mavino quick panel
 - **Container-query responsive layouts** — each window's content adapts to the *actual window width* (not the viewport); sidebars collapse into toggleable overlays when narrow
 - Z-index focus management, **Alt+Tab** switcher (Shift+Alt+Tab for reverse)
 - **Taskbar** with running-app indicators, **Start menu** with app search
@@ -91,7 +91,7 @@ Two windows snapped side-by-side: the File Manager (virtual FS, tree sidebar, gr
 | 12 | **Study Hub** | AI-powered study center: source-grounded Q&A, interactive Teach Me tutoring, podcasts, flashcards, summaries, quizzes, study guides, syllabus→tasks, learning workspaces — see [Study Hub](#-study-hub) below |
 | 13 | **Calendar / Planner** | Month/week/day views, ICS import/export, task drag-to-schedule, Microsoft Graph sync |
 | 14 | **Habits** | Streaks, heatmap, auto-complete from Pomodoro sessions |
-| 15 | **Athena assistant** | Streaming chat UI with tool-call chips (SSE), multi-llm-ts backend, system prompt + tool plugins, `Win+Y` quick panel |
+| 15 | **Mavino assistant** | Streaming chat UI with tool-call chips (SSE), multi-llm-ts backend, system prompt + tool plugins, `Win+Y` quick panel |
 | 16 | **Voice Notes** | Microphone recorder (MediaRecorder + Web Audio level meter), Whisper transcription via the OpenAI-compatible API, LLM cleanup pass (punctuation, paragraphs, smart title), saves audio to the virtual FS and creates a linked Note. Also integrated into Quick Capture (`Ctrl+Shift+N` mic button). Degrades gracefully — audio + placeholder note saved even without transcription |
 
 ### Integrations
@@ -99,17 +99,17 @@ Two windows snapped side-by-side: the File Manager (virtual FS, tree sidebar, gr
 - **Spotify** — server-side token exchange/refresh, device polling, LRCLIB synced lyrics
 - **Microsoft Calendar** — Graph API (`Calendar.ReadWrite` + `offline_access`), automatic refresh-token rotation persisted in DB
 - **VUT Studis** — full Shibboleth/SAML SSO with cookie jar + session caching (25min TTL)
-- **Athena LLM** — multi-llm-ts client supporting `openai | deepseek | anthropic | openrouter | ollama | groq | mistralai | google | xai | meta | cerebras`; per-user config (encrypted in DB) takes priority over server-wide fallback
+- **Mavino LLM** — multi-llm-ts client supporting `openai | deepseek | anthropic | openrouter | ollama | groq | mistralai | google | xai | meta | cerebras`; per-user config (encrypted in DB) takes priority over server-wide fallback
 
 ---
 
 ## Study Hub
 
-The Study Hub is Athena's AI-powered study center — a single app that consolidates every learning workflow around your **sources** (notes, files, pasted text, URLs, Moodle documents). All modes share the same source library and the Athena LLM infrastructure, so you pick what to study from and choose how you want to learn.
+The Study Hub is Mavino's AI-powered study center — a single app that consolidates every learning workflow around your **sources** (notes, files, pasted text, URLs, Moodle documents). All modes share the same source library and the Mavino LLM infrastructure, so you pick what to study from and choose how you want to learn.
 
 ### Source library
 
-Everything in the Study Hub starts with **sources**. A source is any text you want Athena to learn from:
+Everything in the Study Hub starts with **sources**. A source is any text you want Mavino to learn from:
 
 - **Notes** — any note from the Notes app (full markdown + LaTeX)
 - **Files** — any text-readable file from the File Manager (`.txt`, `.md`, `.py`, `.js`, `.json`, etc.)
@@ -135,7 +135,7 @@ For example, you might create a workspace called "Calculus II — Final" with yo
 | Mode | What it does |
 |------|-------------|
 | **Teach Me** | Interactive live tutoring — see [Teach Me](#teach-me-interactive-tutor) below |
-| **Ask (grounded)** | Source-grounded Q&A with `[n]` citations. Click a citation to open the source and jump to the passage. Reuses the same citation convention as the main Athena assistant |
+| **Ask (grounded)** | Source-grounded Q&A with `[n]` citations. Click a citation to open the source and jump to the passage. Reuses the same citation convention as the main Mavino assistant |
 | **Podcast** | Generates a 2-host dialogue script from your sources and plays it via the Web Speech API (alternating voices, adjustable speed). The script is saved as a note for download/re-use |
 | **Flashcards** | AI-generated Q/A cards from a source, saved to a deck in the Flashcards app with SM-2 scheduling |
 | **Summarize** | TL;DR, outline, or key-points summary of a source, saved as a note |
@@ -147,13 +147,13 @@ For example, you might create a workspace called "Calculus II — Final" with yo
 
 ### Teach Me (Interactive Tutor)
 
-The flagship Study Hub mode. **Teach Me** turns Athena into a live, voice-driven tutor that teaches from your sources in real-time — opening apps, scrolling to and highlighting passages, speaking aloud, and checking your understanding as you go.
+The flagship Study Hub mode. **Teach Me** turns Mavino into a live, voice-driven tutor that teaches from your sources in real-time — opening apps, scrolling to and highlighting passages, speaking aloud, and checking your understanding as you go.
 
 #### How it works
 
 1. **Pick sources** and set your **level** (beginner / intermediate / advanced)
-2. **Ask Athena to teach you** a topic — e.g. "Teach me about gradient descent" or "Explain chapter 3"
-3. Athena **teaches conversationally**, citing sources with `[n]` markers
+2. **Ask Mavino to teach you** a topic — e.g. "Teach me about gradient descent" or "Explain chapter 3"
+3. Mavino **teaches conversationally**, citing sources with `[n]` markers
 4. As she speaks, she **opens your existing apps and points at the relevant passages**:
 
 | Source type | What happens |
@@ -168,30 +168,30 @@ The flagship Study Hub mode. **Teach Me** turns Athena into a live, voice-driven
 
 #### Voice (TTS + STT)
 
-- **Athena speaks her replies** via **ElevenLabs** (natural neural voice, with character-level timestamps for speech-synced highlighting) or **Web Speech API** fallback if no ElevenLabs key is configured
+- **Mavino speaks her replies** via **ElevenLabs** (natural neural voice, with character-level timestamps for speech-synced highlighting) or **Web Speech API** fallback if no ElevenLabs key is configured
 - **Auto-speak toggle** — turn on to have every reply read aloud automatically
 - **Per-message "Read aloud"** button on each assistant message
 - **You speak your questions** via the mic button (Web Speech API `SpeechRecognition` — Chromium-based browsers only)
 
-To enable ElevenLabs voice: Settings → Athena Assistant → "Voice (ElevenLabs TTS)" → enter your API key (get one at [elevenlabs.io](https://elevenlabs.io)). Without a key, the browser's built-in Web Speech API is used automatically.
+To enable ElevenLabs voice: Settings → Mavino Assistant → "Voice (ElevenLabs TTS)" → enter your API key (get one at [elevenlabs.io](https://elevenlabs.io)). Without a key, the browser's built-in Web Speech API is used automatically.
 
 #### Comprehension checks
 
-- Athena periodically calls `check_comprehension` to ask you a question about what she just taught
+- Mavino periodically calls `check_comprehension` to ask you a question about what she just taught
 - An interactive chip appears in the chat — type your answer and submit
-- Your answer is fed back into the conversation; the comprehension log is **persisted** and injected into future turns so Athena adapts her pacing
+- Your answer is fed back into the conversation; the comprehension log is **persisted** and injected into future turns so Mavino adapts her pacing
 
 #### Adaptive teaching
 
 - The system prompt includes your **level**, **concepts covered**, and **comprehension outcomes**
-- Athena is instructed to simplify and use analogies if you're confused, or go deeper if you're advanced
+- Mavino is instructed to simplify and use analogies if you're confused, or go deeper if you're advanced
 - If you miss a concept twice, she proactively offers to re-explain at a simpler level
 
 #### Session memory & resumption
 
 - Sessions are **persisted** (messages, source-history, comprehension log, student level)
 - **Resume** from the session list in Teach Me, or from Recent Activity in the Study Hub
-- Source-history is sent to the server each turn so Athena can resolve references like "go back to the first file"
+- Source-history is sent to the server each turn so Mavino can resolve references like "go back to the first file"
 
 #### Architecture
 
@@ -292,7 +292,7 @@ See [`.env.example`](.env.example) for the full list. Key ones:
 | `VITE_API_URL` | Backend URL for client (Vite proxy) |
 | `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` / `SPOTIFY_REFRESH_TOKEN` | Spotify integration |
 | `MS_CLIENT_ID` / `MS_CLIENT_SECRET` / `MS_TENANT_ID` / `MS_REFRESH_TOKEN` | Microsoft Calendar sync (Graph API) |
-| `OPENAI_PROVIDER` / `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL` | Athena LLM server-wide fallback (per-user DB config takes priority). All optional — if neither is set, Athena AI is unavailable (no free fallback) |
+| `OPENAI_PROVIDER` / `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL` | Mavino LLM server-wide fallback (per-user DB config takes priority). All optional — if neither is set, Mavino AI is unavailable (no free fallback) |
 | `OPENAI_TRANSCRIPTION_MODEL` | Whisper model for Voice Notes transcription (default `whisper-1`). Reuses `OPENAI_API_KEY` / `OPENAI_BASE_URL` (or per-user AiCredential) |
 | `ELEVENLABS_API_KEY` | ElevenLabs TTS server-wide fallback for Teach Me voice (per-user TtsCredential in DB takes priority). Without a key, the browser Web Speech API is used |
 | `ELEVENLABS_VOICE_ID` | ElevenLabs voice ID (default `21m00Tcm4TlvDq8ikWAM` — "Rachel") |
@@ -341,7 +341,7 @@ Athena/
 
 ## License
 
-Copyright (C) Athena Student OS contributors.
+Copyright (C) Mavino Student OS contributors.
 
 This program is free software: you can redistribute it and/or modify it under the terms of the **GNU Affero General Public License v3** as published by the Free Software Foundation. See [LICENSE](LICENSE) for the full text.
 

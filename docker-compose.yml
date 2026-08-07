@@ -1,7 +1,7 @@
 services:
   db:
     image: postgres:16-alpine
-    container_name: athena-db
+    container_name: mavino-db
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-athena}
       POSTGRES_USER: ${POSTGRES_USER:-athena}
@@ -20,7 +20,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: athena-redis
+    container_name: mavino-redis
     expose:
       - "6379"
     restart: unless-stopped
@@ -39,7 +39,7 @@ services:
     build:
       context: ./server
       dockerfile: Dockerfile
-    container_name: athena-server
+    container_name: mavino-server
     expose:
       - "3000"
     depends_on:
@@ -65,7 +65,7 @@ services:
       SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET}
       SPOTIFY_REFRESH_TOKEN: ${SPOTIFY_REFRESH_TOKEN}
       SPOTIFY_REDIRECT_URI: ${SPOTIFY_REDIRECT_URI:-https://athena.tevuori.eu/auth/spotify/callback}
-      # Athena code execution sandbox (run_code tool). Uses gVisor (runsc)
+      # Mavino code execution sandbox (run_code tool). Uses gVisor (runsc)
       # runtime for kernel-level isolation — safe for public multi-user hosts.
       # Requires the Docker socket mounted below + runsc installed on the host.
       SANDBOX_ENABLED: ${SANDBOX_ENABLED:-true}
@@ -73,16 +73,16 @@ services:
       # Shared temp directory for sandbox code files. Must be the same path on
       # both the host and this container so the Docker daemon can resolve -v
       # mounts when spawning sandbox containers via the socket.
-      SANDBOX_HOST_TMP: /tmp/athena-sandbox
+      SANDBOX_HOST_TMP: /tmp/mavino-sandbox
     volumes:
       - athena-uploads:/app/uploads
-      # Docker socket for the Athena code execution sandbox (run_code tool).
+      # Docker socket for the Mavino code execution sandbox (run_code tool).
       # Safe when combined with the gVisor (runsc) runtime — sandbox containers
       # run inside a userspace kernel that intercepts syscalls, preventing
       # container escape to the host.
       - /var/run/docker.sock:/var/run/docker.sock
       # Shared temp dir for sandbox code files (same path on host + container).
-      - /tmp/athena-sandbox:/tmp/athena-sandbox
+      - /tmp/mavino-sandbox:/tmp/mavino-sandbox
     restart: unless-stopped
     healthcheck:
       # The server exposes GET /health returning {"ok": true}.
@@ -96,7 +96,7 @@ services:
     build:
       context: ./client
       dockerfile: Dockerfile
-    container_name: athena-client
+    container_name: mavino-client
     ports:
       # Bind to localhost only — the host nginx terminates TLS and proxies to this.
       - "127.0.0.1:8080:80"

@@ -17,7 +17,7 @@ const APP_NAMES: Record<string, string> = {
   notes: "Notes", tasks: "Tasks", files: "Files", music: "Music",
   settings: "Settings", terminal: "Terminal", pomodoro: "Pomodoro",
   flashcards: "Flashcards", grades: "Grades", vut: "VUT Studis",
-  editor: "Code Editor", viewer: "File Viewer", athena: "Athena",
+  editor: "Code Editor", viewer: "File Viewer", athena: "Mavino",
   browser: "Browser",
 };
 

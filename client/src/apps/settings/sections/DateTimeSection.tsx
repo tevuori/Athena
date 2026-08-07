@@ -141,7 +141,7 @@ export default function DateTimeSection() {
       <SectionHeader
         icon={<Clock size={18} />}
         title="Date & Time"
-        description="Set your timezone so scheduled notifications (ntfy cron jobs, proactive alerts, reminders created by Athena) fire at the correct local time. The server may run in a different timezone than you do."
+        description="Set your timezone so scheduled notifications (ntfy cron jobs, proactive alerts, reminders created by Mavino) fire at the correct local time. The server may run in a different timezone than you do."
       />
 
       <Card className="mb-4">
@@ -205,7 +205,7 @@ export default function DateTimeSection() {
           <div className="text-xs text-ink-muted space-y-1.5">
             <p>
               This setting affects <b>ntfy cron jobs</b>, <b>proactive alerts</b>, and{" "}
-              <b>reminders created by Athena</b>. When you save, the next-fire times for your
+              <b>reminders created by Mavino</b>. When you save, the next-fire times for your
               existing scheduled jobs are recomputed immediately so the change takes effect
               without waiting for the next tick.
             </p>

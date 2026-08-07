@@ -54,7 +54,7 @@ export const APPS: AppDefinition[] = [
   { id: "grades", name: "Grades", icon: "GraduationCap", component: GradesApp, pinnedToDesktop: true },
   { id: "vut", name: "VUT", icon: "GraduationCap", component: VUTApp, pinnedToDesktop: true },
   { id: "settings", name: "Settings", icon: "Settings", component: SettingsApp, pinnedToDesktop: false },
-  { id: "athena", name: "Athena", icon: "Sparkles", component: AthenaApp, pinnedToDesktop: true },
+  { id: "athena", name: "Mavino", icon: "Sparkles", component: AthenaApp, pinnedToDesktop: true },
   { id: "study", name: "Study Hub", icon: "GraduationCap", component: StudyApp, pinnedToDesktop: true },
   { id: "today", name: "Today", icon: "CalendarCheck", component: TodayApp, pinnedToDesktop: true },
   { id: "calendar", name: "Calendar", icon: "Calendar", component: CalendarApp, pinnedToDesktop: true },

@@ -52,16 +52,16 @@ async function handleInbound(userId: string, msg: NtfyMessage, cfg: NtfyUsableCo
 
   let reply: string;
   try {
-    reply = (await runAthenaTurn(userId, text)) ?? "[Athena is not configured with an AI provider.]";
+    reply = (await runAthenaTurn(userId, text)) ?? "[Mavino is not configured with an AI provider.]";
   } catch (e) {
-    reply = `[Athena error: ${e instanceof Error ? e.message : "unknown"}]`;
+    reply = `[Mavino error: ${e instanceof Error ? e.message : "unknown"}]`;
   }
   reply = reply.slice(0, MAX_REPLY_LEN);
 
   try {
     await publish(cfg, {
       topic: cfg.notifyTopic,
-      title: "Athena",
+      title: "Mavino",
       body: reply,
       priority: cfg.defaultPriority,
     });
@@ -70,7 +70,7 @@ async function handleInbound(userId: string, msg: NtfyMessage, cfg: NtfyUsableCo
         userId,
         direction: "out",
         topic: cfg.notifyTopic,
-        title: "Athena",
+        title: "Mavino",
         body: reply,
         priority: cfg.defaultPriority,
       },

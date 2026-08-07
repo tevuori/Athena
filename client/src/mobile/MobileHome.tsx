@@ -76,7 +76,7 @@ export default function MobileHome({ onNavigate }: { onNavigate: (route: MobileR
       <section className="space-y-3">
         <SectionHead title="Today" action="See tasks" onClick={() => onNavigate("tasks")} />
         {loading ? <LoadingCard /> : openTasks.length ? openTasks.map((task) => <button key={task.id} type="button" onClick={() => onNavigate("tasks")} className="flex w-full items-center gap-3 rounded-2xl border border-white/10 bg-white/[.045] p-4 text-left active:bg-white/[.08]"><CheckCircle2 size={20} className={task.priority === "HIGH" ? "text-rose-400" : "text-slate-500"} /><span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-100">{task.title}</span><ChevronRight size={17} className="text-slate-500" /></button>) : <Empty text="Your task list is clear. Add something worth doing." />}
-        <SectionHead title="Study pulse" action="Open Athena" onClick={() => onNavigate("athena")} />
+        <SectionHead title="Study pulse" action="Open Mavino" onClick={() => onNavigate("athena")} />
         <div className="grid grid-cols-2 gap-3"><Pulse label="Flashcards due" value={due} icon={<BookOpen size={18} />} /><Pulse label="Open tasks" value={tasks.filter((task) => task.status !== "DONE").length} icon={<Sparkles size={18} />} /></div>
       </section>
     </div>

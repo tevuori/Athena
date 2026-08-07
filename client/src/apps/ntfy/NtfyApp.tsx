@@ -185,9 +185,9 @@ function SetupTab({ status, onSaved }: { status: NtfyStatus | null; onSaved: () 
       <div className="space-y-1">
         <h2 className="text-lg font-semibold flex items-center gap-2"><Bell size={18} /> Ntfy Setup</h2>
         <p className="text-sm text-zinc-500 dark:text-zinc-400">
-          Ntfy is a bidirectional channel: Athena sends you push notifications and you can message
-          Athena from your phone. Subscribe to the <b>notify</b> topic in the ntfy app to receive
-          Athena's messages; publish to the <b>inbox</b> topic to talk to Athena.
+          Ntfy is a bidirectional channel: Mavino sends you push notifications and you can message
+          Mavino from your phone. Subscribe to the <b>notify</b> topic in the ntfy app to receive
+          Mavino's messages; publish to the <b>inbox</b> topic to talk to Mavino.
         </p>
       </div>
 
@@ -205,12 +205,12 @@ function SetupTab({ status, onSaved }: { status: NtfyStatus | null; onSaved: () 
       </Field>
 
       <div className="grid grid-cols-1 @md:grid-cols-2 gap-4">
-        <Field label="Notify topic (Athena → you)">
-          <input value={notifyTopic} onChange={(e) => setNotifyTopic(e.target.value)} placeholder="athena-notify-…" className="inp" />
+        <Field label="Notify topic (Mavino → you)">
+          <input value={notifyTopic} onChange={(e) => setNotifyTopic(e.target.value)} placeholder="mavino-notify-…" className="inp" />
           {notifyTopic && <p className="mt-1 text-xs text-zinc-400 break-all">Subscribe to: {notifyUrl}</p>}
         </Field>
-        <Field label="Inbox topic (you → Athena)">
-          <input value={inboxTopic} onChange={(e) => setInboxTopic(e.target.value)} placeholder="athena-inbox-…" className="inp" />
+        <Field label="Inbox topic (you → Mavino)">
+          <input value={inboxTopic} onChange={(e) => setInboxTopic(e.target.value)} placeholder="mavino-inbox-…" className="inp" />
           {inboxTopic && <p className="mt-1 text-xs text-zinc-400 break-all">Send to: {inboxUrl}</p>}
         </Field>
       </div>
@@ -451,7 +451,7 @@ function CronTab() {
         <div className="text-sm text-zinc-400 text-center py-8">Loading…</div>
       ) : jobs.length === 0 ? (
         <div className="text-sm text-zinc-400 text-center py-8">
-          No cron jobs yet. Click "New" to schedule a notification or an Athena-driven prompt.
+          No cron jobs yet. Click "New" to schedule a notification or a Mavino-driven prompt.
         </div>
       ) : (
         <div className="space-y-2">
@@ -580,7 +580,7 @@ function CronForm({ existing, onClose, onSaved }: {
             Notification (fixed message)
           </button>
           <button onClick={() => setType("athena")} className={`type-btn ${type === "athena" ? "active" : ""}`}>
-            Athena (LLM-generated)
+            Mavino (LLM-generated)
           </button>
         </div>
       </div>
@@ -588,7 +588,7 @@ function CronForm({ existing, onClose, onSaved }: {
       {type === "notification" ? (
         <textarea value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Message body sent each fire…" rows={3} className="inp" />
       ) : (
-        <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Prompt run through Athena each fire (e.g. 'Summarize my schedule and due tasks for today')…" rows={3} className="inp" />
+        <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Prompt run through Mavino each fire (e.g. 'Summarize my schedule and due tasks for today')…" rows={3} className="inp" />
       )}
 
       <div className="grid grid-cols-1 @md:grid-cols-3 gap-2">

@@ -16,10 +16,10 @@ name: Build & Release Android APK
 #   KEY_PASSWORD        password for that key alias
 #
 # Generate a keystore locally with:
-#   keytool -genkeypair -v -keystore athena-release.keystore \
-#     -alias athena -keyalg RSA -keysize 2048 -validity 10000
+#   keytool -genkeypair -v -keystore mavino-release.keystore \
+#     -alias mavino -keyalg RSA -keysize 2048 -validity 10000
 # Then base64-encode it and paste into the KEYSTORE_BASE64 secret:
-#   base64 -w0 athena-release.keystore > athena-release.keystore.b64
+#   base64 -w0 mavino-release.keystore > mavino-release.keystore.b64
 #
 # IMPORTANT: every release APK must be signed with the SAME keystore, or
 # Android will refuse to install the update as an "in-place" upgrade.
@@ -121,12 +121,12 @@ jobs:
             echo "::error::KEYSTORE_BASE64 secret is not set. Set it in repo Settings → Secrets before running this workflow."
             exit 1
           fi
-          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/athena-release.keystore"
-          echo "Keystore decoded to $RUNNER_TEMP/athena-release.keystore"
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/mavino-release.keystore"
+          echo "Keystore decoded to $RUNNER_TEMP/mavino-release.keystore"
 
       - name: Build signed release APK
         env:
-          KEYSTORE_PATH: ${{ runner.temp }}/athena-release.keystore
+          KEYSTORE_PATH: ${{ runner.temp }}/mavino-release.keystore
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
@@ -152,7 +152,7 @@ jobs:
           fi
           echo "path=$APK" >> "$GITHUB_OUTPUT"
           # Stage under a clean, versioned name for the release asset.
-          STAGED="$RUNNER_TEMP/athena-${{ steps.ver.outputs.version }}.apk"
+          STAGED="$RUNNER_TEMP/mavino-${{ steps.ver.outputs.version }}.apk"
           cp "$APK" "$STAGED"
           echo "staged=$STAGED" >> "$GITHUB_OUTPUT"
 
@@ -160,8 +160,8 @@ jobs:
         id: sha
         run: |
           cd "$RUNNER_TEMP"
-          SHA=$(sha256sum "athena-${{ steps.ver.outputs.version }}.apk" | awk '{print $1}')
-          echo "$SHA  athena-${{ steps.ver.outputs.version }}.apk" > "athena-${{ steps.ver.outputs.version }}.apk.sha256"
+          SHA=$(sha256sum "mavino-${{ steps.ver.outputs.version }}.apk" | awk '{print $1}')
+          echo "$SHA  mavino-${{ steps.ver.outputs.version }}.apk" > "mavino-${{ steps.ver.outputs.version }}.apk.sha256"
           echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
 
       - name: Write latest.json manifest
@@ -175,7 +175,7 @@ jobs:
           {
             "version": "$VERSION",
             "sha256": "$SHA256",
-            "apk": "athena-$VERSION.apk",
+            "apk": "mavino-$VERSION.apk",
             "releasedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           }
           EOF
@@ -190,5 +190,5 @@ jobs:
           generate_release_notes: true
           files: |
             ${{ steps.apk.outputs.staged }}
-            ${{ runner.temp }}/athena-${{ steps.ver.outputs.version }}.apk.sha256
+            ${{ runner.temp }}/mavino-${{ steps.ver.outputs.version }}.apk.sha256
             ${{ runner.temp }}/latest.json

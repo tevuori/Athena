@@ -61,14 +61,14 @@ async function fireJob(job: {
   }
 
   let body = "";
-  let title = job.title || "Athena";
+  let title = job.title || "Mavino";
 
   if (job.type === "athena") {
     try {
       const reply = await runAthenaTurn(job.userId, job.prompt || job.name);
-      body = reply ?? "[Athena is not configured with an AI provider — cannot generate a response.]";
+      body = reply ?? "[Mavino is not configured with an AI provider — cannot generate a response.]";
     } catch (e) {
-      body = `[Athena cron error: ${e instanceof Error ? e.message : "unknown"}]`;
+      body = `[Mavino cron error: ${e instanceof Error ? e.message : "unknown"}]`;
     }
   } else {
     body = job.message || job.name;

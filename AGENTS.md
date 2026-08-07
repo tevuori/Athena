@@ -1,4 +1,4 @@
-# Athena — Student OS
+# Mavino — Student OS
 
 A desktop-environment-style productivity dashboard for students.
 

@@ -148,7 +148,7 @@ export default function LoginScreen() {
       >
         <div className="mb-6 text-center">
           <AppLogo size={56} className="mx-auto mb-3" />
-          <h1 className="text-xl font-semibold text-ink">Athena</h1>
+          <h1 className="text-xl font-semibold text-ink">Mavino</h1>
           <p className="text-sm text-ink-muted">
             {mode === "login"
               ? "Sign in to your Student OS"
@@ -285,7 +285,7 @@ export default function LoginScreen() {
                   className="w-full rounded-lg border border-edge bg-surface-2 px-3 py-2.5 text-sm text-ink outline-none focus:border-accent"
                 />
                 <p className="text-[11px] text-ink-muted">
-                  The address of your Athena server (including port).
+                  The address of your Mavino server (including port).
                 </p>
               </div>
             )}

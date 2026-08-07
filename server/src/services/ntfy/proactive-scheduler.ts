@@ -159,7 +159,7 @@ async function runProactiveTurn(userId: string, userText: string): Promise<strin
         return (
           `I gathered your workspace context (${completedTools} tool call${completedTools > 1 ? "s" : ""} ` +
           `succeeded) but couldn't generate the final briefing — the AI provider was unavailable. ` +
-          `Try again later or configure a more reliable provider in Settings → Athena Assistant.`
+          `Try again later or configure a more reliable provider in Settings → Mavino Assistant.`
         );
       }
       throw e;
@@ -280,7 +280,7 @@ async function fireAlert(cfg: {
     isAthenaReady(cfg.userId),
   ]);
   if (!ntfyReady || !athenaReady) {
-    return "[Proactive alert skipped — ntfy or Athena LLM not configured.]";
+    return "[Proactive alert skipped — ntfy or Mavino LLM not configured.]";
   }
 
   const ntfyCfg: NtfyUsableConfig | null = await decryptNtfyConfig(cfg.userId);
@@ -294,13 +294,13 @@ async function fireAlert(cfg: {
   let body = "";
   try {
     const reply = await runProactiveTurn(cfg.userId, prompt);
-    body = reply ?? "[Athena is not configured with an AI provider — cannot generate a briefing.]";
+    body = reply ?? "[Mavino is not configured with an AI provider — cannot generate a briefing.]";
   } catch (e) {
     body = `[Proactive alert error: ${e instanceof Error ? e.message : "unknown"}]`;
   }
 
   body = body.slice(0, MAX_BODY_LEN);
-  const title = "Athena daily briefing";
+  const title = "Mavino daily briefing";
 
   try {
     await publish(ntfyCfg, {

@@ -17,7 +17,7 @@ const FETCH_TIMEOUT_MS = 15_000;
 const CACHE_TTL_MS = 60_000;
 
 const USER_AGENT =
-  "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0 Athena/1.0 (+https://github.com/athena/student-os)";
+  "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0 Mavino/1.0 (+https://github.com/mavino/student-os)";
 
 // ===== In-memory response cache (per user, 60s) =====
 interface CacheEntry {
@@ -364,7 +364,7 @@ async function nominatimSearch(query: string, lang: string): Promise<GeocodeResu
     nomUrl.searchParams.set("limit", "5");
     nomUrl.searchParams.set("accept-language", lang);
     const nomRes = await fetch(nomUrl.toString(), {
-      headers: { "User-Agent": "Athena/1.0 (+https://github.com/athena/student-os)" },
+      headers: { "User-Agent": "Mavino/1.0 (+https://github.com/mavino/student-os)" },
       signal: AbortSignal.timeout(10_000),
     });
     if (nomRes.ok) {
@@ -849,7 +849,7 @@ export function tripToGpx(trip: TripRow): string {
   const pois = trip.pois ?? [];
   const lines: string[] = [
     `<?xml version="1.0" encoding="UTF-8"?>`,
-    `<gpx version="1.1" creator="Athena" xmlns="http://www.topografix.com/GPX/1/1">`,
+    `<gpx version="1.1" creator="Mavino" xmlns="http://www.topografix.com/GPX/1/1">`,
     `  <metadata>`,
     `    <name>${gpxEscape(trip.name)}</name>`,
     `    <time>${gpxTime(trip.updatedAt)}</time>`,
@@ -893,7 +893,7 @@ export function tourToGpx(
 ): string {
   const lines: string[] = [
     `<?xml version="1.0" encoding="UTF-8"?>`,
-    `<gpx version="1.1" creator="Athena" xmlns="http://www.topografix.com/GPX/1/1">`,
+    `<gpx version="1.1" creator="Mavino" xmlns="http://www.topografix.com/GPX/1/1">`,
     `  <metadata>`,
     `    <name>${gpxEscape(tour.name)}</name>`,
     `    <time>${gpxTime(tour.updatedAt)}</time>`,

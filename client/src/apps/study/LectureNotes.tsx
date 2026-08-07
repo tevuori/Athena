@@ -183,7 +183,7 @@ export default function LectureNotes({ language }: { language: StudyLanguage }) 
       </div>
 
       <p className="text-xs text-ink-muted">
-        Upload a lecture recording. Athena will extract slides, transcribe the professor's
+        Upload a lecture recording. Mavino will extract slides, transcribe the professor's
         commentary, and generate structured notes combining both. Supports screen captures
         (slides + voice) and camera recordings (professor visible with projected slides).
       </p>

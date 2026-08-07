@@ -103,7 +103,7 @@ export default function SyllabusTasks({ initialSource, language }: { initialSour
         <WorkspaceSourceSelector selectedIds={selectedSourceIds} onToggle={toggleSource} disabled={loading} />
       )}
       <p className="text-xs text-ink-muted">
-        Paste a syllabus, assignment list, or course outline — Athena extracts tasks with due dates and priorities.
+        Paste a syllabus, assignment list, or course outline — Mavino extracts tasks with due dates and priorities.
       </p>
       <ActionButton onClick={run} disabled={!hasSource} loading={loading}>
         <Sparkles size={13} /> Extract tasks

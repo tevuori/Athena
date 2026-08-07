@@ -10,8 +10,8 @@ export default function AthenaSection() {
     <section id="athena" className="mb-8">
       <SectionHeader
         icon={<Sparkles size={18} />}
-        title="Athena Assistant"
-        description="Connect an LLM provider and customize how Athena responds."
+        title="Mavino Assistant"
+        description="Connect an LLM provider and customize how Mavino responds."
       />
       <LlmConfigCard />
       <RateLimitCard />
@@ -99,7 +99,7 @@ function TtsConfigCard() {
         )}
       </div>
       <p className="mb-3 text-xs text-ink-muted">
-        Athena uses <strong className="text-ink">Microsoft Edge TTS</strong> by default — free,
+        Mavino uses <strong className="text-ink">Microsoft Edge TTS</strong> by default — free,
         high-quality neural voices with Czech support (Antonin, Vlasta) and no API key needed.
         Optionally add an ElevenLabs key for premium voice quality.
       </p>
@@ -237,7 +237,7 @@ function LlmConfigCard() {
       <div className="mb-3 flex items-center gap-2 text-sm">
         <StatusPill on={hasKey} onLabel="Key set" offLabel="No key set" />
         {!hasKey && (
-          <span className="text-xs text-ink-muted">Athena AI requires a key to function</span>
+          <span className="text-xs text-ink-muted">Mavino AI requires a key to function</span>
         )}
       </div>
       <div className="mb-3 grid grid-cols-2 gap-2">
@@ -304,7 +304,7 @@ function LlmConfigCard() {
       <MsgBox msg={msg} error={err} />
       <p className="mt-3 text-xs text-ink-muted">
         The key is encrypted (AES-256-GCM) and stored only on the server. Without a key,
-        Athena's chat and AI features are unavailable.
+        Mavino's chat and AI features are unavailable.
       </p>
     </Card>
   );
@@ -571,7 +571,7 @@ function InstructionsCard() {
         <Check size={14} /> Custom instructions
       </h4>
       <p className="mb-3 text-xs text-ink-muted">
-        Tell Athena how to behave — tone, language, formatting preferences, things to always
+        Tell Mavino how to behave — tone, language, formatting preferences, things to always
         remember. Injected into every chat turn.
       </p>
       <textarea

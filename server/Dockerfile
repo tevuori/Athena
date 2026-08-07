@@ -1,7 +1,7 @@
 FROM oven/bun:1.3 AS base
 WORKDIR /app
 
-# Install the Docker CLI so the Athena sandbox (run_code tool) can spawn
+# Install the Docker CLI so the Mavino sandbox (run_code tool) can spawn
 # isolated containers via the mounted Docker socket. Only the CLI is needed —
 # the daemon runs on the host. gVisor (runsc) runtime provides kernel isolation.
 # Also install ffmpeg (audio/video processing for lecture pipeline) and

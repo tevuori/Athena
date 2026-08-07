@@ -173,7 +173,7 @@ export default function AthenaQuickPanel() {
 
   const handleExpand = useCallback(() => {
     setOpen(false);
-    openWindow({ appId: "athena", title: "Athena", icon: "Sparkles" });
+    openWindow({ appId: "athena", title: "Mavino", icon: "Sparkles" });
   }, [setOpen, openWindow]);
 
   const handles = handlesForEdge(edge);

@@ -92,7 +92,7 @@ export default function StudyHome({ onPickMode }: { onPickMode: (m: string, opts
   const studyCount = sessions.length;
 
   const quickActions: { mode: string; label: string; icon: typeof Brain; color: string; desc: string }[] = [
-    { mode: "teach", label: "Teach Me", icon: Presentation, color: "text-indigo-400", desc: "Interactive live tutoring — Athena teaches from your sources with voice" },
+    { mode: "teach", label: "Teach Me", icon: Presentation, color: "text-indigo-400", desc: "Interactive live tutoring — Mavino teaches from your sources with voice" },
     { mode: "chat", label: "Ask (grounded)", icon: MessageSquare, color: "text-violet-400", desc: "Q&A grounded in your sources, with citations" },
     { mode: "podcast", label: "Podcast", icon: Mic, color: "text-rose-400", desc: "Audio overview from your sources" },
     { mode: "lecture", label: "Lecture → Notes", icon: Video, color: "text-teal-400", desc: "Generate notes from a lecture video recording" },

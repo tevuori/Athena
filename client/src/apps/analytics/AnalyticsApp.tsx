@@ -314,7 +314,7 @@ function Dashboard({ data }: { data: AnalyticsDashboard }) {
       </Card>
 
       <p className="pb-2 text-center text-[10px] text-ink-muted">
-        Analytics data is collected as you use Athena. Historical focus &amp; review data starts from when this feature shipped.
+        Analytics data is collected as you use Mavino. Historical focus &amp; review data starts from when this feature shipped.
       </p>
     </div>
   );

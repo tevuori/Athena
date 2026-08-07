@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate every Athena icon/splash asset from the master logo.
+"""Regenerate every Mavino icon/splash asset from the master logo.
 
 Source of truth: assets/logo.png (transparent-background rounded tile artwork).
 

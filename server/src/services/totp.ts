@@ -46,7 +46,7 @@ export function buildTotpUri(opts: {
   label: string;
   issuer?: string;
 }): string {
-  const issuer = opts.issuer ?? "Athena";
+  const issuer = opts.issuer ?? "Mavino";
   return authenticator.keyuri(opts.label, issuer, opts.secret);
 }
 

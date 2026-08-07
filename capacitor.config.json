@@ -1,6 +1,6 @@
 {
-  "appId": "ai.athena.app",
-  "appName": "Athena",
+  "appId": "ai.mavino.app",
+  "appName": "Mavino",
   "webDir": "client/dist",
   "server": {
     "androidScheme": "https"

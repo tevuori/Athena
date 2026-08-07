@@ -23,7 +23,7 @@ const TARGET_LABELS: Record<string, string> = {
   task: "Task",
   note: "Note",
   flashcard: "Flashcard",
-  athena: "Athena",
+  athena: "Mavino",
   study: "Study Hub",
 };
 
@@ -94,7 +94,7 @@ export default function QuickCapture() {
       // the quick-capture flow we open Athena and rely on the payload.
       openWindow({
         appId: "athena",
-        title: "Athena",
+        title: "Mavino",
         icon: "Sparkles",
         payload: p.prompt ? { prompt: p.prompt } : undefined,
       });
@@ -256,7 +256,7 @@ export default function QuickCapture() {
                     }}
                     disabled={busy}
                     className="flex-1 rounded-md border border-edge bg-surface-2 px-3 py-2 text-sm text-ink outline-none focus:border-accent disabled:opacity-50"
-                    placeholder="Type anything — a task, idea, question… Athena will route it."
+                    placeholder="Type anything — a task, idea, question… Mavino will route it."
                   />
                   <button
                     onClick={() => {
@@ -298,7 +298,7 @@ export default function QuickCapture() {
               <p className="mt-2 text-[11px] text-ink-muted">
                 {voiceMode
                   ? "Record a voice note — it's transcribed and saved as a linked Note."
-                  : "Type or speak — Athena routes it to a Task, Note, Flashcard, or chat."}
+                  : "Type or speak — Mavino routes it to a Task, Note, Flashcard, or chat."}
               </p>
             </div>
           </motion.div>

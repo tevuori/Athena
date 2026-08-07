@@ -27,8 +27,8 @@ export default function SoundAthenaSection() {
     <section id="sound-athena" className="mb-8">
       <SectionHeader
         icon={<Volume2 size={18} />}
-        title="Sound & Athena Panel"
-        description="System volume and the Athena quick-assistant panel behavior."
+        title="Sound & Mavino Panel"
+        description="System volume and the Mavino quick-assistant panel behavior."
       />
 
       <Card className="mb-4">
@@ -51,7 +51,7 @@ export default function SoundAthenaSection() {
           <Sparkles size={15} /> Quick panel
         </h4>
         <p className="mb-3 text-xs text-ink-muted">
-          The Athena quick panel rolls in from the selected screen edge (Win+Y).
+          The Mavino quick panel rolls in from the selected screen edge (Win+Y).
         </p>
         <div className="mb-4">
           <span className="mb-2 block text-[11px] uppercase tracking-wide text-ink-muted">Roll-in edge</span>

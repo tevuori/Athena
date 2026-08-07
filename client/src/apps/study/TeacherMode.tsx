@@ -351,7 +351,7 @@ function DesktopTeacher({ initialSessionId, language = "en" }: Props) {
       const entry = sourceHistoryRef.current.find((h) => h.windowId === winId);
       const reason = res.reason ?? "no-match";
       setShowIssue(
-        `Couldn't highlight in ${entry?.name ?? "the source"} — ${SHOW_FAILURE_TEXT[reason] ?? reason}. Athena will quote the passage instead.`
+        `Couldn't highlight in ${entry?.name ?? "the source"} — ${SHOW_FAILURE_TEXT[reason] ?? reason}. Mavino will quote the passage instead.`
       );
       void updateTeachState({
         sourceIssues: [
@@ -612,7 +612,7 @@ function DesktopTeacher({ initialSessionId, language = "en" }: Props) {
                   className={`rounded-md px-2 py-1 text-[11px] capitalize transition ${
                     teachingStyle === st ? "bg-accent/15 text-accent" : "text-ink-muted hover:bg-surface-2 hover:text-ink"
                   }`}
-                  title={st === "socratic" ? "Athena only asks guiding questions" : "Athena explains, then checks"}
+                  title={st === "socratic" ? "Mavino only asks guiding questions" : "Mavino explains, then checks"}
                 >
                   {st}
                 </button>
@@ -725,7 +725,7 @@ function DesktopTeacher({ initialSessionId, language = "en" }: Props) {
           {messages.length === 0 && !streamText && session && (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center text-ink-muted">
               <GraduationCap size={40} className="opacity-30" />
-              <p className="text-sm">Ask Athena to teach you something from your sources.</p>
+              <p className="text-sm">Ask Mavino to teach you something from your sources.</p>
               <p className="text-xs">e.g. "Teach me about gradient descent" or "Explain the first chapter"</p>
             </div>
           )}
@@ -822,7 +822,7 @@ function DesktopTeacher({ initialSessionId, language = "en" }: Props) {
               className={`flex items-center gap-1 rounded-md px-2 py-1 text-[11px] transition ${
                 autoSpeak ? "bg-accent/15 text-accent" : "text-ink-muted hover:bg-surface-2 hover:text-ink"
               }`}
-              title={autoSpeak ? "Auto-speak on (Athena will read her replies aloud)" : "Auto-speak off"}
+              title={autoSpeak ? "Auto-speak on (Mavino will read her replies aloud)" : "Auto-speak off"}
             >
               {autoSpeak ? <Volume2 size={12} /> : <VolumeX size={12} />}
               Auto-speak ({tts.provider === "server" ? "Voice" : tts.provider === "webspeech" ? "Web Speech" : "off"})
@@ -857,7 +857,7 @@ function DesktopTeacher({ initialSessionId, language = "en" }: Props) {
                   setInput("");
                 }
               }}
-              placeholder={session ? "Ask Athena to teach you…" : "Select sources and start a session first"}
+              placeholder={session ? "Ask Mavino to teach you…" : "Select sources and start a session first"}
               disabled={!session || streaming || listening}
               rows={1}
               className="flex-1 resize-none rounded-lg border border-edge bg-surface-2 px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-muted focus:border-accent/50 disabled:opacity-50"
@@ -1042,7 +1042,7 @@ function SessionSettings({
             className={`rounded-md px-2 py-1 text-[11px] capitalize transition ${
               teachingStyle === st ? "bg-accent/15 text-accent" : "text-ink-muted hover:bg-surface-3 hover:text-ink"
             }`}
-            title={st === "socratic" ? "Athena only asks guiding questions" : "Athena explains, then checks"}
+            title={st === "socratic" ? "Mavino only asks guiding questions" : "Mavino explains, then checks"}
           >
             {st}
           </button>

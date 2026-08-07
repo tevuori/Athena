@@ -52,13 +52,13 @@ const app = new Hono();
 // Catch stray promises that escape all try/catch — without this, Bun logs a
 // warning but the error context is lost. With it, we get a clean log entry.
 process.on("unhandledRejection", (reason) => {
-  console.error("[athena-server] Unhandled promise rejection:", reason);
+  console.error("[mavino-server] Unhandled promise rejection:", reason);
 });
 
 // Global error handler — returns JSON (not Hono's default plain-text "Internal
 // Server Error") so the client's JSON.parse never fails on unhandled errors.
 app.onError((err, c) => {
-  console.error("[athena-server] Unhandled error:", err);
+  console.error("[mavino-server] Unhandled error:", err);
   const message =
     err instanceof Error ? err.message : "Internal server error";
   return c.json({ error: message }, 500);
@@ -82,9 +82,9 @@ const isProduction = process.env.NODE_ENV === "production";
 
 if (isProduction && allowedOrigins.length === 0) {
   console.error(
-    "[athena-server] FATAL: CLIENT_ORIGIN is not set.\n" +
+    "[mavino-server] FATAL: CLIENT_ORIGIN is not set.\n" +
       "In production, set CLIENT_ORIGIN to your deployed origin(s), e.g.:\n" +
-      "  CLIENT_ORIGIN=https://athena.example.com\n" +
+      "  CLIENT_ORIGIN=https://mavino.example.com\n" +
       "Comma-separated lists are supported. Without this, CORS is wide open."
   );
   process.exit(1);
@@ -119,7 +119,7 @@ app.use("*", analyticsMiddleware);
 app.get("/health", (c) =>
   c.json({
     ok: true,
-    service: "athena-server",
+    service: "mavino-server",
     version: "0.1.0",
     // Spotify is now per-user; report whether the server-wide env fallback exists.
     spotifyEnvFallback: Boolean(
@@ -177,7 +177,7 @@ app.route("/api/client-errors", clientErrors);
 // Start ntfy background workers (cron scheduler + per-user inbox subscribers).
 startScheduler();
 startAllSubscribers().catch((e) =>
-  console.error("[athena-server] ntfy subscriber startup error:", e)
+  console.error("[mavino-server] ntfy subscriber startup error:", e)
 );
 // Start the proactive daily-briefing scheduler.
 startProactiveScheduler();
@@ -193,7 +193,7 @@ const hostname = process.env.SERVER_HOST ?? "0.0.0.0";
 // idleTimeout is in seconds — default 10s kills SSE streams mid-tool-loop.
 // Set to 300s (5 min) so Athena chat streams with multi-step tool calls survive.
 // maxRequestBodySize raised to 2 GB to support lecture video uploads.
-console.log(`[athena-server] Bun serving on http://${hostname}:${port}`);
+console.log(`[mavino-server] Bun serving on http://${hostname}:${port}`);
 export default {
   port,
   hostname,

@@ -953,7 +953,7 @@ export default function AthenaApp({
       {/* Header */}
       <div className="flex items-center gap-2 border-b border-edge px-4 py-2.5">
         <Sparkles size={16} className="text-accent" />
-        <span className="text-sm font-semibold text-ink">Athena</span>
+        <span className="text-sm font-semibold text-ink">Mavino</span>
         <span className="text-[11px] text-ink-muted">workspace assistant</span>
 
         {/* New Chat button */}
@@ -1113,7 +1113,7 @@ export default function AthenaApp({
           <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
             <Sparkles size={32} className="text-accent opacity-60" />
             <p className="text-sm text-ink">
-              Hi — I'm Athena. I can manage your tasks, files, notes, grades, focus timer,
+              Hi — I'm Mavino. I can manage your tasks, files, notes, grades, focus timer,
               <br />
               and even control your windows and save workspace layouts.
             </p>
@@ -1194,7 +1194,7 @@ export default function AthenaApp({
                 send(input);
               }
             }}
-            placeholder={attachment ? "Ask about the attached file…" : "Ask Athena to do something…"}
+            placeholder={attachment ? "Ask about the attached file…" : "Ask Mavino to do something…"}
             rows={1}
             className="max-h-32 flex-1 resize-none rounded-lg border border-edge bg-surface-2 px-3 py-2 text-sm text-ink outline-none focus:border-accent"
           />
@@ -1552,7 +1552,7 @@ function SaveToStorageDialog({
             className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2 text-xs font-medium text-accent transition hover:bg-accent/10 disabled:opacity-50"
           >
             {suggesting ? <Loader2 size={13} className="animate-spin" /> : <Lightbulb size={13} />}
-            {suggesting ? "Athena is thinking…" : "Let Athena suggest a folder"}
+            {suggesting ? "Mavino is thinking…" : "Let Mavino suggest a folder"}
           </button>
 
           {/* Suggestion result */}

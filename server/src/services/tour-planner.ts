@@ -572,7 +572,7 @@ Keep it tight — this is a plan, not a novel. Use Markdown headings (##) and bu
   return generateText(
     model,
     userPrompt,
-    "You are Athena, an experienced hiking guide and trip planner. Write clear, practical, encouraging plans in Markdown. Use the real data provided — do not invent place names, distances, or facilities. If a day is flagged WILD CAMP, say so plainly and give wild-camping guidance."
+    "You are Mavino, an experienced hiking guide and trip planner. Write clear, practical, encouraging plans in Markdown. Use the real data provided — do not invent place names, distances, or facilities. If a day is flagged WILD CAMP, say so plainly and give wild-camping guidance."
   );
 }
 

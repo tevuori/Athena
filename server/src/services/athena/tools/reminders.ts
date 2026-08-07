@@ -25,7 +25,7 @@ export const reminderTools: ToolDef[] = [
     parameters: [
       { name: "message", type: "string", description: "The exact reminder message body sent at fire time (e.g. 'Call mom', 'Submit the assignment').", required: true },
       { name: "fireAt", type: "string", description: "ISO 8601 datetime for when to fire the reminder (e.g. 2026-07-25T15:00:00Z). Use the current date/time from context to compute this.", required: true },
-      { name: "title", type: "string", description: "Notification title (optional, defaults to 'Athena reminder')" },
+      { name: "title", type: "string", description: "Notification title (optional, defaults to 'Mavino reminder')" },
       { name: "priority", type: "number", description: "Priority 1 (min) to 5 (max). Default 3." },
       { name: "tags", type: "string", description: "Comma-separated emoji/text tags (e.g. 'bell,alarm_clock')" },
     ],
@@ -71,12 +71,12 @@ export const reminderTools: ToolDef[] = [
   {
     name: "create_llm_reminder",
     description:
-      "Schedule a ONE-SHOT SMART reminder: at fireAt, the given prompt is run through you (Athena, with all your tools) and the generated reply is pushed to the user's phone via ntfy. Use this when the reminder should be contextual at fire time — e.g. 'remind me to prep for my exam tomorrow' (at fire time you gather exam/task/calendar context and write a tailored reminder), or 'remind me to review my notes' (at fire time you pick the most relevant note). Requires ntfy AND an Athena LLM provider to be configured. Use create_reminder instead for a simple fixed message.",
+      "Schedule a ONE-SHOT SMART reminder: at fireAt, the given prompt is run through you (Mavino, with all your tools) and the generated reply is pushed to the user's phone via ntfy. Use this when the reminder should be contextual at fire time — e.g. 'remind me to prep for my exam tomorrow' (at fire time you gather exam/task/calendar context and write a tailored reminder), or 'remind me to review my notes' (at fire time you pick the most relevant note). Requires ntfy AND a Mavino LLM provider to be configured. Use create_reminder instead for a simple fixed message.",
     destructive: true,
     parameters: [
       { name: "prompt", type: "string", description: "The prompt run through the LLM at fire time. The generated reply is pushed as the reminder body. Should be self-contained (e.g. 'Remind the user to prep for their exam. Check today's calendar and due tasks, then write a 2-3 sentence reminder naming what to focus on.').", required: true },
       { name: "fireAt", type: "string", description: "ISO 8601 datetime for when to fire the reminder (e.g. 2026-07-25T15:00:00Z). Use the current date/time from context to compute this.", required: true },
-      { name: "title", type: "string", description: "Notification title (optional, defaults to 'Athena reminder')" },
+      { name: "title", type: "string", description: "Notification title (optional, defaults to 'Mavino reminder')" },
       { name: "priority", type: "number", description: "Priority 1 (min) to 5 (max). Default 3." },
       { name: "tags", type: "string", description: "Comma-separated emoji/text tags" },
     ],

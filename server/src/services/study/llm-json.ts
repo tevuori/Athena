@@ -59,7 +59,7 @@ export async function generateJson<T = unknown>(
   userPrompt: string,
   jsonSchemaHint: string
 ): Promise<T> {
-  const system = `You are a study assistant inside the Athena Student OS. You MUST respond with a single valid JSON object and NOTHING else. No markdown, no code fences, no commentary. ${jsonSchemaHint}`;
+  const system = `You are a study assistant inside the Mavino Student OS. You MUST respond with a single valid JSON object and NOTHING else. No markdown, no code fences, no commentary. ${jsonSchemaHint}`;
 
   const messages = [new Message("system", system), new Message("user", userPrompt)];
 

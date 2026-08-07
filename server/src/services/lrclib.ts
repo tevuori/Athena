@@ -13,7 +13,7 @@
 
 const LRCLIB_BASE = "https://lrclib.net/api";
 const APP_VERSION = "0.1.0";
-const USER_AGENT = `Athena/${APP_VERSION} (Student OS; +https://github.com/athena/student-os)`;
+const USER_AGENT = `Mavino/${APP_VERSION} (Student OS; +https://github.com/mavino/student-os)`;
 
 export interface LrcLine {
   time: number; // seconds

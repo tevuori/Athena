@@ -13,7 +13,7 @@ const TABS: { id: Exclude<MobileRoute, "more">; label: string; icon: typeof Home
   { id: "home", label: "Home", icon: Home },
   { id: "tasks", label: "Tasks", icon: CheckSquare },
   { id: "calendar", label: "Plan", icon: CalendarDays },
-  { id: "athena", label: "Athena", icon: Sparkles },
+  { id: "athena", label: "Mavino", icon: Sparkles },
 ];
 
 export default function MobileShell() {
@@ -28,7 +28,7 @@ export default function MobileShell() {
   };
 
   return (
-    <main className="relative flex h-full w-full overflow-hidden bg-slate-950 text-slate-100" aria-label="Athena mobile">
+    <main className="relative flex h-full w-full overflow-hidden bg-slate-950 text-slate-100" aria-label="Mavino mobile">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_0%,rgba(99,102,241,.22),transparent_34%),radial-gradient(circle_at_100%_18%,rgba(14,165,233,.12),transparent_28%)]" />
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <section className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden pb-24">

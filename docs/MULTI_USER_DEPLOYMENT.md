@@ -1,11 +1,11 @@
-# Athena — Multi-User Deployment Roadmap
+# Mavino — Multi-User Deployment Roadmap
 
-What's needed to take Athena from a hardened single-user deployment to a
+What's needed to take Mavino from a hardened single-user deployment to a
 public, multi-user production environment.
 
 ## Current State
 
-Athena is ready for **single-user or small-team self-hosted deployments**
+Mavino is ready for **single-user or small-team self-hosted deployments**
 (see `docs/PRODUCTION_READINESS.md` for the security hardening that's already
 done). The remaining issues below are specific to **public multi-user**
 deployments where untrusted users can sign up and share the same server.
@@ -153,7 +153,7 @@ Settings → Account.
 
 ## Deployment Checklist for Multi-User
 
-Before opening Athena to multiple users:
+Before opening Mavino to multiple users:
 
 - [x] Migrate SQLite → PostgreSQL
 - [x] Enable open registration (Settings → Users → "Allow new users to sign up")

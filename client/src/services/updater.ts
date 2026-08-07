@@ -1,5 +1,5 @@
 /**
- * In-app APK self-update service for the Capacitor (Android) build of Athena.
+ * In-app APK self-update service for the Capacitor (Android) build of Mavino.
  *
  * Flow:
  *   1. `checkForUpdate()` queries the GitHub Releases API for the latest

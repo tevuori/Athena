@@ -123,7 +123,7 @@ export class AthenaToolsPlugin extends MultiToolPlugin {
   }
 
   getDescription(): string {
-    return "Athena workspace tools";
+    return "Mavino workspace tools";
   }
 
   // Status-description overrides (base Plugin throws "Not implemented").

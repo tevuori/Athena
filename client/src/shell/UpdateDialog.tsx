@@ -74,7 +74,7 @@ export default function UpdateDialog() {
               <h2 id="update-dialog-title" className="text-sm font-semibold text-ink">
                 Update available
               </h2>
-              <p className="text-xs text-ink-muted">Athena v{pending.version}</p>
+              <p className="text-xs text-ink-muted">Mavino v{pending.version}</p>
             </div>
           </div>
           {phase !== "downloading" && phase !== "installing" && (
@@ -103,7 +103,7 @@ export default function UpdateDialog() {
               <Loader2 size={16} className="animate-spin" />
               <span>
                 Android is installing the update. Confirm in the system dialog, then reopen
-                Athena.
+                Mavino.
               </span>
             </div>
           ) : (

@@ -162,7 +162,7 @@ export function streamAthenaChat(
           cb.onUsage?.(parsed.usage);
           break;
         case "error":
-          cb.onError?.(parsed.error ?? "Athena error", parsed.status);
+          cb.onError?.(parsed.error ?? "Mavino error", parsed.status);
           break;
         case "done":
           cb.onDone?.();

@@ -231,7 +231,7 @@ export const studyHubTools: ToolDef[] = [
   {
     name: "start_study_chat",
     description:
-      "Create a new source-grounded Study Chat (NotebookLM-style Q&A with inline [n] citations) and open it in the Study Hub. Pass existing sourceIds and/or on-the-fly sources (note/file/url/paste). Athena's reply to the user should include the answer to the user's question — this tool creates the chat session; the user continues the conversation in the Study Hub UI. Returns chatId.",
+      "Create a new source-grounded Study Chat (NotebookLM-style Q&A with inline [n] citations) and open it in the Study Hub. Pass existing sourceIds and/or on-the-fly sources (note/file/url/paste). Mavino's reply to the user should include the answer to the user's question — this tool creates the chat session; the user continues the conversation in the Study Hub UI. Returns chatId.",
     destructive: true,
     clientAction: true,
     parameters: [
@@ -601,7 +601,7 @@ export const studyHubTools: ToolDef[] = [
   {
     name: "answer_quiz_question",
     description:
-      "Answer a single quiz question and get AI-graded feedback. Use after start_quiz (which returns a quizId + questions). Returns correct (bool), explanation, modelAnswer. The user still completes the quiz in the Study Hub UI — this tool lets Athena answer questions programmatically (e.g. when the user asks 'what's the answer to question 3').",
+      "Answer a single quiz question and get AI-graded feedback. Use after start_quiz (which returns a quizId + questions). Returns correct (bool), explanation, modelAnswer. The user still completes the quiz in the Study Hub UI — this tool lets Mavino answer questions programmatically (e.g. when the user asks 'what's the answer to question 3').",
     parameters: [
       { name: "quizId", type: "string", description: "Quiz id from start_quiz", required: true },
       { name: "questionId", type: "number", description: "Question id (number)", required: true },

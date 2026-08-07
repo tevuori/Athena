@@ -53,7 +53,7 @@ export default function BootScreen({ onDone }: Props) {
         transition={{ delay: 0.2 }}
         className="mb-1 text-2xl font-semibold"
       >
-        Athena
+        Mavino
       </motion.h1>
       <p className="mb-10 text-sm text-slate-400">Student OS</p>
       <div className="h-1 w-48 overflow-hidden rounded-full bg-slate-800">

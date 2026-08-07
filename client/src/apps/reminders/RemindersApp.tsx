@@ -181,7 +181,7 @@ function TabBtn({ icon, label, active, onClick }: {
 
 function EmptyState({ tab }: { tab: Tab }) {
   const msg =
-    tab === "pending" ? "No pending reminders. Ask Athena to \"remind me to …\" or click New."
+    tab === "pending" ? "No pending reminders. Ask Mavino to \"remind me to …\" or click New."
     : tab === "fired" ? "No fired reminders yet."
     : tab === "cancelled" ? "No cancelled reminders."
     : "";
@@ -328,7 +328,7 @@ function NewReminderForm({ onCreated, onCancel }: { onCreated: () => void; onCan
         <h2 className="text-lg font-semibold flex items-center gap-2"><BellRing size={18} /> New Reminder</h2>
         <p className="text-sm text-zinc-500 dark:text-zinc-400">
           A one-shot reminder pushed to your phone via ntfy at the chosen time.{" "}
-          <b>Basic</b> sends a fixed message; <b>Smart</b> runs a prompt through Athena at fire time
+          <b>Basic</b> sends a fixed message; <b>Smart</b> runs a prompt through Mavino at fire time
           (so it can reference what's actually due that day). Requires ntfy to be configured.
         </p>
       </div>
@@ -348,7 +348,7 @@ function NewReminderForm({ onCreated, onCancel }: { onCreated: () => void; onCan
             placeholder="The exact message pushed at fire time (e.g. 'Call mom')" className="inp" />
         </Field>
       ) : (
-        <Field label="Prompt (run through Athena at fire time)">
+        <Field label="Prompt (run through Mavino at fire time)">
           <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={4}
             placeholder="e.g. 'Remind the user to prep for their exam. Check today's calendar and due tasks, then write a 2-3 sentence reminder naming what to focus on.'" className="inp" />
         </Field>

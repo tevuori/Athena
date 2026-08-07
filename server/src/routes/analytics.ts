@@ -245,7 +245,7 @@ const ACHIEVEMENTS: AchievementDef[] = [
   { id: "scholar_50", label: "Polymath", description: "Run 50 Study Hub sessions", icon: "GraduationCap", tier: "gold", check: (m) => m.studySessions >= 50 },
   { id: "grade_riser", label: "Grade Riser", description: "Record 10 assignments", icon: "TrendingUp", tier: "silver", check: (m) => m.assignments >= 10 },
   { id: "level_5", label: "Rising Star", description: "Reach level 5", icon: "Star", tier: "silver", check: (m) => m.level >= 5 },
-  { id: "level_10", label: "Athena's Chosen", description: "Reach level 10", icon: "Star", tier: "gold", check: (m) => m.level >= 10 },
+  { id: "level_10", label: "Mavino's Chosen", description: "Reach level 10", icon: "Star", tier: "gold", check: (m) => m.level >= 10 },
   { id: "level_20", label: "Legend", description: "Reach level 20", icon: "Crown", tier: "platinum", check: (m) => m.level >= 20 },
 ];
 

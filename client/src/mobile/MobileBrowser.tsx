@@ -53,7 +53,7 @@ export default function MobileBrowser({ onClose }: { onClose?: () => void }) {
   return (
     <div className="flex h-full flex-col bg-slate-950">
       <MobileContainer>
-        <MobileHeader title="Browser" subtitle="Research with Athena" onClose={onClose} />
+        <MobileHeader title="Browser" subtitle="Research with Mavino" onClose={onClose} />
 
         <div className="mb-3 flex gap-2 rounded-2xl border border-white/10 bg-white/[.045] p-2">
           <Globe size={18} className="mt-2.5 ml-2 shrink-0 text-slate-500" />

@@ -42,7 +42,7 @@ export default function ResetPasswordScreen({ token }: { token: string }) {
         <div className="w-full max-w-sm rounded-2xl border border-edge bg-surface-1 p-6 shadow-xl">
           <div className="mb-6 text-center">
             <AppLogo size={56} className="mx-auto mb-3" />
-            <h1 className="text-xl font-semibold text-ink">Athena</h1>
+            <h1 className="text-xl font-semibold text-ink">Mavino</h1>
           </div>
           <div className="flex flex-col items-center gap-3 py-4">
             <CheckCircle2 size={40} className="text-green-400" />
@@ -71,7 +71,7 @@ export default function ResetPasswordScreen({ token }: { token: string }) {
       <div className="w-full max-w-sm rounded-2xl border border-edge bg-surface-1 p-6 shadow-xl">
         <div className="mb-6 text-center">
           <AppLogo size={56} className="mx-auto mb-3" />
-          <h1 className="text-xl font-semibold text-ink">Athena</h1>
+          <h1 className="text-xl font-semibold text-ink">Mavino</h1>
           <p className="text-sm text-ink-muted">Set a new password</p>
         </div>
         <form onSubmit={submit} className="space-y-3">

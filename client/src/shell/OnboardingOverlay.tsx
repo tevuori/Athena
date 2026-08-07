@@ -150,21 +150,21 @@ function StepContent({ stepId, name, onNameChange, onSubmitName }: {
       return <TourStep
         icon={<CheckSquare size={20} />}
         title="Tasks"
-        description="A Kanban board (To Do / In Progress / Done) with drag-and-drop, priority tags, and due dates. Athena can create tasks for you automatically."
-        tips={["Drag cards between columns", "Set priorities and due dates", "Athena AI can create tasks via chat"]}
+        description="A Kanban board (To Do / In Progress / Done) with drag-and-drop, priority tags, and due dates. Mavino can create tasks for you automatically."
+        tips={["Drag cards between columns", "Set priorities and due dates", "Mavino AI can create tasks via chat"]}
       />;
     case "athena":
       return <TourStep
         icon={<Sparkles size={20} />}
-        title="Athena — Your AI Assistant"
-        description="Chat with Athena to get help with your studies. It can read your notes, create tasks, run code, search the web, manage your calendar, and much more. It has access to all your apps."
-        tips={["Ask Athena to summarize your notes", "It can run Python/JS code in a sandbox", "It can create tasks, events, and flashcards for you"]}
+        title="Mavino — Your AI Assistant"
+        description="Chat with Mavino to get help with your studies. It can read your notes, create tasks, run code, search the web, manage your calendar, and much more. It has access to all your apps."
+        tips={["Ask Mavino to summarize your notes", "It can run Python/JS code in a sandbox", "It can create tasks, events, and flashcards for you"]}
       />;
     case "calendar":
       return <TourStep
         icon={<Calendar size={20} />}
         title="Calendar"
-        description="A full calendar with month/week/day views. Import ICS files, drag tasks to schedule them, and sync with Microsoft Outlook. Athena can create and manage events."
+        description="A full calendar with month/week/day views. Import ICS files, drag tasks to schedule them, and sync with Microsoft Outlook. Mavino can create and manage events."
         tips={["Drag tasks onto the calendar to schedule them", "Sync with Microsoft Calendar in Settings", "Import .ics files from your university"]}
       />;
     case "more-apps":
@@ -174,11 +174,11 @@ function StepContent({ stepId, name, onNameChange, onSubmitName }: {
         icon={<Sparkles size={20} />}
         title="Connect Your AI Provider"
         section="athena"
-        description="Athena needs an LLM to work. Enter your API key for OpenAI, DeepSeek, Anthropic, Groq, or any OpenAI-compatible endpoint. Without a key, Athena's chat and AI features won't be available."
+        description="Mavino needs an LLM to work. Enter your API key for OpenAI, DeepSeek, Anthropic, Groq, or any OpenAI-compatible endpoint. Without a key, Mavino's chat and AI features won't be available."
         tips={[
           "Popular affordable options: Groq (fast + free tier), DeepSeek, OpenRouter",
           "Your key is encrypted (AES-256-GCM) and stored only on the server",
-          "You can change or remove your key anytime in Settings \u2192 Athena Assistant",
+          "You can change or remove your key anytime in Settings \u2192 Mavino Assistant",
         ]}
       />;
     case "appearance":
@@ -186,7 +186,7 @@ function StepContent({ stepId, name, onNameChange, onSubmitName }: {
         icon={<Palette size={20} />}
         title="Customize Your Desktop"
         section="appearance"
-        description="Make Athena yours. Choose a light or dark theme, pick an accent color, select a wallpaper, or add an animated background (starfield, matrix rain, aurora, and more)."
+        description="Make Mavino yours. Choose a light or dark theme, pick an accent color, select a wallpaper, or add an animated background (starfield, matrix rain, aurora, and more)."
         tips={["Try the 14 animated backgrounds", "Your wallpaper and theme persist across sessions", "Change these anytime in Settings"]}
       />;
     case "integrations":
@@ -195,7 +195,7 @@ function StepContent({ stepId, name, onNameChange, onSubmitName }: {
         title="Connect External Services"
         section="integrations"
         description="Each user configures their own integrations independently. Connect Spotify for the Music Widget, VUT Studis for grades and timetable, Microsoft Calendar for sync, and Ntfy for push notifications."
-        tips={["Spotify powers the Music Widget & Chill mode", "VUT integration also enables Moodle access", "Ntfy lets Athena send you push notifications and you can message Athena from your phone"]}
+        tips={["Spotify powers the Music Widget & Chill mode", "VUT integration also enables Moodle access", "Ntfy lets Mavino send you push notifications and you can message Mavino from your phone"]}
       />;
     case "shortcuts":
       return <ShortcutsStep />;
@@ -214,7 +214,7 @@ function WelcomeStep() {
       <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-accent/20 text-accent">
         <Sparkles size={32} />
       </div>
-      <h2 className="mb-2 text-2xl font-bold text-ink">Welcome to Athena</h2>
+      <h2 className="mb-2 text-2xl font-bold text-ink">Welcome to Mavino</h2>
       <p className="mb-1 text-lg text-ink-muted">Student OS — your desktop for learning</p>
       <p className="mx-auto mt-3 max-w-md text-sm text-ink-muted">
         A desktop-environment-style productivity dashboard with notes, tasks, an AI assistant,
@@ -237,7 +237,7 @@ function NameStep({ value, onChange, onSubmit }: {
       </div>
       <h2 className="mb-2 text-2xl font-bold text-ink">What should we call you?</h2>
       <p className="mx-auto max-w-sm text-sm text-ink-muted">
-        Your name is used for greetings across the desktop, and Athena will use it when talking
+        Your name is used for greetings across the desktop, and Mavino will use it when talking
         to you. You can change it anytime in Settings → Account.
       </p>
       <input
@@ -255,7 +255,7 @@ function NameStep({ value, onChange, onSubmit }: {
         aria-label="Your name"
         className="mx-auto mt-5 block w-full max-w-xs rounded-lg border border-edge bg-surface-2 px-3 py-2 text-center text-sm text-ink outline-none placeholder:text-ink-muted focus:border-accent"
       />
-      <p className="mt-3 text-xs text-ink-muted/70">Optional — skip it and Athena will ask later.</p>
+      <p className="mt-3 text-xs text-ink-muted/70">Optional — skip it and Mavino will ask later.</p>
     </div>
   );
 }
@@ -313,7 +313,7 @@ function MoreAppsStep() {
     { icon: <Flame size={18} />, name: "Habits", desc: "Habit tracker with streaks and heatmap" },
     { icon: <PenTool size={18} />, name: "Whiteboard", desc: "SVG canvas with shapes, export to PNG" },
     { icon: <Mic size={18} />, name: "Voice Notes", desc: "Record + Whisper transcription → Note" },
-    { icon: <Globe size={18} />, name: "Browser", desc: "In-app browser, Athena can read pages" },
+    { icon: <Globe size={18} />, name: "Browser", desc: "In-app browser, Mavino can read pages" },
     { icon: <Music size={18} />, name: "Music Widget", desc: "Spotify player with synced lyrics + Chill mode" },
   ];
   return (
@@ -366,7 +366,7 @@ function SettingsGuideStep({ icon, title, section, description, tips }: {
 function ShortcutsStep() {
   const shortcuts = [
     { keys: "Ctrl+Space", desc: "Command palette (search apps, notes, tasks, calculate)" },
-    { keys: "Win+Y", desc: "Toggle Athena quick panel" },
+    { keys: "Win+Y", desc: "Toggle Mavino quick panel" },
     { keys: "Ctrl+Shift+N", desc: "Quick capture — new note from anywhere" },
     { keys: "Win+← / →", desc: "Snap window to left/right half" },
     { keys: "Win+↑", desc: "Maximize window" },
@@ -379,7 +379,7 @@ function ShortcutsStep() {
         <Keyboard size={28} />
       </div>
       <h2 className="mb-1 text-xl font-bold text-ink">Handy Shortcuts</h2>
-      <p className="mb-4 text-sm text-ink-muted">Learn these to navigate Athena like a pro.</p>
+      <p className="mb-4 text-sm text-ink-muted">Learn these to navigate Mavino like a pro.</p>
       <div className="space-y-2 text-left">
         {shortcuts.map((s) => (
           <div key={s.keys} className="flex items-center justify-between rounded-lg border border-edge bg-surface-2 px-3 py-2">
@@ -400,7 +400,7 @@ function CompleteStep() {
       </div>
       <h2 className="mb-2 text-2xl font-bold text-ink">You're All Set!</h2>
       <p className="mx-auto mt-2 max-w-sm text-sm text-ink-muted">
-        Your workspace is ready. Start exploring — open apps from the taskbar, ask Athena for help,
+        Your workspace is ready. Start exploring — open apps from the taskbar, ask Mavino for help,
         or press Ctrl+Space to search.
       </p>
       <p className="mt-4 text-xs text-ink-muted/70">

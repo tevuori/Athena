@@ -79,7 +79,7 @@ export async function runAthenaTurn(
       }
     }
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "Athena turn failed";
+    const msg = e instanceof Error ? e.message : "Mavino turn failed";
     const isUpstream = /upstream request failed/i.test(msg);
     if (isUpstream && completedTools > 0 && failedTools === 0) {
       return (

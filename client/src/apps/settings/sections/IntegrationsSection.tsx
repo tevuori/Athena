@@ -47,7 +47,7 @@ function NtfyCard() {
       <IntegrationRow
         icon={<Bell size={18} />}
         name="Ntfy"
-        description="Bidirectional push channel — Athena notifies your phone and you can message Athena from anywhere. Manage cron jobs in the Ntfy app."
+        description="Bidirectional push channel — Mavino notifies your phone and you can message Mavino from anywhere. Manage cron jobs in the Ntfy app."
         pill={
           <StatusPill
             on={!!status?.configured}

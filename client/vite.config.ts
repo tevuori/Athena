@@ -47,8 +47,8 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["favicon-32.png", "favicon-16.png", "apple-touch-icon.png"],
       manifest: {
-        name: "Athena — Student OS",
-        short_name: "Athena",
+        name: "Mavino — Student OS",
+        short_name: "Mavino",
         description: "A desktop-environment-style productivity dashboard for students.",
         theme_color: "#6366f1",
         background_color: "#0f172a",
