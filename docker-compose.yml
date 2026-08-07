@@ -7,10 +7,13 @@ services:
     expose:
       - "3000"
     environment:
+      NODE_ENV: production
       SERVER_PORT: 3000
       SERVER_HOST: 0.0.0.0
       DATABASE_URL: "file:/app/data/athena.db"
-      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+      # JWT_SECRET must be set — generate with: openssl rand -hex 32
+      # The server refuses to start in production without a secure secret.
+      JWT_SECRET: ${JWT_SECRET:-}
       SEED_USERNAME: ${SEED_USERNAME:-admin}
       SEED_PASSWORD: ${SEED_PASSWORD:-admin}
       # Comma-separated list of allowed CORS origins. For a single-origin public
@@ -40,6 +43,13 @@ services:
       # Shared temp dir for sandbox code files (same path on host + container).
       - /tmp/athena-sandbox:/tmp/athena-sandbox
     restart: unless-stopped
+    healthcheck:
+      # The server exposes GET /health returning {"ok": true}.
+      test: ["CMD", "bun", "-e", "fetch('http://localhost:3000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   client:
     build:
@@ -50,8 +60,16 @@ services:
       # Bind to localhost only — the host nginx terminates TLS and proxies to this.
       - "127.0.0.1:8080:80"
     depends_on:
-      - server
+      server:
+        condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      # nginx:alpine includes wget — check the SPA root responds.
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
 
 volumes:
   athena-data:

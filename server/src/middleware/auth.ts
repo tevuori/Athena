@@ -12,11 +12,32 @@ declare module "hono" {
   }
 }
 
-/** Extracts Bearer token (from header or ?token= query param), verifies JWT, attaches `c.set("auth", {...})`. */
+/** Extracts a Bearer token from the Authorization header, verifies the JWT,
+ *  and attaches `c.set("auth", {...})`. Does NOT accept ?token= query params
+ *  (tokens in URLs leak via logs/referrers). Use `authMiddlewareWithQuery`
+ *  only for routes that genuinely can't set headers (img/iframe src). */
 export async function authMiddleware(c: Context, next: Next) {
   const header = c.req.header("Authorization") ?? "";
+  const token = header.startsWith("Bearer ") ? header.slice(7) : null;
+  if (!token) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+  const payload = await verifyToken(token);
+  if (!payload) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+  c.set("auth", { userId: payload.sub, username: payload.username });
+  await next();
+}
+
+/** Like authMiddleware, but also accepts a ?token= query parameter as a
+ *  fallback. Use ONLY for routes loaded via <img>/<iframe> src attributes
+ *  that cannot set Authorization headers (file download, browser/vut proxy).
+ *  Tokens in URLs may be logged by proxies — restrict to these specific GET
+ *  routes only. */
+export async function authMiddlewareWithQuery(c: Context, next: Next) {
+  const header = c.req.header("Authorization") ?? "";
   let token = header.startsWith("Bearer ") ? header.slice(7) : null;
-  // Fallback: ?token= query parameter (for iframe/img contexts that can't set headers)
   if (!token) {
     token = c.req.query("token") ?? null;
   }

@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { authMiddleware } from "../middleware/auth";
+import { authMiddlewareWithQuery } from "../middleware/auth";
 import {
   proxyPage,
   fetchPageText,
@@ -8,7 +8,8 @@ import {
 } from "../services/browser";
 
 const browser = new Hono();
-browser.use("*", authMiddleware);
+// Browser proxy routes are loaded via <iframe> src that can't set Authorization headers.
+browser.use("*", authMiddlewareWithQuery);
 
 /**
  * GET /api/browser/proxy?url=...

@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
 import prisma from "../db/client";
-import { authMiddleware } from "../middleware/auth";
+import { authMiddlewareWithQuery } from "../middleware/auth";
 import { cleanupOrphanLinks } from "../db/links";
 import path from "node:path";
 import { mkdir, writeFile, unlink, stat, readFile, copyFile } from "node:fs/promises";
@@ -109,7 +109,9 @@ function extractMoodleDownloadLink(html: string, baseUrl: string): string | null
 }
 
 const files = new Hono();
-files.use("*", authMiddleware);
+// Files routes use the query-token-accepting middleware because file downloads
+// are loaded via <img>/<iframe> src attributes that can't set Authorization headers.
+files.use("*", authMiddlewareWithQuery);
 
 const UPLOAD_DIR = path.resolve(process.cwd(), "uploads");
 
@@ -329,6 +331,22 @@ files.get("/storage", async (c) => {
   return c.json({ total: agg._sum.size ?? 0, count: agg._count._all });
 });
 
+/** Max per-upload size for the general /files/upload endpoint (100 MB).
+ *  The global Bun limit (2 GB) exists for lecture video processing, but
+ *  general file uploads should be capped to prevent abuse. */
+const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
+
+/** File extensions blocked from upload for security. These are executable or
+ *  system-level file types that have no legitimate place in a student file
+ *  manager and could be used to stage malware (especially on Windows hosts
+ *  that might later download these files). */
+const BLOCKED_UPLOAD_EXT = new Set([
+  "exe", "bat", "cmd", "com", "scr", "msi", "sh", "ps1", "psm1",
+  "jar", "war", "dll", "so", "dylib", "sys", "drv", "ocx",
+  "vbs", "vba", "vb", "wsf", "wsh", "hta", "cpl",
+  "apk", "deb", "rpm", "dmg", "pkg",
+]);
+
 /** POST /files/upload  multipart: file + optional folderId */
 files.post("/upload", async (c) => {
   const { userId } = c.get("auth");
@@ -337,6 +355,19 @@ files.post("/upload", async (c) => {
   const folderId = (formData.get("folderId") as string | null) ?? null;
   if (!(file instanceof File)) {
     return c.json({ error: "No file provided" }, 400);
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return c.json(
+      { error: `File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Maximum upload size is ${MAX_UPLOAD_BYTES / 1024 / 1024} MB.` },
+      413
+    );
+  }
+  const ext = path.extname(file.name).slice(1).toLowerCase();
+  if (ext && BLOCKED_UPLOAD_EXT.has(ext)) {
+    return c.json(
+      { error: `File type ".${ext}" is not allowed for upload.` },
+      415
+    );
   }
   const safeName = path.basename(file.name).replace(/[^\w.\- ]+/g, "_");
   const storageKey = `${userId}/${Date.now()}-${safeName}`;

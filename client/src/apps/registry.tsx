@@ -1,28 +1,33 @@
-import type { ComponentType } from "react";
+import { lazy, type ComponentType } from "react";
 import type { AppId, WindowInstance } from "../store/windows";
-import NotesApp from "./notes/NotesApp";
-import TasksApp from "./tasks/TasksApp";
-import FilesApp from "./files/FilesApp";
-import SettingsApp from "./settings/SettingsApp";
-import PomodoroApp from "./pomodoro/PomodoroApp";
-import FlashcardsApp from "./flashcards/FlashcardsApp";
-import GradesApp from "./grades/GradesApp";
-import VUTApp from "./vut/VUTApp";
-import EditorApp from "./editor/EditorApp";
-import ViewerApp from "./viewer/ViewerApp";
-import AthenaApp from "./athena/AthenaApp";
-import StudyApp from "./study/StudyApp";
-import TodayApp from "./today/TodayApp";
-import CalendarApp from "./calendar/CalendarApp";
-import HabitsApp from "./habits/HabitsApp";
-import WhiteboardApp from "./whiteboard/WhiteboardApp";
-import NtfyApp from "./ntfy/NtfyApp";
-import VoiceApp from "./voice/VoiceApp";
-import BrowserApp from "./browser/BrowserApp";
-import RemindersApp from "./reminders/RemindersApp";
-import AnalyticsApp from "./analytics/AnalyticsApp";
-import MoodleApp from "./moodle/MoodleApp";
-import MapsApp from "./maps/MapsApp";
+
+// All app components are lazy-loaded via React.lazy() so they split into
+// separate chunks. The app metadata (id, name, icon) is eager so the taskbar,
+// start menu, and desktop icons render instantly — only the app *content*
+// loads on demand when a window is opened.
+const NotesApp = lazy(() => import("./notes/NotesApp"));
+const TasksApp = lazy(() => import("./tasks/TasksApp"));
+const FilesApp = lazy(() => import("./files/FilesApp"));
+const SettingsApp = lazy(() => import("./settings/SettingsApp"));
+const PomodoroApp = lazy(() => import("./pomodoro/PomodoroApp"));
+const FlashcardsApp = lazy(() => import("./flashcards/FlashcardsApp"));
+const GradesApp = lazy(() => import("./grades/GradesApp"));
+const VUTApp = lazy(() => import("./vut/VUTApp"));
+const EditorApp = lazy(() => import("./editor/EditorApp"));
+const ViewerApp = lazy(() => import("./viewer/ViewerApp"));
+const AthenaApp = lazy(() => import("./athena/AthenaApp"));
+const StudyApp = lazy(() => import("./study/StudyApp"));
+const TodayApp = lazy(() => import("./today/TodayApp"));
+const CalendarApp = lazy(() => import("./calendar/CalendarApp"));
+const HabitsApp = lazy(() => import("./habits/HabitsApp"));
+const WhiteboardApp = lazy(() => import("./whiteboard/WhiteboardApp"));
+const NtfyApp = lazy(() => import("./ntfy/NtfyApp"));
+const VoiceApp = lazy(() => import("./voice/VoiceApp"));
+const BrowserApp = lazy(() => import("./browser/BrowserApp"));
+const RemindersApp = lazy(() => import("./reminders/RemindersApp"));
+const AnalyticsApp = lazy(() => import("./analytics/AnalyticsApp"));
+const MoodleApp = lazy(() => import("./moodle/MoodleApp"));
+const MapsApp = lazy(() => import("./maps/MapsApp"));
 
 export interface AppDefinition {
   id: AppId;

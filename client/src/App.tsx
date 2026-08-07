@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "./store/auth";
 import { useFormFactor, initFormFactorListeners } from "./store/formfactor";
+import { installGlobalErrorHandlers } from "./services/errorReporter";
 import BootScreen from "./shell/BootScreen";
 import LoginScreen from "./shell/LoginScreen";
 import DesktopEnvironment from "./shell/DesktopEnvironment";
 import MobileShell from "./shell/mobile/MobileShell";
 import UpdateDialog from "./shell/UpdateDialog";
+import GlobalErrorBoundary from "./shell/GlobalErrorBoundary";
 
 type Phase = "boot" | "app";
 
@@ -14,10 +16,11 @@ export default function App() {
   const mode = useFormFactor((s) => s.mode);
   const [phase, setPhase] = useState<Phase>("boot");
 
-  // On mount, check existing token + set up form-factor listeners
+  // On mount, check existing token + set up form-factor listeners + global error handlers
   useEffect(() => {
     refresh();
     const cleanup = initFormFactorListeners();
+    installGlobalErrorHandlers();
     // Initialize Capacitor native plugins if running inside a native shell.
     void import("./shell/mobile/capacitor").then((m) => m.initCapacitor());
     return cleanup;
@@ -43,11 +46,11 @@ export default function App() {
   // (Tablets in portrait are currently routed to desktop; this can be
   // refined later to use the mobile shell on portrait tablets too.)
   return (
-    <>
+    <GlobalErrorBoundary>
       {mode === "phone" ? <MobileShell /> : <DesktopEnvironment />}
       {/* Rendered once at the top level. Reads from the useUpdater store and
           is a no-op on web/PWA builds (the store is never populated there). */}
       <UpdateDialog />
-    </>
+    </GlobalErrorBoundary>
   );
 }

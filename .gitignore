@@ -24,6 +24,9 @@ server/uploads/
 *.sqlite
 *.sqlite-journal
 
+# Backups (created by deploy/backup.sh)
+backups/
+
 # Logs
 *.log
 npm-debug.log*

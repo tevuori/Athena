@@ -78,6 +78,33 @@ export default defineConfig({
       "@": path.resolve(__dirname, "src"),
     },
   },
+  build: {
+    // Split large vendor libraries into separate chunks for better caching
+    // and parallel downloads. App components are code-split via React.lazy()
+    // in the registry — this handles the shared dependencies.
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // CodeMirror — large editor library used by Editor + Notes.
+          "codemirror-vendor": [
+            "@uiw/react-codemirror",
+            "@codemirror/language",
+            "@codemirror/theme-one-dark",
+          ],
+          // KaTeX — math rendering, ~200KB.
+          "katex-vendor": ["katex", "rehype-katex"],
+          // Markdown rendering pipeline.
+          "markdown-vendor": ["react-markdown", "remark-gfm", "remark-math"],
+          // Animation library.
+          "framer-vendor": ["framer-motion"],
+          // Leaflet maps — only loaded by Maps app but large.
+          "leaflet-vendor": ["leaflet"],
+          // Drag and drop — used by Tasks Kanban.
+          "dnd-vendor": ["@dnd-kit/core", "@dnd-kit/sortable", "@dnd-kit/utilities"],
+        },
+      },
+    },
+  },
   server: {
     port: 5173,
     host: true,

@@ -20,7 +20,7 @@ async function main() {
         role: "ADMIN",
       },
     });
-    console.log(`Seeded user '${username}' (password: '${password}') [ADMIN]`);
+    console.log(`Seeded user '${username}' [ADMIN] — remember to change the password from Settings → Account.`);
   } else {
     console.log(`User '${username}' already exists — skipping user seed.`);
   }

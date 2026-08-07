@@ -75,3 +75,14 @@ sudo certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --register-unsaf
 echo ""
 echo "==> Done. https://$DOMAIN should now serve Athena."
 echo "    Login with admin / $SEED_PW"
+echo ""
+echo "==> Setting up daily SQLite backup cron (3am, 14-day retention)"
+CRON_LINE="0 3 * * * $REPO_DIR/deploy/backup.sh >> /var/log/athena-backup.log 2>&1"
+if ! crontab -l 2>/dev/null | grep -q "deploy/backup.sh"; then
+  (crontab -l 2>/dev/null; echo "$CRON_LINE") | crontab -
+  echo "    Added cron entry: $CRON_LINE"
+  echo "    Backups go to: $REPO_DIR/backups/"
+  echo "    Test manually: $REPO_DIR/deploy/backup.sh"
+else
+  echo "    Backup cron already configured."
+fi

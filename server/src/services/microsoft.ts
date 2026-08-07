@@ -144,7 +144,7 @@ async function refreshAccessToken(userId: string, config: MsUserConfig): Promise
     throw { status: res.status, message: `MS token refresh failed: ${text}` } as MsApiError;
   }
   const data = (await res.json()) as MsTokens;
-  console.log(`[ms] token refresh OK for user ${userId}: scope="${data.scope}" token_type="${data.token_type}" expires_in=${data.expires_in} access_token=${data.access_token ? data.access_token.slice(0, 20) + "..." : "(empty)"}`);
+  console.log(`[ms] token refresh OK for user ${userId}: scope="${data.scope}" expires_in=${data.expires_in}`);
   tokenCache.set(userId, {
     accessToken: data.access_token,
     expiresAt: Date.now() + data.expires_in * 1000,
@@ -206,7 +206,7 @@ export async function listEvents(
     tokenIssuer = payload.iss ?? "";
     console.log(`[ms] access token decoded for user ${userId}: aud="${payload.aud}" iss="${payload.iss}" idtyp="${payload.idtyp ?? "(none)"}"`);
   } catch (e) {
-    console.error(`[ms] could not decode access token JWT:`, e);
+    console.error(`[ms] could not decode access token JWT for user ${userId}`);
   }
 
   // If the token was issued by a tenant-specific endpoint (sts.windows.net/<tenant>/)

@@ -2,8 +2,37 @@ import { SignJWT, jwtVerify } from "jose";
 import { createHash, randomBytes } from "node:crypto";
 import prisma from "../db/client";
 
+const isProduction = process.env.NODE_ENV === "production";
+
+// Known insecure placeholder values that must never be used in production.
+const INSECURE_SECRETS = new Set([
+  "dev-secret-change-me",
+  "change-me-to-a-long-random-string",
+  "admin",
+  "",
+]);
+
+const rawSecret = process.env.JWT_SECRET ?? "";
+
+if (isProduction && INSECURE_SECRETS.has(rawSecret)) {
+  console.error(
+    "[athena-server] FATAL: JWT_SECRET is not set or is an insecure placeholder.\n" +
+      "Generate one with:  openssl rand -hex 32\n" +
+      "Set it in your .env (or environment) before starting in production."
+  );
+  process.exit(1);
+}
+
+if (!isProduction && INSECURE_SECRETS.has(rawSecret)) {
+  console.warn(
+    "[athena-server] WARNING: JWT_SECRET is unset/insecure — using a fixed dev secret. DO NOT use in production."
+  );
+}
+
+// In production the real secret is used. In dev with no secret set, fall back to a
+// fixed dev-only secret so local testing works without configuration.
 const secret = new TextEncoder().encode(
-  process.env.JWT_SECRET ?? "dev-secret-change-me"
+  rawSecret && !INSECURE_SECRETS.has(rawSecret) ? rawSecret : "athena-dev-secret-not-for-production"
 );
 
 const ISSUER = "athena-student-os";

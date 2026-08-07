@@ -40,6 +40,7 @@ import focus from "./routes/focus";
 import mapy from "./routes/mapy";
 import studyLectures from "./routes/study-lectures";
 import settings from "./routes/settings";
+import clientErrors from "./routes/client-errors";
 import { analyticsMiddleware, startAnalyticsFlusher } from "./services/analytics";
 import { startScheduler } from "./services/ntfy/scheduler";
 import { startAllSubscribers } from "./services/ntfy/subscriber";
@@ -47,6 +48,12 @@ import { startProactiveScheduler } from "./services/ntfy/proactive-scheduler";
 import { startReminderScheduler } from "./services/reminders/scheduler";
 
 const app = new Hono();
+
+// Catch stray promises that escape all try/catch — without this, Bun logs a
+// warning but the error context is lost. With it, we get a clean log entry.
+process.on("unhandledRejection", (reason) => {
+  console.error("[athena-server] Unhandled promise rejection:", reason);
+});
 
 // Global error handler — returns JSON (not Hono's default plain-text "Internal
 // Server Error") so the client's JSON.parse never fails on unhandled errors.
@@ -61,6 +68,8 @@ app.use("*", logger());
 // CORS: restrict to the configured client origin(s) for public deployments.
 // CLIENT_ORIGIN may be a single origin or a comma-separated list. When unset
 // (local dev), fall back to reflecting the request origin so dev still works.
+// In production, CLIENT_ORIGIN MUST be set — otherwise the server refuses to
+// start (a wide-open CORS policy lets any website make authenticated requests).
 // The Capacitor native app always originates from https://localhost (or
 // capacitor://localhost on some configs) — we allow these unconditionally
 // so the APK can talk to the server without extra config.
@@ -69,10 +78,29 @@ const allowedOrigins = (process.env.CLIENT_ORIGIN ?? "")
   .map((s) => s.trim())
   .filter(Boolean);
 const CAPACITOR_ORIGINS = ["https://localhost", "http://localhost", "capacitor://localhost"];
+const isProduction = process.env.NODE_ENV === "production";
+
+if (isProduction && allowedOrigins.length === 0) {
+  console.error(
+    "[athena-server] FATAL: CLIENT_ORIGIN is not set.\n" +
+      "In production, set CLIENT_ORIGIN to your deployed origin(s), e.g.:\n" +
+      "  CLIENT_ORIGIN=https://athena.example.com\n" +
+      "Comma-separated lists are supported. Without this, CORS is wide open."
+  );
+  process.exit(1);
+}
+if (!isProduction && allowedOrigins.length === 0) {
+  console.warn(
+    "[athena-server] WARNING: CLIENT_ORIGIN unset — CORS reflects any origin (dev only). Set CLIENT_ORIGIN before deploying."
+  );
+}
+
 app.use(
   "*",
   cors({
     origin: (origin) => {
+      // In production, allowedOrigins is guaranteed non-empty (checked above).
+      // In dev with no CLIENT_ORIGIN, reflect the origin so local dev works.
       if (allowedOrigins.length === 0) return origin ?? "*";
       if (origin && allowedOrigins.includes(origin)) return origin;
       if (origin && CAPACITOR_ORIGINS.includes(origin)) return origin;
@@ -144,6 +172,7 @@ app.route("/api/analytics", analytics);
 app.route("/api/focus", focus);
 app.route("/api/settings", settings);
 app.route("/api/mapy", mapy);
+app.route("/api/client-errors", clientErrors);
 
 // Start ntfy background workers (cron scheduler + per-user inbox subscribers).
 startScheduler();
