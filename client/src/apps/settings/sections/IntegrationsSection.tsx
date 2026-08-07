@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Plug, Music, GraduationCap, Calendar, BookOpen, Loader2, LogOut, RefreshCw, ExternalLink, Bell, Map as MapIcon } from "lucide-react";
+import { Plug, Music, GraduationCap, Calendar, BookOpen, Loader2, LogOut, RefreshCw, ExternalLink, Bell, Map as MapIcon, Lock } from "lucide-react";
 import { spotifyApi, type SpotifyCredentialStatus } from "../../../services/spotify";
 import { vutApi } from "../../../services/vut";
 import { microsoftApi, type MicrosoftCredentialStatus } from "../../../services/microsoft";
@@ -7,6 +7,7 @@ import { moodleApi } from "../../../services/moodle";
 import { ntfyApi } from "../../../services/ntfy";
 import { mapyApi } from "../../../services/maps";
 import { useWindows } from "../../../store/windows";
+import { useFeatures } from "../../../store/features";
 import { SectionHeader, Card, Field, StatusPill, SaveButton, MsgBox, inputClass } from "../ui";
 
 export default function IntegrationsSection() {
@@ -205,6 +206,7 @@ function SpotifyCard() {
 }
 
 function VutCard() {
+  const vutGranted = useFeatures((s) => s.vutGranted);
   const [status, setStatus] = useState<{ configured: boolean; username?: string; authenticated: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const [u, setU] = useState("");
@@ -223,8 +225,8 @@ function VutCard() {
   }, []);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    if (vutGranted) void refresh();
+  }, [refresh, vutGranted]);
 
   const connect = async () => {
     if (!u.trim() || !p) return;
@@ -268,14 +270,26 @@ function VutCard() {
         name="VUT Studis"
         description="Brno University of Technology — grades, timetable, subject updates. Also enables Moodle."
         pill={
-          <StatusPill
-            on={!!status?.configured}
-            onLabel={status?.username ? `Linked (${status.username})` : "Linked"}
-            offLabel="Not linked"
-          />
+          vutGranted ? (
+            <StatusPill
+              on={!!status?.configured}
+              onLabel={status?.username ? `Linked (${status.username})` : "Linked"}
+              offLabel="Not linked"
+            />
+          ) : (
+            <StatusPill on={false} onLabel="" offLabel="Not enabled" />
+          )
         }
       />
-      {status?.configured ? (
+      {!vutGranted ? (
+        <div className="mt-3 flex items-start gap-2 rounded-lg border border-edge bg-surface-2 p-3 text-xs text-ink-muted">
+          <Lock size={14} className="mt-0.5 shrink-0 text-amber-500" />
+          <span>
+            VUT &amp; Moodle integration is not enabled for your account. An administrator must grant
+            you access before you can connect.
+          </span>
+        </div>
+      ) : status?.configured ? (
         <div className="mt-3 flex items-center gap-2">
           <button
             onClick={disconnect}
@@ -553,6 +567,7 @@ function MicrosoftCard() {
 }
 
 function MoodleCard() {
+  const vutGranted = useFeatures((s) => s.vutGranted);
   const [status, setStatus] = useState<{ configured: boolean; authenticated: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -568,8 +583,8 @@ function MoodleCard() {
   }, []);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    if (vutGranted) void refresh();
+  }, [refresh, vutGranted]);
 
   const login = async () => {
     setBusy(true);
@@ -594,23 +609,37 @@ function MoodleCard() {
         name="Moodle (VUT)"
         description="Browse course materials. Reuses your VUT credentials — link VUT first."
         pill={
-          <StatusPill
-            on={!!status?.authenticated}
-            onLabel="Authenticated"
-            offLabel={status?.configured ? "Linked, not signed in" : "Needs VUT"}
-          />
+          vutGranted ? (
+            <StatusPill
+              on={!!status?.authenticated}
+              onLabel="Authenticated"
+              offLabel={status?.configured ? "Linked, not signed in" : "Needs VUT"}
+            />
+          ) : (
+            <StatusPill on={false} onLabel="" offLabel="Not enabled" />
+          )
         }
       />
-      {status?.configured && !status.authenticated && (
-        <div className="mt-3 flex items-center gap-2">
-          <button
-            onClick={login}
-            disabled={busy}
-            className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-sm text-accent-fg hover:opacity-90 disabled:opacity-40"
-          >
-            {busy ? <Loader2 size={14} className="animate-spin" /> : <ExternalLink size={14} />} Sign in to Moodle
-          </button>
+      {!vutGranted ? (
+        <div className="mt-3 flex items-start gap-2 rounded-lg border border-edge bg-surface-2 p-3 text-xs text-ink-muted">
+          <Lock size={14} className="mt-0.5 shrink-0 text-amber-500" />
+          <span>
+            Moodle access requires VUT integration, which is not enabled for your account. An
+            administrator must grant you access first.
+          </span>
         </div>
+      ) : (
+        status?.configured && !status.authenticated && (
+          <div className="mt-3 flex items-center gap-2">
+            <button
+              onClick={login}
+              disabled={busy}
+              className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-sm text-accent-fg hover:opacity-90 disabled:opacity-40"
+            >
+              {busy ? <Loader2 size={14} className="animate-spin" /> : <ExternalLink size={14} />} Sign in to Moodle
+            </button>
+          </div>
+        )
       )}
       <MsgBox msg={msg} error={err} />
     </Card>

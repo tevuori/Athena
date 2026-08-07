@@ -8,6 +8,7 @@ import {
 import { useWindows } from "../store/windows";
 import { useAuth } from "../store/auth";
 import { useSettings } from "../store/settings";
+import { isAppAvailable } from "../store/features";
 import { APP_MAP } from "../apps/registry";
 
 // ===== Onboarding step definitions =====
@@ -58,11 +59,12 @@ export default function OnboardingOverlay() {
     });
   }, [name, step.id, updateProfile, user?.displayName]);
 
-  // Open app window when entering a step that has one
+  // Open app window when entering a step that has one (only if the app is
+  // available to the user — e.g. skip opening Calendar if beta is off).
   useEffect(() => {
     if (step.openApp) {
       const app = APP_MAP[step.openApp.appId as keyof typeof APP_MAP];
-      if (app) {
+      if (app && isAppAvailable(app.id)) {
         openWindow({
           appId: app.id,
           title: app.name,

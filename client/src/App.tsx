@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "./store/auth";
+import { useFeatures } from "./store/features";
 import { useFormFactor, initFormFactorListeners } from "./store/formfactor";
 import { installGlobalErrorHandlers } from "./services/errorReporter";
 import BootScreen from "./shell/BootScreen";
@@ -15,6 +16,7 @@ type Phase = "boot" | "app";
 
 export default function App() {
   const { status, user, refresh } = useAuth();
+  const loadFeatures = useFeatures((s) => s.load);
   const mode = useFormFactor((s) => s.mode);
   const [phase, setPhase] = useState<Phase>("boot");
 
@@ -27,6 +29,12 @@ export default function App() {
     void import("./shell/mobile/capacitor").then((m) => m.initCapacitor());
     return cleanup;
   }, [refresh]);
+
+  // Load feature flags (beta toggle, VUT grant, disabled apps) once
+  // authenticated so launch surfaces filter correctly.
+  useEffect(() => {
+    if (status === "authenticated") void loadFeatures();
+  }, [status, loadFeatures]);
 
   if (phase === "boot") {
     return <BootScreen onDone={() => setPhase("app")} />;

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
 import prisma from "../db/client";
 import { authMiddlewareWithQuery } from "../middleware/auth";
+import { requireVutAccess } from "../middleware/vut-access";
 import {
   encryptPassword,
   decryptPassword,
@@ -17,7 +18,7 @@ import {
 
 const vut = new Hono();
 // VUT proxy route is loaded via <iframe> src that can't set Authorization headers.
-vut.use("*", authMiddlewareWithQuery);
+vut.use("*", authMiddlewareWithQuery, requireVutAccess);
 
 // ===== Credential Management =====
 

@@ -7,7 +7,7 @@ import { useState, useEffect, useCallback } from "react";
 import {
   GraduationCap, Loader2, AlertCircle, ArrowLeft, ChevronRight, RefreshCw,
   FileText, Link2, ListChecks, Folder as FolderIcon, File, FileCode, BookOpen,
-  Brain, Sparkles, Calendar, CheckSquare, Trash2, ExternalLink, Clock,
+  Brain, Sparkles, Calendar, CheckSquare, Trash2, ExternalLink, Clock, Lock,
 } from "lucide-react";
 import { moodleApi } from "../../services/moodle";
 import type {
@@ -15,6 +15,7 @@ import type {
   MoodleAssignment, MoodleSyncState, MoodleSyncResult,
 } from "../../services/moodle";
 import { useWindows } from "../../store/windows";
+import { useFeatures } from "../../store/features";
 import type { WindowInstance } from "../../store/windows";
 
 const ACTIVITY_ICONS: Record<string, typeof File> = {
@@ -45,6 +46,7 @@ function isOverdue(iso?: string): boolean {
 
 export default function MoodleApp({ win }: { win: WindowInstance }) {
   const openWindow = useWindows((s) => s.open);
+  const vutGranted = useFeatures((s) => s.vutGranted);
   const [status, setStatus] = useState<{ configured: boolean; authenticated: boolean; username?: string } | null>(null);
   const [courses, setCourses] = useState<MoodleCourse[]>([]);
   const [contents, setContents] = useState<MoodleCourseContents | null>(null);
@@ -171,6 +173,21 @@ export default function MoodleApp({ win }: { win: WindowInstance }) {
     const t = setTimeout(() => setToast(""), 5000);
     return () => clearTimeout(t);
   }, [toast]);
+
+  // ----- Locked (admin grant revoked) -----
+  if (!vutGranted) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 bg-surface p-8 text-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-500">
+          <Lock size={28} />
+        </div>
+        <h2 className="text-lg font-semibold text-ink">Moodle is not enabled</h2>
+        <p className="max-w-sm text-sm text-ink-muted">
+          Moodle access requires VUT integration, which an administrator must enable for your account.
+        </p>
+      </div>
+    );
+  }
 
   // ----- Not configured -----
   if (status && !status.configured) {

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import * as Lucide from "lucide-react";
 import { Search, Power, LogOut } from "lucide-react";
-import { APPS } from "../apps/registry";
+import { useAvailableApps } from "../store/features";
 import { useWindows } from "../store/windows";
 import { useAuth } from "../store/auth";
 
@@ -14,6 +14,7 @@ interface Props {
 export default function StartMenu({ open, onClose }: Props) {
   const { open: openWindow } = useWindows();
   const { user, logout } = useAuth();
+  const apps = useAvailableApps();
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -24,11 +25,11 @@ export default function StartMenu({ open, onClose }: Props) {
     }
   }, [open]);
 
-  const filtered = APPS.filter((a) =>
+  const filtered = apps.filter((a) =>
     a.name.toLowerCase().includes(query.toLowerCase())
   );
 
-  const launch = (id: typeof APPS[number]) => {
+  const launch = (id: typeof apps[number]) => {
     openWindow({ appId: id.id, title: id.name, icon: id.icon });
     onClose();
   };

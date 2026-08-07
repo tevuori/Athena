@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { isAppAvailable } from "./features";
 
 export type AppId =
   | "notes"
@@ -290,6 +291,13 @@ export const useWindows = create<WindowsState>((set, get) => ({
       get().focus(existing.id);
       if (existing.minimized) get().minimize(existing.id);
       return existing.id;
+    }
+    // App availability guard: refuse to open apps the user can't access
+    // (beta toggle off, VUT not granted, or admin kill-switched). This catches
+    // deep links / Athena tool dispatch that bypass the filtered launch
+    // surfaces. Settings is always openable.
+    if (!isAppAvailable(appId)) {
+      return "";
     }
     const id = nextId();
     const base = DEFAULT_SIZE[appId];

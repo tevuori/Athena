@@ -1,6 +1,6 @@
 import { useState } from "react";
 import * as Lucide from "lucide-react";
-import { APPS } from "../apps/registry";
+import { useAvailableApps } from "../store/features";
 import { useWindows } from "../store/windows";
 import { useSettings, type WallpaperId, type AnimatedBgId } from "../store/settings";
 import ContextMenu, { type MenuItem } from "./ContextMenu";
@@ -28,6 +28,7 @@ const QUICK_ANIM_BGS: { id: AnimatedBgId; name: string }[] = [
 
 export default function Desktop() {
   const { open } = useWindows();
+  const apps = useAvailableApps();
   const { setWallpaper, setAnimatedBg } = useSettings();
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [wallpaperSubmenu, setWallpaperSubmenu] = useState(false);
@@ -105,7 +106,7 @@ export default function Desktop() {
     >
       {/* Desktop icons */}
       <div className="absolute left-3 top-3 flex flex-col flex-wrap gap-1" style={{ maxHeight: "calc(100% - 24px)" }}>
-        {APPS.filter((a) => a.pinnedToDesktop).map((app) => {
+        {apps.filter((a) => a.pinnedToDesktop).map((app) => {
           const Icon = (Lucide as unknown as Record<string, React.ComponentType<{ size?: number }>>)[app.icon] ?? Lucide.AppWindow;
           return (
             <button

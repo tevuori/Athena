@@ -40,6 +40,7 @@ import focus from "./routes/focus";
 import mapy from "./routes/mapy";
 import studyLectures from "./routes/study-lectures";
 import settings from "./routes/settings";
+import features from "./routes/features";
 import clientErrors from "./routes/client-errors";
 import { analyticsMiddleware, startAnalyticsFlusher } from "./services/analytics";
 import { startScheduler } from "./services/ntfy/scheduler";
@@ -171,6 +172,7 @@ app.route("/api/reminders", reminders);
 app.route("/api/analytics", analytics);
 app.route("/api/focus", focus);
 app.route("/api/settings", settings);
+app.route("/api/features", features);
 app.route("/api/mapy", mapy);
 app.route("/api/client-errors", clientErrors);
 

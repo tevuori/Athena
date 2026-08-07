@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import * as Lucide from "lucide-react";
 import AppLogo from "./AppLogo";
 import { useWindows } from "../store/windows";
-import { APPS } from "../apps/registry";
+import { useAvailableApps } from "../store/features";
 import StartMenu from "./StartMenu";
 import SystemTray from "./SystemTray";
 import WorkspaceSwitcher from "../wm/WorkspaceSwitcher";
@@ -13,6 +13,7 @@ interface Props {
 
 export default function Taskbar({ onOpenOverview }: Props) {
   const { windows, focusedId, restoreOrMinimize, open } = useWindows();
+  const apps = useAvailableApps();
   const activeWorkspaceId = useWindows((s) => s.activeWorkspaceId);
   const switchWorkspace = useWindows((s) => s.switchWorkspace);
   const [startOpen, setStartOpen] = useState(false);
@@ -28,7 +29,7 @@ export default function Taskbar({ onOpenOverview }: Props) {
   }, []);
 
   // Group windows by appId for taskbar buttons
-  const taskbarApps = APPS.filter((a) => windows.some((w) => w.appId === a.id));
+  const taskbarApps = apps.filter((a) => windows.some((w) => w.appId === a.id));
 
   return (
     <>
@@ -50,7 +51,7 @@ export default function Taskbar({ onOpenOverview }: Props) {
 
         {/* Center: Pinned + running apps (GNOME-style centered dash) */}
         <div className="flex items-center gap-1 overflow-x-auto">
-          {APPS.map((app) => {
+          {apps.map((app) => {
             const Icon = (Lucide as unknown as Record<string, React.ComponentType<{ size?: number }>>)[app.icon] ?? Lucide.AppWindow;
             const appWindows = windows.filter((w) => w.appId === app.id);
             const isRunning = appWindows.length > 0;

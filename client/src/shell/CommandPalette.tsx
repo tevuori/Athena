@@ -7,7 +7,7 @@ import {
   Calendar, Flame, Zap,
 } from "lucide-react";
 import { useWindows, type AppId } from "../store/windows";
-import { APPS } from "../apps/registry";
+import { useAvailableApps } from "../store/features";
 import { api } from "../services/api";
 import { openTargetForFile, isImageFile, isPdfFile, isAudioFile, isVideoFile, isTextFile } from "../services/files";
 import type { Note, Task, VFile } from "../types";
@@ -77,6 +77,7 @@ export default function CommandPalette() {
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const { open: openWindow } = useWindows();
+  const apps = useAvailableApps();
 
   // Load notes + tasks + files when palette opens
   useEffect(() => {
@@ -137,7 +138,7 @@ export default function CommandPalette() {
     }
 
     // Apps
-    for (const app of APPS) {
+    for (const app of apps) {
       if (!q || app.name.toLowerCase().includes(q)) {
         out.push({
           id: `app-${app.id}`,
@@ -359,7 +360,7 @@ export default function CommandPalette() {
     }
 
     return out.slice(0, 12);
-  }, [query, notes, tasks, fileList, openWindow]);
+  }, [query, notes, tasks, fileList, openWindow, apps]);
 
   // Reset selection when results change
   useEffect(() => {

@@ -7,6 +7,7 @@ import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
 import prisma from "../db/client";
 import { authMiddleware } from "../middleware/auth";
+import { requireVutAccess } from "../middleware/vut-access";
 import { decryptSecret } from "../services/crypto";
 import {
   moodleLogin,
@@ -20,7 +21,7 @@ import {
 import { syncCourse, desyncCourse, listSyncedCourses } from "../services/moodle-sync";
 
 const moodle = new Hono();
-moodle.use("*", authMiddleware);
+moodle.use("*", authMiddleware, requireVutAccess);
 
 async function getCreds(userId: string) {
   const creds = await prisma.vutCredentials.findUnique({ where: { userId } });

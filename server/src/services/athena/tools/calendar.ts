@@ -5,6 +5,7 @@
 import type { ToolDef } from "./plugin";
 import prisma from "../../../db/client";
 import { fetchTimetable, isVutAuthenticated } from "../../../services/vut";
+import { getVutGrant } from "../../../services/features";
 import { isMicrosoftConfiguredFor, listEvents as msListEvents } from "../../../services/microsoft";
 
 export const calendarTools: ToolDef[] = [
@@ -132,8 +133,8 @@ export const calendarTools: ToolDef[] = [
       });
       for (const e of events) busy.push({ start: e.start, end: e.end });
 
-      // Merge VUT classes for the day if authenticated.
-      if (isVutAuthenticated(userId)) {
+      // Merge VUT classes for the day if authenticated + granted access.
+      if (isVutAuthenticated(userId) && (await getVutGrant(userId))) {
         try {
           const slots = await fetchTimetable(userId);
           const dayIndex = dayStart.getDay();

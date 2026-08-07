@@ -12,8 +12,11 @@ import {
   parseCourseContents,
   fetchResourceContent,
 } from "../../moodle";
+import { getVutGrant } from "../../features";
 
 async function getCreds(userId: string) {
+  // VUT/Moodle access is admin-granted per user.
+  if (!(await getVutGrant(userId))) return null;
   const creds = await prisma.vutCredentials.findUnique({ where: { userId } });
   if (!creds) return null;
   return { username: creds.username, password: decryptSecret(creds.passwordEnc) };

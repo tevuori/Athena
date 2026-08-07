@@ -577,3 +577,21 @@ Athena/
 - The Spotify Web Playback SDK requires a **Spotify Premium** account. The client does NOT pre-check for Premium (the `/me` endpoint only returns `product` with the `user-read-private` scope, which the stored refresh token may not have). Instead, the SDK's `initialization_error` / `account_error` events report genuine non-Premium failures with a clear message.
 - The `getOAuthToken` callback fetches a fresh access token from the server each time the SDK requests one, so token expiry (1 hour) is handled automatically.
 - LRCLIB (https://lrclib.net) is a free public API — no key needed. We set a descriptive `User-Agent` and throttle to 300ms between requests per their guidelines.
+
+## App availability / feature flags (MVP scoping)
+
+Apps are classified into three availability tiers (defined in `client/src/apps/registry.tsx` `tier`/`requiresGrant` fields, mirrored server-side in `server/src/services/features.ts`):
+
+- **Core** (always available): Notes, Tasks, Files, Whiteboard, Study Hub (Teach Me lives here), Mavino assistant, Today, Settings. These are the MVP pitch alongside the desktop shell.
+- **Beta** (per-user toggle): Pomodoro, Flashcards, Grades, Editor, Viewer, Calendar, Habits, Ntfy, Voice, Browser, Reminders, Analytics, Maps. Hidden until the user enables **Settings → Beta Apps**.
+- **Admin-granted** (`requiresGrant: "vut"`): VUT + Moodle. Moodle rides on the VUT SSO session, so a single per-user `vut` grant covers both. Hidden unless an admin grants the user access.
+
+**Flag storage:** all flags live in the existing `Setting` key/value table (no schema migration needed). Per-user flags use the user's id; the global kill-switch uses `userId = null`. Keys: `beta.enabled` (per-user), `vut.access` (per-user), `apps.disabled` (global, JSON string array).
+
+**Client store:** `client/src/store/features.ts` loads `/api/features` on auth (in `App.tsx`) and exposes `useAvailableApps()` (reactive, for launch surfaces), `isAppAvailable(appId)` (pure, used by the `windows.open()` guard and onboarding), and `useAppAvailable(appId)`. All launch surfaces (StartMenu, Desktop, Taskbar, CommandPalette, MobileLauncher, OnboardingOverlay) filter by availability. `windows.open()` refuses to open unavailable apps (returns `""`), catching deep links / Athena tool dispatch that bypass the filtered surfaces. Settings is undisableable.
+
+**Server routes** (`server/src/routes/features.ts`, mounted at `/api/features`): `GET /` (own state), `PUT /beta` (toggle own beta), and admin (`/admin`, adminMiddleware): `GET /` (app catalog + disabled list), `PUT /disabled` (set global kill-switch), `GET /admin/users/:userId/grants` + `PUT /admin/users/:userId/grants` (`{ vut }`). The `requireVutAccess` middleware (`server/src/middleware/vut-access.ts`) gates `/api/vut` and `/api/moodle` (403 `VUT_NOT_GRANTED` when not granted). The Athena calendar tool's VUT timetable merge and the Moodle Athena tools also check `getVutGrant` so non-granted users can't pull VUT/Moodle data through Athena.
+
+**Admin UI:** Settings → **Apps** (admin) = global per-app kill switch (Settings always on). Settings → **Users** → edit user = per-user VUT/Moodle grant toggle. Settings → **Beta Apps** (all users) = the beta toggle + a read-only VUT-access status pill.
+
+**Locked states:** the VUT and Moodle apps render a "not enabled" screen when `vutGranted` is false (defense-in-depth if a window is open when the grant is revoked). The Integrations cards for VUT/Moodle show a locked notice instead of the login form when not granted.

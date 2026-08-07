@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { vutApi } from "../../services/vut";
 import { gradesApi } from "../../services/grades";
+import { useFeatures } from "../../store/features";
 import type { VutGrade, VutTimetableSlot, VutSubjectUpdate } from "../../types";
 
 type Tab = "overview" | "grades" | "timetable" | "updates" | "webview";
@@ -25,6 +26,7 @@ function colorForCourse(code: string, index: number): string {
 }
 
 export default function VUTApp() {
+  const vutGranted = useFeatures((s) => s.vutGranted);
   const [tab, setTab] = useState<Tab>("overview");
   const [authState, setAuthState] = useState<AuthState>("loading");
   const [username, setUsername] = useState("");
@@ -124,6 +126,22 @@ export default function VUTApp() {
       loadAllData();
     }
   }, [authState]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ===== Locked Screen (admin grant revoked) =====
+  if (!vutGranted) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 bg-surface p-8 text-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-500">
+          <Lock size={28} />
+        </div>
+        <h2 className="text-lg font-semibold text-ink">VUT integration is not enabled</h2>
+        <p className="max-w-sm text-sm text-ink-muted">
+          An administrator needs to grant your account access to VUT Studis and Moodle before you can
+          use this app.
+        </p>
+      </div>
+    );
+  }
 
   // ===== Login Screen =====
   if (authState === "loading") {
