@@ -16,7 +16,7 @@ const rawSecret = process.env.JWT_SECRET ?? "";
 
 if (isProduction && INSECURE_SECRETS.has(rawSecret)) {
   console.error(
-    "[athena-server] FATAL: JWT_SECRET is not set or is an insecure placeholder.\n" +
+    "[mavino-server] FATAL: JWT_SECRET is not set or is an insecure placeholder.\n" +
       "Generate one with:  openssl rand -hex 32\n" +
       "Set it in your .env (or environment) before starting in production."
   );
@@ -25,7 +25,7 @@ if (isProduction && INSECURE_SECRETS.has(rawSecret)) {
 
 if (!isProduction && INSECURE_SECRETS.has(rawSecret)) {
   console.warn(
-    "[athena-server] WARNING: JWT_SECRET is unset/insecure — using a fixed dev secret. DO NOT use in production."
+    "[mavino-server] WARNING: JWT_SECRET is unset/insecure — using a fixed dev secret. DO NOT use in production."
   );
 }
 

@@ -91,7 +91,7 @@ if (isProduction && allowedOrigins.length === 0) {
 }
 if (!isProduction && allowedOrigins.length === 0) {
   console.warn(
-    "[athena-server] WARNING: CLIENT_ORIGIN unset — CORS reflects any origin (dev only). Set CLIENT_ORIGIN before deploying."
+    "[mavino-server] WARNING: CLIENT_ORIGIN unset — CORS reflects any origin (dev only). Set CLIENT_ORIGIN before deploying."
   );
 }
 
